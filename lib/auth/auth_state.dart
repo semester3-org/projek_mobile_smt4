@@ -1,7 +1,6 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import '../core/api_service.dart';
+import '../core/auth_storage.dart';
 import 'roles.dart';
 
 @immutable
@@ -52,6 +51,7 @@ class AuthState extends ChangeNotifier {
 
   void logout() {
     _session = null;
+    AuthStorage.clear();
     notifyListeners();
   }
 }

@@ -30,11 +30,22 @@ if ($path === 'api/reset-password')  { require_once __DIR__ . '/api/reset-passwo
 if ($path === 'api/kos_listings_public') { require_once __DIR__ . '/api/kos_listings_public.php'; exit; }
 if ($path === 'api/laundry_places')      { require_once __DIR__ . '/api/laundry_places.php';      exit; }
 if ($path === 'api/cafe_places')         { require_once __DIR__ . '/api/cafe_places.php';         exit; }
+if ($path === 'api/catering_places')     { require_once __DIR__ . '/api/catering_places.php';     exit; }
+
+// ── User app endpoints ───────────────────────────────────────────────────────
+if ($path === 'api/user_dashboard')       { require_once __DIR__ . '/api/user_dashboard.php';      exit; }
+if ($path === 'api/user_merchants')       { require_once __DIR__ . '/api/user_merchants.php';      exit; }
+if ($path === 'api/user_billings')        { require_once __DIR__ . '/api/user_billings.php';       exit; }
+if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_orders.php';         exit; }
+if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
+if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
+if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
 
 // ── Endpoint owner (butuh JWT) ────────────────────────────────────────────────
 if ($path === 'api/kos_listings')        { require_once __DIR__ . '/api/kos_listings.php';        exit; }
 if ($path === 'api/kos_rooms')           { require_once __DIR__ . '/api/kos_rooms.php';           exit; }
 if ($path === 'api/facilities')          { require_once __DIR__ . '/api/facilities.php';          exit; }
+if ($path === 'api/owner_tenants')       { require_once __DIR__ . '/api/owner_tenants.php';       exit; }
 
 // ── Debug / test ──────────────────────────────────────────────────────────────
 if ($path === 'db-test') { require_once __DIR__ . '/db-test.php'; exit; }
@@ -59,11 +70,21 @@ if (empty($path)) {
             'GET  /api/kos_listings_public?search=&max_price=&facilities=WiFi,AC',
             'GET  /api/laundry_places',
             'GET  /api/cafe_places',
+            'GET  /api/catering_places',
+            'GET  /api/user_dashboard',
+            'GET  /api/user_merchants?type=laundry|catering|cafe',
+            'GET  /api/user_merchants?type=cafe&id=c1',
+            'GET  /api/user_billings',
+            'GET  /api/user_orders',
+            'GET  /api/user_notifications',
+            'GET|POST /api/user_profile',
+            'POST /api/user_ratings',
             // Owner (JWT required)
             'GET  /api/kos_listings',
             'GET|POST|PUT|DELETE /api/kos_rooms',
             'GET /api/facilities',
             'POST|PUT|DELETE /api/facilities (admin)',
+            'GET /api/owner_tenants',
         ],
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;

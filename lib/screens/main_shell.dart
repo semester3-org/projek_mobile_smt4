@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../app/app_theme.dart';
-import 'chat/chat_booking_page.dart';
-import 'favorites/favorites_page.dart';
-import 'home/home_page.dart';
+import 'cafe/cafe_page.dart';
+import 'catering/catering_page.dart';
+import 'laundry/laundry_page.dart';
+import 'profile/notification_list_page.dart';
 import 'profile/profile_page.dart';
+import 'user/user_home_page.dart';
+import 'user/user_theme.dart';
 
-/// Shell utama: BottomNavigationBar + state favorit global sederhana.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -16,65 +17,77 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
-  final Set<String> _favoriteKosIds = {};
 
-  void _toggleFavorite(String kosId) {
-    setState(() {
-      if (_favoriteKosIds.contains(kosId)) {
-        _favoriteKosIds.remove(kosId);
-      } else {
-        _favoriteKosIds.add(kosId);
-      }
-    });
+  void _selectTab(int index) {
+    setState(() => _currentIndex = index);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // IndexedStack menjaga state tiap tab (beranda, favorit, chat, profil).
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          HomePage(
-            favoriteKosIds: _favoriteKosIds,
-            onToggleFavorite: _toggleFavorite,
-          ),
-          FavoritesPage(
-            favoriteKosIds: _favoriteKosIds,
-            onToggleFavorite: _toggleFavorite,
-          ),
-          const ChatBookingPage(),
+          UserHomePage(onSelectTab: _selectTab),
+          const LaundryPage(),
+          const CateringPage(),
+          const CafePage(),
+          const NotificationListPage(),
           const ProfilePage(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppTheme.primaryGreen,
-        unselectedItemColor: Colors.grey.shade600,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home_rounded),
-            label: 'Beranda',
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [UserTheme.softShadow(opacity: 0.09)],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'Favorit',
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: _selectTab,
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: UserTheme.primary,
+            unselectedItemColor: const Color(0xFF94A3B8),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home_rounded),
+                label: 'Beranda',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.local_laundry_service_outlined),
+                activeIcon: Icon(Icons.local_laundry_service_rounded),
+                label: 'Laundry',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.restaurant_outlined),
+                activeIcon: Icon(Icons.restaurant_rounded),
+                label: 'Catering',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.local_cafe_outlined),
+                activeIcon: Icon(Icons.local_cafe_rounded),
+                label: 'Kafe',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.notifications_none_rounded),
+                activeIcon: Icon(Icons.notifications_rounded),
+                label: 'Notifikasi',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline_rounded),
+                activeIcon: Icon(Icons.person_rounded),
+                label: 'Profil',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_rounded),
-            label: 'Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
+        ),
       ),
     );
   }

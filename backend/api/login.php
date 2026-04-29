@@ -106,12 +106,18 @@ if (!$passwordOk) {
     sendResponse(false, 'Email atau kata sandi tidak cocok. Periksa kembali.', null, 401);
 }
 
+$role = strtolower(trim($user['role'] ?? 'user'));
+$allowedRoles = ['admin', 'merchant', 'user', 'owner'];
+if (!in_array($role, $allowedRoles, true)) {
+    $role = 'user';
+}
+
 // Generate JWT
 $token = JWT::generate([
     'sub'         => $user['id'],
     'email'       => $user['email'],
     'displayName' => $user['display_name'],
-    'role'        => $user['role'],
+    'role'        => $role,
 ]);
 
 $conn->close();
@@ -121,5 +127,5 @@ sendResponse(true, 'Login berhasil', [
     'id'          => $user['id'],
     'email'       => $user['email'],
     'displayName' => $user['display_name'],
-    'role'        => $user['role'],
+    'role'        => $role,
 ]);

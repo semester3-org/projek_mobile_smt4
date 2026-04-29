@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../main_shell.dart';
 import '../owner/owner_shell.dart';
 import 'login_page.dart';
 
@@ -17,12 +18,15 @@ class AuthGate extends StatelessWidget {
       return const LoginPage();
     }
 
-    // Saat ini hanya fokus pada halaman Owner.
-    if (session.role == UserRole.owner) {
-      return const OwnerShell();
+    switch (session.role) {
+      case UserRole.user:
+        return const MainShell();
+      case UserRole.owner:
+        return const OwnerShell();
+      case UserRole.admin:
+      case UserRole.merchant:
+        return RolePendingPage(role: session.role);
     }
-
-    return RolePendingPage(role: session.role);
   }
 }
 
@@ -50,7 +54,7 @@ class RolePendingPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Saat ini hanya halaman untuk role Owner yang sudah dibuat. Silakan login kembali dengan role Owner atau tunggu fitur role lain selesai.',
+              'Saat ini halaman yang sudah tersedia adalah User dan Owner. Silakan login kembali dengan role yang sesuai atau tunggu fitur role lain selesai.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 26, 2026 at 05:22 PM
+-- Generation Time: Apr 29, 2026 at 05:53 PM
 -- Server version: 8.0.30
 -- PHP Version: 8.3.30
 
@@ -216,7 +216,7 @@ CREATE TABLE `kos_rooms` (
   `room_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: A1, B2, 101',
   `room_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: Standard, Deluxe, AC',
   `price_per_month` int NOT NULL,
-  `rental_type` enum('daily','monthly','yearly') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly',
+  `rental_type` enum('daily','monthly','yearly') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly',
   `status` enum('available','occupied','maintenance') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'available',
   `max_occupant` int NOT NULL DEFAULT '1',
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
@@ -229,7 +229,9 @@ CREATE TABLE `kos_rooms` (
 --
 
 INSERT INTO `kos_rooms` (`id`, `kos_id`, `room_number`, `room_type`, `price_per_month`, `rental_type`, `status`, `max_occupant`, `description`, `created_at`, `updated_at`) VALUES
-('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'monthly', 'available', 1, NULL, '2026-04-26 15:35:22', '2026-04-26 15:35:22'),
+('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'monthly', 'maintenance', 1, NULL, '2026-04-26 15:35:22', '2026-04-29 13:57:02'),
+('5ed6dc94-b084-4505-af02-16fd6f8ee38d', '254952fa-366a-417f-bbf7-43126254772c', 'A04', 'Standard Single', 20000, 'daily', 'available', 1, NULL, '2026-04-29 16:14:32', '2026-04-29 16:20:58'),
+('930a9f7d-e912-476c-b836-973c31b8e535', '254952fa-366a-417f-bbf7-43126254772c', 'A03', 'Standard Single', 10000, 'daily', 'available', 1, NULL, '2026-04-29 16:22:04', '2026-04-29 16:22:04'),
 ('9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'A01', 'Standard Single', 200000, 'monthly', 'available', 1, NULL, '2026-04-26 15:19:28', '2026-04-26 15:19:28');
 
 -- --------------------------------------------------------
@@ -351,9 +353,9 @@ CREATE TABLE `room_facilities` (
 --
 
 INSERT INTO `room_facilities` (`room_id`, `facility_id`, `created_at`) VALUES
-('588ea0ad-708b-47df-90e1-6591b885c456', 2, '2026-04-26 15:35:22'),
-('588ea0ad-708b-47df-90e1-6591b885c456', 4, '2026-04-26 15:35:22'),
-('588ea0ad-708b-47df-90e1-6591b885c456', 6, '2026-04-26 15:35:22'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 2, '2026-04-29 13:57:02'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 4, '2026-04-29 13:57:02'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 6, '2026-04-29 13:57:02'),
 ('9455bdec-b0d5-4d0c-9d76-0d197b8db240', 2, '2026-04-26 15:41:32'),
 ('9455bdec-b0d5-4d0c-9d76-0d197b8db240', 4, '2026-04-26 15:41:32');
 

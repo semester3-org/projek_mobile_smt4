@@ -4,7 +4,7 @@ class BillingRecord {
   final String itemDescription;
   final double amount;
   final DateTime dueDate;
-  final String status; // 'lunas', 'belum_bayar', 'tertangguh'
+  final String status; // 'lunas', 'belum_bayar', 'pending', 'tertangguh'
   final String? paymentMethod;
   final DateTime? paymentDate;
   final String? notes;
@@ -33,7 +33,8 @@ class BillingRecord {
       id: json['id'] as String? ?? '',
       itemDescription: json['itemDescription'] as String? ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
-      dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '') ?? DateTime.now(),
+      dueDate:
+          DateTime.tryParse(json['dueDate'] as String? ?? '') ?? DateTime.now(),
       status: json['status'] as String? ?? '',
       paymentMethod: json['paymentMethod'] as String?,
       paymentDate: DateTime.tryParse(json['paymentDate'] as String? ?? ''),
@@ -63,4 +64,51 @@ class BillingRecord {
   }
 
   bool get isLate => status == 'belum_bayar' && DateTime.now().isAfter(dueDate);
+
+  bool get isPaid => status == 'lunas';
+  bool get isPending => status == 'pending';
+  bool get isUnpaid => status == 'belum_bayar' || status.isEmpty;
+
+  String get statusLabel {
+    switch (status) {
+      case 'lunas':
+        return 'Berhasil';
+      case 'pending':
+        return 'Menunggu Persetujuan';
+      case 'tertangguh':
+        return 'Tertangguh';
+      default:
+        return 'Belum Bayar';
+    }
+  }
+
+  BillingRecord copyWith({
+    String? id,
+    String? itemDescription,
+    double? amount,
+    DateTime? dueDate,
+    String? status,
+    String? paymentMethod,
+    DateTime? paymentDate,
+    String? notes,
+    String? kosName,
+    String? kosAccessCode,
+    String? roomNumber,
+    String? roomType,
+  }) {
+    return BillingRecord(
+      id: id ?? this.id,
+      itemDescription: itemDescription ?? this.itemDescription,
+      amount: amount ?? this.amount,
+      dueDate: dueDate ?? this.dueDate,
+      status: status ?? this.status,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      paymentDate: paymentDate ?? this.paymentDate,
+      notes: notes ?? this.notes,
+      kosName: kosName ?? this.kosName,
+      kosAccessCode: kosAccessCode ?? this.kosAccessCode,
+      roomNumber: roomNumber ?? this.roomNumber,
+      roomType: roomType ?? this.roomType,
+    );
+  }
 }

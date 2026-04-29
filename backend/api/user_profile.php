@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -52,7 +52,7 @@ function profilePayload(mysqli $conn, array $payload): array {
         'email' => $payload['email'] ?? '',
         'displayName' => $payload['displayName'] ?? 'User',
         'role' => $payload['role'] ?? 'user',
-        'photoUrl' => null,
+        'photoUrl' => $payload['photoUrl'] ?? null,
         'kosName' => null,
         'kosAccessCode' => null,
         'roomNumber' => null,
@@ -117,17 +117,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     sendJson(true, profilePayload($conn, $payload), 'Profil berhasil dimuat');
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    sendJson(false, null, 'Only GET or POST method allowed', 405);
-}
-
 $body = json_decode(file_get_contents('php://input'), true);
 if (!is_array($body)) {
     sendJson(false, null, 'Invalid JSON request', 400);
 }
 
-$accessCode = strtoupper(trim($body['accessCode'] ?? ''));
 $userId = $payload['sub'] ?? '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    $displayName = trim($body['displayName'] ?? '');
+
+    if ($displayName === '') {
+        sendJson(false, null, 'Nama wajib diisi', 400);
+    }
+
+    if (!tableExists($conn, 'users')) {
+        sendJson(false, null, 'Tabel users belum tersedia', 500);
+    }
+
+    $stmt = $conn->prepare('UPDATE users SET display_name = ?, updated_at = NOW() WHERE id = ?');
+    if (!$stmt) {
+        sendJson(false, null, 'Database error', 500);
+    }
+    $stmt->bind_param('ss', $displayName, $userId);
+    $stmt->execute();
+    $stmt->close();
+
+    $updatedPayload = array_merge($payload, [
+        'displayName' => $displayName,
+        'photoUrl' => trim($body['photoUrl'] ?? ''),
+    ]);
+    $data = profilePayload($conn, $updatedPayload);
+    $data['phone'] = trim($body['phone'] ?? '');
+    $data['address'] = trim($body['address'] ?? '');
+    $data['photoUrl'] = trim($body['photoUrl'] ?? '');
+
+    sendJson(true, $data, 'Profil berhasil diperbarui');
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    sendJson(false, null, 'Only GET, POST, or PUT method allowed', 405);
+}
+
+$accessCode = strtoupper(trim($body['accessCode'] ?? ''));
 
 if ($accessCode === '') {
     sendJson(false, null, 'Kode kos wajib diisi', 400);

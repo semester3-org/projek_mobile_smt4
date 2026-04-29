@@ -22,6 +22,7 @@ class MerchantDetailPage extends StatefulWidget {
 class _MerchantDetailPageState extends State<MerchantDetailPage> {
   late UserMerchant _merchant;
   bool _loading = true;
+  bool _isFavorite = false;
   bool _submittingReview = false;
   int _selectedRating = 4;
   final _reviewCtrl = TextEditingController();
@@ -31,6 +32,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     super.initState();
     _merchant = widget.merchant;
     _load();
+    _loadFavorite();
   }
 
   @override
@@ -49,6 +51,28 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
       _merchant = result.data ?? widget.merchant;
       _loading = false;
     });
+  }
+
+  Future<void> _loadFavorite() async {
+    final favorite = await UserRepository.isMerchantFavorite(
+      type: widget.merchant.type,
+      merchantId: widget.merchant.id,
+    );
+    if (!mounted) return;
+    setState(() => _isFavorite = favorite);
+  }
+
+  Future<void> _toggleFavorite() async {
+    final favorite = await UserRepository.toggleMerchantFavorite(_merchant);
+    if (!mounted) return;
+    setState(() => _isFavorite = favorite);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          favorite ? 'Disimpan ke favorite' : 'Dihapus dari favorite',
+        ),
+      ),
+    );
   }
 
   void _openOrder(MerchantMenuItem? item) {
@@ -155,8 +179,13 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         ),
         actions: [
           IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.favorite_border_rounded),
+            onPressed: _toggleFavorite,
+            icon: Icon(
+              _isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: _isFavorite ? Colors.redAccent : null,
+            ),
           ),
           IconButton(
             onPressed: () {},
@@ -184,9 +213,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     title: _merchant.type == 'laundry'
                         ? 'Daftar Layanan'
                         : 'Daftar Menu',
-                    actionLabel: _merchant.menuItems.length > 2
-                        ? 'Lihat Semua'
-                        : null,
+                    actionLabel:
+                        _merchant.menuItems.length > 2 ? 'Lihat Semua' : null,
                   ),
                   const SizedBox(height: 14),
                   if (_merchant.menuItems.isEmpty)
@@ -214,7 +242,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     onSubmit: _submitReview,
                   ),
                   const SizedBox(height: 22),
-                  if (_merchant.type == 'cafe') _LocationCard(merchant: _merchant),
+                  if (_merchant.type == 'cafe')
+                    _LocationCard(merchant: _merchant),
                   const UserBottomSpacer(),
                 ],
               ),
@@ -225,7 +254,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
                 child: FilledButton(
-                  onPressed: _merchant.isAvailable ? () => _openOrder(null) : null,
+                  onPressed:
+                      _merchant.isAvailable ? () => _openOrder(null) : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: UserTheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 17),
@@ -313,7 +343,8 @@ class _HeaderCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.location_on_outlined, size: 18, color: UserTheme.muted),
+              const Icon(Icons.location_on_outlined,
+                  size: 18, color: UserTheme.muted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -324,7 +355,9 @@ class _HeaderCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Wrap(children: merchant.tags.map((tag) => UserTag(label: tag)).toList()),
+          Wrap(
+              children:
+                  merchant.tags.map((tag) => UserTag(label: tag)).toList()),
         ],
       ],
     );
@@ -378,7 +411,8 @@ class _MerchantSummary extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.location_on_outlined, size: 18, color: UserTheme.muted),
+                    const Icon(Icons.location_on_outlined,
+                        size: 18, color: UserTheme.muted),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -933,7 +967,8 @@ class _LocationCard extends StatelessWidget {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  const Icon(Icons.phone_outlined, size: 16, color: UserTheme.muted),
+                  const Icon(Icons.phone_outlined,
+                      size: 16, color: UserTheme.muted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -941,7 +976,8 @@ class _LocationCard extends StatelessWidget {
                       style: const TextStyle(color: UserTheme.muted),
                     ),
                   ),
-                  const Icon(Icons.mail_outline, size: 16, color: UserTheme.muted),
+                  const Icon(Icons.mail_outline,
+                      size: 16, color: UserTheme.muted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

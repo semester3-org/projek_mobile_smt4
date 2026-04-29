@@ -183,7 +183,12 @@ $result = $stmt->get_result();
 $rows = [];
 
 while ($r = $result->fetch_assoc()) {
-    $status = $r['payment_status'] === 'paid' ? 'lunas' : 'belum_bayar';
+    $status = 'belum_bayar';
+    if ($r['payment_status'] === 'paid') {
+        $status = 'lunas';
+    } elseif (!empty($r['payment_method'])) {
+        $status = 'pending';
+    }
     $rows[] = billPayload(
         (string)$r['id'],
         $r['period_month'],

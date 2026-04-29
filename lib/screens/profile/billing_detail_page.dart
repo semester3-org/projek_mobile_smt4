@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/user_repository.dart';
 import '../../models/billing_record.dart';
 import '../user/user_theme.dart';
 import '../user/user_widgets.dart';
@@ -15,11 +16,39 @@ class BillingDetailPage extends StatefulWidget {
 
 class _BillingDetailPageState extends State<BillingDetailPage> {
   String _method = 'Transfer Bank BCA';
+  late BillingRecord _billing;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _billing = widget.billing;
+  }
+
+  Future<void> _submitPayment() async {
+    setState(() => _submitting = true);
+    final result = await UserRepository.submitBillingPayment(
+      billing: _billing,
+      paymentMethod: _method,
+    );
+    if (!mounted) return;
+
+    setState(() {
+      _billing = result.data ?? _billing.copyWith(status: 'pending');
+      _submitting = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Pembayaran dikirim. Menunggu persetujuan owner.'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final billing = widget.billing;
-    final isPaid = billing.status == 'lunas';
+    final billing = _billing;
+    final isPaid = billing.isPaid;
+    final isPending = billing.isPending;
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -226,7 +255,8 @@ class _BillingDetailPageState extends State<BillingDetailPage> {
           ),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: isPaid ? null : () {},
+            onPressed:
+                isPaid || isPending || _submitting ? null : _submitPayment,
             style: FilledButton.styleFrom(
               backgroundColor: UserTheme.primaryDark,
               padding: const EdgeInsets.symmetric(vertical: 17),
@@ -234,7 +264,15 @@ class _BillingDetailPageState extends State<BillingDetailPage> {
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: Text(isPaid ? 'Sudah Dibayar' : 'Bayar Sekarang'),
+            child: Text(
+              isPaid
+                  ? 'Pembayaran Berhasil'
+                  : isPending
+                      ? 'Menunggu Persetujuan Owner'
+                      : _submitting
+                          ? 'Mengirim Pembayaran...'
+                          : 'Bayar Sekarang',
+            ),
           ),
           const SizedBox(height: 14),
           const Text(
@@ -415,16 +453,29 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paid = status == 'lunas';
+    final pending = status == 'pending';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: paid ? const Color(0xFFDDF8E8) : const Color(0xFFFFD7D4),
+        color: paid
+            ? const Color(0xFFDDF8E8)
+            : pending
+                ? const Color(0xFFDCEBFF)
+                : const Color(0xFFFFD7D4),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        paid ? 'Lunas' : 'Belum Bayar',
+        paid
+            ? 'Berhasil'
+            : pending
+                ? 'Pending'
+                : 'Belum Bayar',
         style: TextStyle(
-          color: paid ? UserTheme.success : UserTheme.danger,
+          color: paid
+              ? UserTheme.success
+              : pending
+                  ? UserTheme.primary
+                  : UserTheme.danger,
           fontWeight: FontWeight.w800,
         ),
       ),

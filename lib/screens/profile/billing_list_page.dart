@@ -36,7 +36,7 @@ class _BillingListPageState extends State<BillingListPage> {
 
   BillingRecord? get _activeBill {
     for (final billing in _billings) {
-      if (billing.status != 'lunas') return billing;
+      if (!billing.isPaid) return billing;
     }
     return null;
   }
@@ -78,16 +78,18 @@ class _BillingListPageState extends State<BillingListPage> {
                     _InfoMessage(message: _error!),
                     const SizedBox(height: 18),
                   ],
-                  if (activeBill != null) _ActiveBillingCard(billing: activeBill),
+                  if (activeBill != null)
+                    _ActiveBillingCard(billing: activeBill, onChanged: _load),
                   const SizedBox(height: 28),
                   Row(
                     children: [
                       Text(
                         'Riwayat Tagihan',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: UserTheme.text,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: UserTheme.text,
+                                ),
                       ),
                       const Spacer(),
                       IconButton(
@@ -111,7 +113,10 @@ class _BillingListPageState extends State<BillingListPage> {
                     ..._billings.map(
                       (billing) => Padding(
                         padding: const EdgeInsets.only(bottom: 18),
-                        child: _BillingHistoryCard(billing: billing),
+                        child: _BillingHistoryCard(
+                          billing: billing,
+                          onChanged: _load,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 14),
@@ -125,12 +130,14 @@ class _BillingListPageState extends State<BillingListPage> {
 }
 
 class _ActiveBillingCard extends StatelessWidget {
-  const _ActiveBillingCard({required this.billing});
+  const _ActiveBillingCard({required this.billing, required this.onChanged});
 
   final BillingRecord billing;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final pending = billing.isPending;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -220,14 +227,16 @@ class _ActiveBillingCard extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => BillingDetailPage(billing: billing),
-                  ),
-                );
+                Navigator.of(context)
+                    .push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => BillingDetailPage(billing: billing),
+                      ),
+                    )
+                    .then((_) => onChanged());
               },
               icon: const Icon(Icons.arrow_forward_rounded),
-              label: const Text('Bayar Sekarang'),
+              label: Text(pending ? 'Menunggu Persetujuan' : 'Bayar Sekarang'),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: UserTheme.primaryDark,
@@ -245,23 +254,30 @@ class _ActiveBillingCard extends StatelessWidget {
 }
 
 class _BillingHistoryCard extends StatelessWidget {
-  const _BillingHistoryCard({required this.billing});
+  const _BillingHistoryCard({
+    required this.billing,
+    required this.onChanged,
+  });
 
   final BillingRecord billing;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final paid = billing.status == 'lunas';
+    final paid = billing.isPaid;
+    final pending = billing.isPending;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => BillingDetailPage(billing: billing),
-            ),
-          );
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute<void>(
+                  builder: (_) => BillingDetailPage(billing: billing),
+                ),
+              )
+              .then((_) => onChanged());
         },
         borderRadius: BorderRadius.circular(22),
         child: Container(
@@ -276,13 +292,24 @@ class _BillingHistoryCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color:
-                      paid ? const Color(0xFFE6FAEF) : const Color(0xFFFFF1E4),
+                  color: paid
+                      ? const Color(0xFFE6FAEF)
+                      : pending
+                          ? const Color(0xFFEFF5FF)
+                          : const Color(0xFFFFF1E4),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  paid ? Icons.check_circle : Icons.error,
-                  color: paid ? UserTheme.success : const Color(0xFFE66000),
+                  paid
+                      ? Icons.check_circle
+                      : pending
+                          ? Icons.hourglass_top_rounded
+                          : Icons.error,
+                  color: paid
+                      ? UserTheme.success
+                      : pending
+                          ? UserTheme.primary
+                          : const Color(0xFFE66000),
                 ),
               ),
               const SizedBox(width: 18),
@@ -337,13 +364,19 @@ class _BillingHistoryCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: paid
                           ? const Color(0xFFD9F9E7)
-                          : const Color(0xFFFFEBD1),
+                          : pending
+                              ? const Color(0xFFDCEBFF)
+                              : const Color(0xFFFFEBD1),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      paid ? 'Lunas' : 'Belum Bayar',
+                      billing.statusLabel,
                       style: TextStyle(
-                        color: paid ? UserTheme.success : const Color(0xFFE66000),
+                        color: paid
+                            ? UserTheme.success
+                            : pending
+                                ? UserTheme.primary
+                                : const Color(0xFFE66000),
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -413,7 +446,8 @@ class _HelpCard extends StatelessWidget {
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.info_outline_rounded, color: UserTheme.accent),
+            child:
+                const Icon(Icons.info_outline_rounded, color: UserTheme.accent),
           ),
           const SizedBox(width: 16),
           const Expanded(
@@ -434,14 +468,6 @@ class _HelpCard extends StatelessWidget {
                   style: TextStyle(
                     color: Color(0xFF6078D8),
                     height: 1.45,
-                  ),
-                ),
-                SizedBox(height: 14),
-                Text(
-                  'Ajukan Komplain >',
-                  style: TextStyle(
-                    color: UserTheme.accent,
-                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],

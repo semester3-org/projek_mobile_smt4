@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../app/app_theme.dart';
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
+import '../user/user_theme.dart';
 
-/// Halaman detail profil user - menampilkan info lengkap user yang login
 class UserProfileDetailPage extends StatefulWidget {
   const UserProfileDetailPage({super.key});
 
@@ -14,209 +14,311 @@ class UserProfileDetailPage extends StatefulWidget {
 }
 
 class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
-  UserProfile? _userProfile;
-  bool _isLoading = true;
-  bool _didLoad = false;
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _photoCtrl = TextEditingController();
+  final _currentPasswordCtrl = TextEditingController();
+  final _newPasswordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+
+  UserProfile? _profile;
+  bool _loading = true;
+  bool _savingProfile = false;
+  bool _savingPassword = false;
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_didLoad) return;
-    _didLoad = true;
-    _loadUserProfile();
+    if (_profile == null) _loadUserProfile();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _addressCtrl.dispose();
+    _photoCtrl.dispose();
+    _currentPasswordCtrl.dispose();
+    _newPasswordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserProfile() async {
-    try {
-      // Ambil session dari auth
-      final auth = AuthScope.of(context);
-      final session = auth.session;
+    final session = AuthScope.of(context).session;
+    final result = await UserRepository.getProfile(
+      displayName: session?.displayName ?? 'User',
+      email: session?.email ?? '',
+      role: session?.role.label ?? 'User',
+    );
+    if (!mounted) return;
 
-      if (session != null) {
-        // TODO: Untuk integrasi lebih lanjut, bisa fetch data lebih lengkap dari backend
-        // Saat ini menggunakan data dari session yang sudah login
-        setState(() {
-          _userProfile = UserProfile(
-            id: '',
-            email: session.email,
-            displayName: session.displayName,
-            role: session.role.label,
-          );
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _userProfile = UserProfile(
-            id: '',
-            email: '',
-            displayName: 'User',
-            role: 'User',
-          );
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading user profile: $e');
-      setState(() => _isLoading = false);
+    final profile = result.data ??
+        UserProfile(
+          id: '',
+          email: session?.email ?? '',
+          displayName: session?.displayName ?? 'User',
+          role: session?.role.label ?? 'User',
+        );
+    setState(() {
+      _profile = profile;
+      _nameCtrl.text = profile.displayName;
+      _phoneCtrl.text = profile.phone ?? '';
+      _addressCtrl.text = profile.address ?? '';
+      _photoCtrl.text = profile.photoUrl ?? '';
+      _loading = false;
+    });
+  }
+
+  Future<void> _saveProfile() async {
+    if (!(_formKey.currentState?.validate() ?? false) || _profile == null) {
+      return;
     }
+
+    setState(() => _savingProfile = true);
+    final updated = _profile!.copyWith(
+      displayName: _nameCtrl.text.trim(),
+      phone: _emptyToNull(_phoneCtrl.text),
+      address: _emptyToNull(_addressCtrl.text),
+      photoUrl: _emptyToNull(_photoCtrl.text),
+    );
+    final result = await UserRepository.updateProfile(updated);
+    if (!mounted) return;
+
+    final profile = result.data ?? updated;
+    setState(() {
+      _profile = profile;
+      _savingProfile = false;
+    });
+    await AuthScope.of(context).updateDisplayName(profile.displayName);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profil berhasil diperbarui')),
+    );
+  }
+
+  Future<void> _changePassword() async {
+    if (_newPasswordCtrl.text.length < 4) {
+      _showSnack('Password baru minimal 4 karakter');
+      return;
+    }
+    if (_newPasswordCtrl.text != _confirmPasswordCtrl.text) {
+      _showSnack('Konfirmasi password tidak cocok');
+      return;
+    }
+    if (_currentPasswordCtrl.text.isEmpty) {
+      _showSnack('Masukkan password saat ini');
+      return;
+    }
+
+    setState(() => _savingPassword = true);
+    final result = await UserRepository.changePassword(
+      currentPassword: _currentPasswordCtrl.text,
+      newPassword: _newPasswordCtrl.text,
+    );
+    if (!mounted) return;
+
+    setState(() => _savingPassword = false);
+    if (result.isSuccess) {
+      _currentPasswordCtrl.clear();
+      _newPasswordCtrl.clear();
+      _confirmPasswordCtrl.clear();
+      _showSnack('Kata sandi berhasil diubah');
+    } else {
+      _showSnack(result.error ?? 'Gagal mengubah kata sandi');
+    }
+  }
+
+  String? _emptyToNull(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Profil Saya')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
+    final profile = _profile;
 
     return Scaffold(
+      backgroundColor: UserTheme.background,
       appBar: AppBar(
-        title: const Text('Profil Saya'),
-        elevation: 0,
+        backgroundColor: Colors.white,
+        title: const Text(
+          'Profil Saya',
+          style: TextStyle(
+            color: UserTheme.primaryDark,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Card profil utama
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const CircleAvatar(
-                    radius: 50,
-                    backgroundColor: AppTheme.primaryGreen,
-                    child: Icon(
-                      Icons.person,
-                      size: 50,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _userProfile?.displayName ?? 'User',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+      body: _loading || profile == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+              children: [
+                _ProfilePreview(profile: profile),
+                const SizedBox(height: 20),
+                Form(
+                  key: _formKey,
+                  child: _SectionCard(
+                    title: 'Informasi Profil',
+                    children: [
+                      _InputField(
+                        controller: _nameCtrl,
+                        label: 'Nama',
+                        icon: Icons.person_outline_rounded,
+                        validator: (value) {
+                          if ((value ?? '').trim().isEmpty) {
+                            return 'Nama wajib diisi';
+                          }
+                          return null;
+                        },
+                      ),
+                      _InputField(
+                        controller: _phoneCtrl,
+                        label: 'Nomor Telepon',
+                        icon: Icons.phone_outlined,
+                        keyboardType: TextInputType.phone,
+                      ),
+                      _InputField(
+                        controller: _addressCtrl,
+                        label: 'Alamat',
+                        icon: Icons.location_on_outlined,
+                        maxLines: 2,
+                      ),
+                      _InputField(
+                        controller: _photoCtrl,
+                        label: 'URL Foto Profil',
+                        icon: Icons.image_outlined,
+                        keyboardType: TextInputType.url,
+                      ),
+                      const SizedBox(height: 6),
+                      FilledButton.icon(
+                        onPressed: _savingProfile ? null : _saveProfile,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(
+                            _savingProfile ? 'Menyimpan...' : 'Simpan Profil'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: UserTheme.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
-                    textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _userProfile?.email ?? '',
-                    style: TextStyle(color: Colors.grey.shade700),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
+                ),
+                const SizedBox(height: 18),
+                _SectionCard(
+                  title: 'Ubah Kata Sandi',
+                  children: [
+                    _PasswordField(
+                      controller: _currentPasswordCtrl,
+                      label: 'Password Saat Ini',
+                      obscure: _obscureCurrent,
+                      onToggle: () =>
+                          setState(() => _obscureCurrent = !_obscureCurrent),
                     ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                    _PasswordField(
+                      controller: _newPasswordCtrl,
+                      label: 'Password Baru',
+                      obscure: _obscureNew,
+                      onToggle: () =>
+                          setState(() => _obscureNew = !_obscureNew),
                     ),
-                    child: Text(
-                      _userProfile?.role ?? 'User',
-                      style: TextStyle(
-                        color: AppTheme.primaryGreen,
-                        fontWeight: FontWeight.w600,
+                    _PasswordField(
+                      controller: _confirmPasswordCtrl,
+                      label: 'Konfirmasi Password',
+                      obscure: _obscureConfirm,
+                      onToggle: () =>
+                          setState(() => _obscureConfirm = !_obscureConfirm),
+                    ),
+                    const SizedBox(height: 6),
+                    FilledButton.icon(
+                      onPressed: _savingPassword ? null : _changePassword,
+                      icon: const Icon(Icons.lock_reset_rounded),
+                      label: Text(
+                        _savingPassword ? 'Menyimpan...' : 'Simpan Password',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: UserTheme.primaryDark,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _ProfilePreview extends StatelessWidget {
+  const _ProfilePreview({required this.profile});
+
+  final UserProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final photoUrl = profile.photoUrl;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 38,
+            backgroundColor: UserTheme.softBlue,
+            backgroundImage: photoUrl == null || photoUrl.isEmpty
+                ? null
+                : NetworkImage(photoUrl),
+            child: photoUrl == null || photoUrl.isEmpty
+                ? Text(
+                    profile.displayName.isEmpty
+                        ? 'U'
+                        : profile.displayName[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: UserTheme.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 28,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  profile.displayName,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Section: Informasi Pribadi
-          Text(
-            'Informasi Pribadi',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
                 ),
-          ),
-          const SizedBox(height: 12),
-          _InfoTile(
-            icon: Icons.email_outlined,
-            label: 'Email',
-            value: _userProfile?.email ?? '',
-          ),
-          _InfoTile(
-            icon: Icons.phone_outlined,
-            label: 'Nomor Telepon',
-            value: _userProfile?.phone ?? 'Belum diisi',
-          ),
-          _InfoTile(
-            icon: Icons.location_on_outlined,
-            label: 'Alamat',
-            value: _userProfile?.address ?? 'Belum diisi',
-          ),
-          const SizedBox(height: 24),
-          // Section: Aksi
-          Text(
-            'Pengaturan',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 12),
-          _ActionTile(
-            icon: Icons.edit,
-            label: 'Edit Profil',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Edit profil akan segera tersedia')),
-              );
-            },
-          ),
-          _ActionTile(
-            icon: Icons.lock_outline,
-            label: 'Ubah Kata Sandi',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Ubah kata sandi akan segera tersedia')),
-              );
-            },
-          ),
-          _ActionTile(
-            icon: Icons.logout,
-            label: 'Keluar',
-            trailing: Icons.chevron_right,
-            onTap: () {
-              _showLogoutDialog(context);
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Keluar dari akun?'),
-        content: const Text(
-            'Apakah Anda yakin ingin keluar? Anda harus login kembali untuk mengakses akun.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () {
-              final auth = AuthScope.of(context);
-              auth.logout();
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            child: const Text(
-              'Keluar',
-              style: TextStyle(color: Colors.red),
+                const SizedBox(height: 5),
+                Text(profile.email,
+                    style: const TextStyle(color: UserTheme.muted)),
+              ],
             ),
           ),
         ],
@@ -225,62 +327,116 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
   }
 }
 
-class _InfoTile extends StatelessWidget {
-  const _InfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.children});
 
-  final IconData icon;
-  final String label;
-  final String value;
+  final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(icon, color: AppTheme.primaryGreen),
-        title: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.grey,
-            fontWeight: FontWeight.w500,
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
           ),
-        ),
-        subtitle: Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge,
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _InputField extends StatelessWidget {
+  const _InputField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.keyboardType,
+    this.maxLines = 1,
+    this.validator,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final int maxLines;
+  final String? Function(String?)? validator;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          filled: true,
+          fillColor: const Color(0xFFF7F9FC),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );
   }
 }
 
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.icon,
+class _PasswordField extends StatelessWidget {
+  const _PasswordField({
+    required this.controller,
     required this.label,
-    required this.onTap,
-    this.trailing,
+    required this.obscure,
+    required this.onToggle,
   });
 
-  final IconData icon;
+  final TextEditingController controller;
   final String label;
-  final VoidCallback onTap;
-  final IconData? trailing;
+  final bool obscure;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(icon, color: AppTheme.primaryGreen),
-        title: Text(label),
-        trailing: Icon(trailing ?? Icons.chevron_right),
-        onTap: onTap,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.lock_outline),
+          suffixIcon: IconButton(
+            onPressed: onToggle,
+            icon: Icon(obscure
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined),
+          ),
+          filled: true,
+          fillColor: const Color(0xFFF7F9FC),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
       ),
     );
   }

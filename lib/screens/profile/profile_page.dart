@@ -7,8 +7,10 @@ import '../../models/user_profile.dart';
 import '../user/user_theme.dart';
 import '../user/user_widgets.dart';
 import 'billing_list_page.dart';
+import 'favorite_merchants_page.dart';
 import 'notification_list_page.dart';
 import 'order_history_page.dart';
+import 'user_profile_detail_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -119,6 +121,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   _ProfileHeader(
                     profile: _profile,
                     sessionName: session?.displayName,
+                    onTap: () => Navigator.of(context)
+                        .push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const UserProfileDetailPage(),
+                          ),
+                        )
+                        .then((_) => _load()),
                   ),
                   const SizedBox(height: 18),
                   _KosCodeCard(
@@ -145,6 +154,26 @@ class _ProfilePageState extends State<ProfilePage> {
                     value: _roomLabel(_profile),
                   ),
                   const SizedBox(height: 18),
+                  _ActionTile(
+                    icon: Icons.person_outline_rounded,
+                    label: 'Edit Profil',
+                    onTap: () => Navigator.of(context)
+                        .push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const UserProfileDetailPage(),
+                          ),
+                        )
+                        .then((_) => _load()),
+                  ),
+                  _ActionTile(
+                    icon: Icons.favorite_border_rounded,
+                    label: 'Favorite',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const FavoriteMerchantsPage(),
+                      ),
+                    ),
+                  ),
                   _ActionTile(
                     icon: Icons.receipt_long_outlined,
                     label: 'Tagihan & Pembayaran',
@@ -193,64 +222,77 @@ class _ProfilePageState extends State<ProfilePage> {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile, required this.sessionName});
+  const _ProfileHeader({
+    required this.profile,
+    required this.sessionName,
+    required this.onTap,
+  });
 
   final UserProfile? profile;
   final String? sessionName;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final name = profile?.displayName ?? sessionName ?? 'User';
     final photoUrl = profile?.photoUrl;
 
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 36,
-            backgroundColor: UserTheme.softBlue,
-            backgroundImage: photoUrl == null || photoUrl.isEmpty
-                ? null
-                : NetworkImage(photoUrl),
-            child: photoUrl == null || photoUrl.isEmpty
-                ? Text(
-                    name.isEmpty ? 'U' : name[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: UserTheme.primary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 28,
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundColor: UserTheme.softBlue,
+                backgroundImage: photoUrl == null || photoUrl.isEmpty
+                    ? null
+                    : NetworkImage(photoUrl),
+                child: photoUrl == null || photoUrl.isEmpty
+                    ? Text(
+                        name.isEmpty ? 'U' : name[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: UserTheme.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 28,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: UserTheme.text,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: UserTheme.text,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      profile?.kosAccessCode ?? 'Kode kos belum tersambung',
+                      style: const TextStyle(color: UserTheme.muted),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  profile?.kosAccessCode ?? 'Kode kos belum tersambung',
-                  style: const TextStyle(color: UserTheme.muted),
-                ),
-              ],
-            ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: UserTheme.muted),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

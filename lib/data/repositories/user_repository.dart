@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/api_service.dart';
 import '../../models/billing_record.dart';
 import '../../models/notification.dart';
@@ -9,6 +13,10 @@ import 'kos_repository.dart' show RepoResult;
 
 class UserRepository {
   UserRepository._();
+
+  static const _profileKey = 'local_user_profile';
+  static const _favoriteMerchantsKey = 'favorite_merchants';
+  static const _billingStatusKey = 'local_billing_statuses';
 
   static Future<RepoResult<UserDashboard>> getDashboard({
     required String displayName,
@@ -27,7 +35,8 @@ class UserRepository {
     }
   }
 
-  static Future<RepoResult<List<UserMerchant>>> getMerchants(String type) async {
+  static Future<RepoResult<List<UserMerchant>>> getMerchants(
+      String type) async {
     final res = await ApiService.get(
       'api/user_merchants',
       queryParams: {'type': type},
@@ -79,7 +88,7 @@ class UserRepository {
       final list = (res.data!['data'] as List)
           .map((e) => BillingRecord.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list);
+      return RepoResult.ok(await _applyLocalBillingStatuses(list));
     } catch (_) {
       return const RepoResult.fail('Gagal membaca data tagihan');
     }
@@ -127,28 +136,86 @@ class UserRepository {
     final res = await ApiService.get('api/user_profile');
 
     if (!res.success) {
-      return RepoResult.ok(UserProfile(
+      return RepoResult.ok(await _mergeLocalProfile(UserProfile(
         id: '',
         email: email,
         displayName: displayName,
         role: role,
-      ));
+      )));
     }
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserProfile.fromJson(data));
+      return RepoResult.ok(
+          await _mergeLocalProfile(UserProfile.fromJson(data)));
     } catch (_) {
-      return RepoResult.ok(UserProfile(
+      return RepoResult.ok(await _mergeLocalProfile(UserProfile(
         id: '',
         email: email,
         displayName: displayName,
         role: role,
-      ));
+      )));
     }
   }
 
-  static Future<RepoResult<UserProfile>> connectKosCode(String accessCode) async {
+  static Future<RepoResult<UserProfile>> updateProfile(
+      UserProfile profile) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
+
+    final res = await ApiService.put('api/user_profile', {
+      'displayName': profile.displayName,
+      'phone': profile.phone,
+      'address': profile.address,
+      'photoUrl': profile.photoUrl,
+    });
+
+    if (!res.success) return RepoResult.ok(profile);
+
+    try {
+      final data = res.data!['data'] as Map<String, dynamic>?;
+      return RepoResult.ok(data == null ? profile : UserProfile.fromJson(data));
+    } catch (_) {
+      return RepoResult.ok(profile);
+    }
+  }
+
+  static Future<RepoResult<bool>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final res = await ApiService.post('api/change-password', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal mengubah kata sandi');
+    }
+    return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<BillingRecord>> submitBillingPayment({
+    required BillingRecord billing,
+    required String paymentMethod,
+  }) async {
+    final updated = billing.copyWith(
+      status: 'pending',
+      paymentMethod: paymentMethod,
+      paymentDate: DateTime.now(),
+    );
+    await _saveLocalBillingStatus(updated);
+
+    await ApiService.post('api/user_billings/pay', {
+      'billingId': billing.id,
+      'paymentMethod': paymentMethod,
+    });
+
+    return RepoResult.ok(updated);
+  }
+
+  static Future<RepoResult<UserProfile>> connectKosCode(
+      String accessCode) async {
     final res = await ApiService.post('api/user_profile', {
       'accessCode': accessCode,
     });
@@ -161,9 +228,112 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       return RepoResult.ok(UserProfile.fromJson(data));
     } catch (_) {
-      return RepoResult.fail('Gagal membaca data profil terbaru');
+      return const RepoResult.fail('Gagal membaca data profil terbaru');
     }
   }
+
+  static Future<Set<String>> getFavoriteMerchantKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+  }
+
+  static Future<bool> isMerchantFavorite({
+    required String type,
+    required String merchantId,
+  }) async {
+    final keys = await getFavoriteMerchantKeys();
+    return keys.contains(_merchantKey(type, merchantId));
+  }
+
+  static Future<bool> toggleMerchantFavorite(UserMerchant merchant) async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys =
+        (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+    final key = _merchantKey(merchant.type, merchant.id);
+    final next = !keys.contains(key);
+    if (next) {
+      keys.add(key);
+    } else {
+      keys.remove(key);
+    }
+    await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
+    return next;
+  }
+
+  static Future<RepoResult<List<UserMerchant>>> getFavoriteMerchants() async {
+    final keys = await getFavoriteMerchantKeys();
+    if (keys.isEmpty) return const RepoResult.ok([]);
+
+    final items = <UserMerchant>[];
+    for (final type in {'laundry', 'catering', 'cafe'}) {
+      final result = await getMerchants(type);
+      final merchants = result.data ?? const <UserMerchant>[];
+      items.addAll(
+        merchants.where(
+            (merchant) => keys.contains(_merchantKey(type, merchant.id))),
+      );
+    }
+    return RepoResult.ok(items);
+  }
+
+  static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_profileKey);
+    if (raw == null || raw.isEmpty) return profile;
+
+    try {
+      final local =
+          UserProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      return profile.copyWith(
+        displayName: local.displayName.isNotEmpty ? local.displayName : null,
+        phone: local.phone,
+        address: local.address,
+        photoUrl: local.photoUrl,
+      );
+    } catch (_) {
+      return profile;
+    }
+  }
+
+  static Future<List<BillingRecord>> _applyLocalBillingStatuses(
+    List<BillingRecord> billings,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_billingStatusKey);
+    if (raw == null || raw.isEmpty) return billings;
+
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return billings.map((billing) {
+        final local = map[billing.id] as Map<String, dynamic>?;
+        if (local == null || billing.status == 'lunas') return billing;
+        return billing.copyWith(
+          status: local['status'] as String?,
+          paymentMethod: local['paymentMethod'] as String?,
+          paymentDate: DateTime.tryParse(local['paymentDate'] as String? ?? ''),
+        );
+      }).toList();
+    } catch (_) {
+      return billings;
+    }
+  }
+
+  static Future<void> _saveLocalBillingStatus(BillingRecord billing) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_billingStatusKey);
+    final map = raw == null || raw.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(raw) as Map<String, dynamic>;
+    map[billing.id] = {
+      'status': billing.status,
+      'paymentMethod': billing.paymentMethod,
+      'paymentDate': billing.paymentDate?.toIso8601String(),
+    };
+    await prefs.setString(_billingStatusKey, jsonEncode(map));
+  }
+
+  static String _merchantKey(String type, String merchantId) =>
+      '$type:$merchantId';
 
   static Future<RepoResult<bool>> submitMerchantRating({
     required String type,
@@ -182,7 +352,7 @@ class UserRepository {
       return RepoResult.fail(res.message ?? 'Gagal mengirim ulasan');
     }
 
-    return RepoResult.ok(true);
+    return const RepoResult.ok(true);
   }
 
   static List<UserMerchant> _fallbackMerchants(String type) {
@@ -404,8 +574,7 @@ class UserRepository {
               MerchantReview(
                 reviewer: 'Siti Rahma',
                 rating: 4,
-                comment:
-                    'Suasananya tenang banget, cocok buat fokus kerja.',
+                comment: 'Suasananya tenang banget, cocok buat fokus kerja.',
                 timeLabel: '1 minggu lalu',
               ),
             ],

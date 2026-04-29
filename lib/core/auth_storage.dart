@@ -3,10 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Menyimpan JWT token dan data user di SharedPreferences.
 /// Tambahkan dependency: shared_preferences: ^2.2.0
 class AuthStorage {
-  static const _keyToken       = 'auth_token';
-  static const _keyUserId      = 'user_id';
+  static const _keyToken = 'auth_token';
+  static const _keyUserId = 'user_id';
   static const _keyDisplayName = 'display_name';
-  static const _keyRole        = 'user_role';
+  static const _keyRole = 'user_role';
 
   static Future<void> saveAuth({
     required String token,
@@ -34,6 +34,11 @@ class AuthStorage {
   static Future<String?> getRole() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keyRole);
+  }
+
+  static Future<void> updateDisplayName(String displayName) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDisplayName, displayName);
   }
 
   static Future<bool> isLoggedIn() async {

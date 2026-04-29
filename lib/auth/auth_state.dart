@@ -22,6 +22,18 @@ class AuthState extends ChangeNotifier {
   AuthSession? get session => _session;
   bool get isLoggedIn => _session != null;
 
+  Future<void> updateDisplayName(String displayName) async {
+    final current = _session;
+    if (current == null) return;
+    _session = AuthSession(
+      email: current.email,
+      role: current.role,
+      displayName: displayName,
+    );
+    await AuthStorage.updateDisplayName(displayName);
+    notifyListeners();
+  }
+
   Future<bool> loginWithCredentials({
     required String email,
     required String password,

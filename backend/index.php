@@ -36,9 +36,11 @@ if ($path === 'api/catering_places')     { require_once __DIR__ . '/api/catering
 if ($path === 'api/user_dashboard')       { require_once __DIR__ . '/api/user_dashboard.php';      exit; }
 if ($path === 'api/user_merchants')       { require_once __DIR__ . '/api/user_merchants.php';      exit; }
 if ($path === 'api/user_billings')        { require_once __DIR__ . '/api/user_billings.php';       exit; }
+if ($path === 'api/user_billings/pay')    { require_once __DIR__ . '/api/user_billings_pay.php';   exit; }
 if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_orders.php';         exit; }
 if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
+if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-password.php';     exit; }
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
 
 // ── Endpoint owner (butuh JWT) ────────────────────────────────────────────────
@@ -75,9 +77,11 @@ if (empty($path)) {
             'GET  /api/user_merchants?type=laundry|catering|cafe',
             'GET  /api/user_merchants?type=cafe&id=c1',
             'GET  /api/user_billings',
+            'POST /api/user_billings/pay',
             'GET  /api/user_orders',
             'GET  /api/user_notifications',
-            'GET|POST /api/user_profile',
+            'GET|POST|PUT /api/user_profile',
+            'POST /api/change-password',
             'POST /api/user_ratings',
             // Owner (JWT required)
             'GET  /api/kos_listings',

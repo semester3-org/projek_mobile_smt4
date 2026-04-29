@@ -216,6 +216,7 @@ CREATE TABLE `kos_rooms` (
   `room_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: A1, B2, 101',
   `room_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: Standard, Deluxe, AC',
   `price_per_month` int NOT NULL,
+  `rental_type` enum('daily','monthly','yearly') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly',
   `status` enum('available','occupied','maintenance') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'available',
   `max_occupant` int NOT NULL DEFAULT '1',
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
@@ -227,9 +228,9 @@ CREATE TABLE `kos_rooms` (
 -- Dumping data for table `kos_rooms`
 --
 
-INSERT INTO `kos_rooms` (`id`, `kos_id`, `room_number`, `room_type`, `price_per_month`, `status`, `max_occupant`, `description`, `created_at`, `updated_at`) VALUES
-('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'available', 1, NULL, '2026-04-26 15:35:22', '2026-04-26 15:35:22'),
-('9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'A01', 'Standard Single', 200000, 'available', 1, NULL, '2026-04-26 15:19:28', '2026-04-26 15:19:28');
+INSERT INTO `kos_rooms` (`id`, `kos_id`, `room_number`, `room_type`, `price_per_month`, `rental_type`, `status`, `max_occupant`, `description`, `created_at`, `updated_at`) VALUES
+('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'monthly', 'available', 1, NULL, '2026-04-26 15:35:22', '2026-04-26 15:35:22'),
+('9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'A01', 'Standard Single', 200000, 'monthly', 'available', 1, NULL, '2026-04-26 15:19:28', '2026-04-26 15:19:28');
 
 -- --------------------------------------------------------
 

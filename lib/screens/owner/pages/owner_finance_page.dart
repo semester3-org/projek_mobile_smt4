@@ -56,18 +56,64 @@ class _PaymentItem {
     this.paidAt,
   });
 
-  final int id;                      // payment_history.id
-  final String registrationId;       // payment_history.registration_id (FK)
-  final String tenantName;           // JOIN users.display_name
-  final String roomNumber;           // JOIN kos_rooms.room_number
-  final String kosTitle;             // JOIN kos_listings.title
-  final int amount;                  // payment_history.amount
-  final String periodMonth;          // payment_history.period_month (YYYY-MM)
-  final PaymentStatus paymentStatus; // payment_history.payment_status
-  final String? paymentMethod;       // payment_history.payment_method
-  final String? proofUrl;            // payment_history.proof_url
-  final String? paidAt;              // payment_history.paid_at
+  final int id;
+  final String registrationId;
+  final String tenantName;
+  final String roomNumber;
+  final String kosTitle;
+  final int amount;
+  final String periodMonth;
+  final PaymentStatus paymentStatus;
+  final String? paymentMethod;
+  final String? proofUrl;
+  final String? paidAt;
 }
+
+// ── Data grafik per tab ────────────────────────────────────────────────────────
+
+class _ChartData {
+  const _ChartData({required this.label, required this.value});
+  final String label;
+  final double value; // 0.0 – 1.0 (proporsi tinggi bar)
+}
+
+// Harian: 7 hari terakhir
+const _dailyData = [
+  _ChartData(label: 'Sen', value: 0.55),
+  _ChartData(label: 'Sel', value: 0.35),
+  _ChartData(label: 'Rab', value: 0.75),
+  _ChartData(label: 'Kam', value: 0.50),
+  _ChartData(label: 'Jum', value: 0.22),
+  _ChartData(label: 'Sab', value: 0.42),
+  _ChartData(label: 'Min', value: 0.32),
+];
+
+// Bulanan: 12 bulan
+const _monthlyData = [
+  _ChartData(label: 'Jan', value: 0.40),
+  _ChartData(label: 'Feb', value: 0.55),
+  _ChartData(label: 'Mar', value: 0.45),
+  _ChartData(label: 'Apr', value: 0.70),
+  _ChartData(label: 'Mei', value: 0.60),
+  _ChartData(label: 'Jun', value: 0.80),
+  _ChartData(label: 'Jul', value: 0.65),
+  _ChartData(label: 'Agu', value: 0.50),
+  _ChartData(label: 'Sep', value: 0.75),
+  _ChartData(label: 'Okt', value: 0.85),
+  _ChartData(label: 'Nov', value: 0.60),
+  _ChartData(label: 'Des', value: 0.90),
+];
+
+// Tahunan: 5 tahun terakhir
+const _yearlyData = [
+  _ChartData(label: '2022', value: 0.45),
+  _ChartData(label: '2023', value: 0.60),
+  _ChartData(label: '2024', value: 0.72),
+  _ChartData(label: '2025', value: 0.85),
+  _ChartData(label: '2026', value: 0.50),
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class OwnerFinancePage extends StatefulWidget {
   const OwnerFinancePage({super.key});
@@ -77,11 +123,36 @@ class OwnerFinancePage extends StatefulWidget {
 }
 
 class _OwnerFinancePageState extends State<OwnerFinancePage> {
-  int _tab = 0;
+  int _tab = 0; // 0 = Harian, 1 = Bulanan, 2 = Tahunan
   PaymentStatus? _filterStatus;
   String _filterKosId = 'semua';
 
-  // Data dummy sesuai struktur payment_history
+  // Grafik menyesuaikan tab
+  List<_ChartData> get _chartData {
+    switch (_tab) {
+      case 1:
+        return _monthlyData;
+      case 2:
+        return _yearlyData;
+      default:
+        return _dailyData;
+    }
+  }
+
+  // Indeks bar yang di-highlight (bar tertinggi)
+  int get _highlightIndex {
+    final data = _chartData;
+    double max = 0;
+    int idx = 0;
+    for (int i = 0; i < data.length; i++) {
+      if (data[i].value > max) {
+        max = data[i].value;
+        idx = i;
+      }
+    }
+    return idx;
+  }
+
   final _payments = const <_PaymentItem>[
     _PaymentItem(
       id: 1,
@@ -193,14 +264,17 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                   spacing: 8,
                   children: [
                     (null, 'Semua'),
-                    ...PaymentStatus.values.map((s) => (s as PaymentStatus?, s.label)),
-                  ].map((e) => ChoiceChip(
-                    label: Text(e.$2),
-                    selected: _filterStatus == e.$1,
-                    onSelected: (_) {
-                      setModalState(() => _filterStatus = e.$1);
-                    },
-                  )).toList(),
+                    ...PaymentStatus.values
+                        .map((s) => (s as PaymentStatus?, s.label)),
+                  ]
+                      .map((e) => ChoiceChip(
+                            label: Text(e.$2),
+                            selected: _filterStatus == e.$1,
+                            onSelected: (_) {
+                              setModalState(() => _filterStatus = e.$1);
+                            },
+                          ))
+                      .toList(),
                 ),
                 const SizedBox(height: 16),
                 const Text('Properti',
@@ -213,13 +287,15 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                     ('Kos Hijau Asri', 'Kos Hijau Asri'),
                     ('Kost Minimalis Putih', 'Kost Minimalis Putih'),
                     ('Green House Residence', 'Green House Residence'),
-                  ].map((e) => ChoiceChip(
-                    label: Text(e.$2),
-                    selected: _filterKosId == e.$1,
-                    onSelected: (_) {
-                      setModalState(() => _filterKosId = e.$1);
-                    },
-                  )).toList(),
+                  ]
+                      .map((e) => ChoiceChip(
+                            label: Text(e.$2),
+                            selected: _filterKosId == e.$1,
+                            onSelected: (_) {
+                              setModalState(() => _filterKosId = e.$1);
+                            },
+                          ))
+                      .toList(),
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -256,7 +332,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
               children: [
                 Center(
                   child: Container(
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: Colors.grey.shade300,
                       borderRadius: BorderRadius.circular(2),
@@ -268,13 +345,21 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 18)),
                 const Divider(height: 24),
-                _DetailRow(label: 'registration_id', value: item.registrationId),
+                _DetailRow(
+                    label: 'registration_id', value: item.registrationId),
                 _DetailRow(label: 'Penyewa', value: item.tenantName),
-                _DetailRow(label: 'Kamar', value: '${item.roomNumber} • ${item.kosTitle}'),
+                _DetailRow(
+                    label: 'Kamar',
+                    value: '${item.roomNumber} • ${item.kosTitle}'),
                 _DetailRow(label: 'period_month', value: item.periodMonth),
-                _DetailRow(label: 'amount', value: _formatPrice(item.amount)),
-                _DetailRow(label: 'payment_status', value: item.paymentStatus.dbValue),
-                _DetailRow(label: 'payment_method', value: item.paymentMethod ?? '-'),
+                _DetailRow(
+                    label: 'amount', value: _formatPrice(item.amount)),
+                _DetailRow(
+                    label: 'payment_status',
+                    value: item.paymentStatus.dbValue),
+                _DetailRow(
+                    label: 'payment_method',
+                    value: item.paymentMethod ?? '-'),
                 _DetailRow(label: 'paid_at', value: item.paidAt ?? '-'),
                 const SizedBox(height: 16),
                 if (item.paymentStatus == PaymentStatus.unpaid ||
@@ -286,7 +371,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('Fitur konfirmasi pembayaran coming soon!')),
+                              content: Text(
+                                  'Fitur konfirmasi pembayaran coming soon!')),
                         );
                       },
                       icon: const Icon(Icons.check_circle_outline),
@@ -313,7 +399,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
   Widget build(BuildContext context) {
     const tabs = ['Harian', 'Bulanan', 'Tahunan'];
     final filtered = _filtered;
-    final hasActiveFilter = _filterStatus != null || _filterKosId != 'semua';
+    final hasActiveFilter =
+        _filterStatus != null || _filterKosId != 'semua';
 
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
@@ -326,6 +413,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
             style: TextStyle(color: Colors.grey.shade700),
           ),
           const SizedBox(height: 12),
+          // ── Tab Harian / Bulanan / Tahunan ─────────────────────────────
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -403,7 +491,25 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
             ],
           ),
           const SizedBox(height: 8),
-          const _ChartStub(),
+          // ── Grafik dinamis ──────────────────────────────────────────────
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.05, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: _DynamicChart(
+              key: ValueKey(_tab),
+              data: _chartData,
+              highlightIndex: _highlightIndex,
+            ),
+          ),
           const SizedBox(height: 12),
           const _EfficiencyCard(),
           const SizedBox(height: 14),
@@ -419,7 +525,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
               OutlinedButton.icon(
                 onPressed: _showFilterDialog,
                 icon: const Icon(Icons.filter_list_rounded),
-                label: Text(hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
+                label: Text(
+                    hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
               ),
             ],
           ),
@@ -441,6 +548,89 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     );
   }
 }
+
+// ── Grafik dinamis ─────────────────────────────────────────────────────────────
+
+class _DynamicChart extends StatelessWidget {
+  const _DynamicChart({
+    super.key,
+    required this.data,
+    required this.highlightIndex,
+  });
+
+  final List<_ChartData> data;
+  final int highlightIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    // Untuk bulan (12 item) gunakan scroll horizontal
+    final isScrollable = data.length > 7;
+
+    final bars = List.generate(data.length, (i) {
+      final item = data[i];
+      final isHighlight = i == highlightIndex;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: SizedBox(
+          width: isScrollable ? 40 : null,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+                height: 120 * item.value,
+                decoration: BoxDecoration(
+                  color: isHighlight
+                      ? AppTheme.primaryGreen
+                      : AppTheme.primaryGreen.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                item.label,
+                style: TextStyle(
+                  color: isHighlight
+                      ? AppTheme.primaryGreen
+                      : Colors.grey.shade700,
+                  fontSize: isScrollable ? 10 : 12,
+                  fontWeight: isHighlight
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+
+    return Card(
+      child: SizedBox(
+        height: 170,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: isScrollable
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: bars,
+                  ),
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children:
+                      bars.map((b) => Expanded(child: b)).toList(),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Widgets pendukung (tidak berubah dari versi asli) ─────────────────────────
 
 class _StatusSummaryChip extends StatelessWidget {
   const _StatusSummaryChip({
@@ -469,8 +659,7 @@ class _StatusSummaryChip extends StatelessWidget {
               style: TextStyle(
                   fontWeight: FontWeight.w900, color: color, fontSize: 18)),
           const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(color: color, fontSize: 12)),
+          Text(label, style: TextStyle(color: color, fontSize: 12)),
         ],
       ),
     );
@@ -496,8 +685,8 @@ class _TxTile extends StatelessWidget {
         onTap: onTap,
         leading: CircleAvatar(
           backgroundColor: AppTheme.surfaceTint,
-          child: Icon(Icons.account_balance_rounded,
-              color: AppTheme.primaryGreen),
+          child:
+              Icon(Icons.account_balance_rounded, color: AppTheme.primaryGreen),
         ),
         title: Text(payment.tenantName,
             style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -513,8 +702,8 @@ class _TxTile extends StatelessWidget {
               status == PaymentStatus.paid
                   ? '+ ${_formatPrice(payment.amount)}'
                   : _formatPrice(payment.amount),
-              style: TextStyle(
-                  color: status.color, fontWeight: FontWeight.w900),
+              style:
+                  TextStyle(color: status.color, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 4),
             Container(
@@ -555,8 +744,7 @@ class _DetailRow extends StatelessWidget {
           Text(label,
               style: TextStyle(
                   color: Colors.grey.shade600, fontFamily: 'monospace')),
-          Text(value,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -603,10 +791,9 @@ class _MoneyCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     value,
-                    style:
-                        Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                   ),
                   const SizedBox(height: 4),
                   Text(delta,
@@ -615,53 +802,6 @@ class _MoneyCard extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChartStub extends StatelessWidget {
-  const _ChartStub();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: SizedBox(
-        height: 170,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(7, (i) {
-              final h = [0.55, 0.35, 0.75, 0.5, 0.22, 0.42, 0.32][i];
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Container(
-                        height: 120 * h,
-                        decoration: BoxDecoration(
-                          color: i == 2
-                              ? AppTheme.primaryGreen
-                              : AppTheme.primaryGreen.withOpacity(0.18),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'][i],
-                        style: TextStyle(
-                            color: Colors.grey.shade700, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ),
         ),
       ),
     );
@@ -717,8 +857,7 @@ class _EfficiencyCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '17 dari 20 kamar terisi',
-                  style:
-                      TextStyle(color: Colors.white.withOpacity(0.9)),
+                  style: TextStyle(color: Colors.white.withOpacity(0.9)),
                 ),
               ],
             ),

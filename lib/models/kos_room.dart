@@ -1,6 +1,53 @@
 import '../core/api_service.dart'; // lib/models/ → lib/core/
 
-// ── Enum ───────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enum tipe sewa
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum RentalType { daily, monthly, yearly }
+
+extension RentalTypeExt on RentalType {
+  String get label {
+    switch (this) {
+      case RentalType.daily:   return 'Harian';
+      case RentalType.monthly: return 'Bulanan';
+      case RentalType.yearly:  return 'Tahunan';
+    }
+  }
+
+  String get priceSuffix {
+    switch (this) {
+      case RentalType.daily:   return '/hari';
+      case RentalType.monthly: return '/bulan';
+      case RentalType.yearly:  return '/tahun';
+    }
+  }
+
+  String get priceLabel {
+    switch (this) {
+      case RentalType.daily:   return 'Harga per Hari';
+      case RentalType.monthly: return 'Harga per Bulan';
+      case RentalType.yearly:  return 'Harga per Tahun';
+    }
+  }
+
+  String get dbValue {
+    switch (this) {
+      case RentalType.daily:   return 'daily';
+      case RentalType.monthly: return 'monthly';
+      case RentalType.yearly:  return 'yearly';
+    }
+  }
+
+  static RentalType fromDb(String? value) {
+    switch (value) {
+      case 'daily':  return RentalType.daily;
+      case 'yearly': return RentalType.yearly;
+      default:       return RentalType.monthly;
+    }
+  }
+}
 
 enum RoomStatus { available, occupied, maintenance }
 
@@ -51,6 +98,7 @@ class KosRoom {
     required this.pricePerMonth,
     required this.status,
     required this.maxOccupant,
+    required this.rentalType,           
     this.facilities = const [],
     this.description,
     this.createdAt,
@@ -65,6 +113,7 @@ class KosRoom {
   final int pricePerMonth;
   final RoomStatus status;
   final int maxOccupant;
+  final RentalType rentalType;
   final List<RoomFacility> facilities;
   final String? description;
   final String? createdAt;
@@ -79,6 +128,7 @@ class KosRoom {
         pricePerMonth: json['pricePerMonth'] as int,
         status:        RoomStatusExt.fromDb(json['status'] as String),
         maxOccupant:   json['maxOccupant'] as int,
+        rentalType: RentalTypeExt.fromDb(json['rental_type'] as String? ?? 'monthly'), 
         facilities: ((json['facilities'] as List?) ?? const [])
             .map((e) => RoomFacility.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -146,6 +196,7 @@ class KosRoomRepository {
     required int pricePerMonth,
     required int maxOccupant,
     RoomStatus status = RoomStatus.available,
+    RentalType rentalType = RentalType.monthly,
     String? description,
   }) async {
     final res = await ApiService.post(_endpoint, {
@@ -155,6 +206,7 @@ class KosRoomRepository {
       'price_per_month': pricePerMonth,
       'max_occupant':    maxOccupant,
       'status':          status.dbValue,
+      'rental_type':     rentalType.dbValue,
       'description':     description,
     });
 

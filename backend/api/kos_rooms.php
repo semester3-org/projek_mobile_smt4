@@ -119,6 +119,7 @@ function handlePost(mysqli $conn, string $ownerId): void {
     $price        = (int)($body['price_per_month'] ?? 0);
     $maxOccupant  = (int)($body['max_occupant'] ?? 1);
     $status       = $body['status'] ?? 'available';
+    $rentalType   = $body['rental_type'] ?? 'monthly';
     $description  = trim($body['description'] ?? '');
     $facilityIds  = normalizeFacilityIds($body['facility_ids'] ?? []);
 
@@ -127,6 +128,9 @@ function handlePost(mysqli $conn, string $ownerId): void {
     }
     if (!in_array($status, ['available', 'occupied', 'maintenance'])) {
         throw new Exception('Status tidak valid. Gunakan: available, occupied, maintenance', 400);
+    }
+    if (!in_array($rentalType, ['daily', 'monthly', 'yearly'])) {
+        throw new Exception('rental_type tidak valid. Gunakan: daily, monthly, yearly', 400);
     }
 
     validateKosOwnership($conn, $kosId, $ownerId);
@@ -145,10 +149,10 @@ function handlePost(mysqli $conn, string $ownerId): void {
     $desc = $description ?: null;
 
     $stmt = $conn->prepare("
-        INSERT INTO kos_rooms (id, kos_id, room_number, room_type, price_per_month, status, max_occupant, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO kos_rooms (id, kos_id, room_number, room_type, price_per_month, status, max_occupant, rental_type, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt->bind_param("ssssisis", $id, $kosId, $roomNumber, $roomType, $price, $status, $maxOccupant, $desc);
+    $stmt->bind_param("ssssisiss", $id, $kosId, $roomNumber, $roomType, $price, $status, $maxOccupant, $rentalType, $desc);
     $stmt->execute();
     $stmt->close();
 
@@ -226,6 +230,14 @@ function handlePut(mysqli $conn, string $ownerId, string $roomId): void {
         }
         $fields[] = 'status = ?';
         $values[] = $body['status'];
+        $types   .= 's';
+    }
+    if (isset($body['rental_type'])) {
+        if (!in_array($body['rental_type'], ['daily', 'monthly', 'yearly'])) {
+            throw new Exception('rental_type tidak valid', 400);
+        }
+        $fields[] = 'rental_type = ?';
+        $values[] = $body['rental_type'];
         $types   .= 's';
     }
     if (array_key_exists('description', $body)) {
@@ -380,6 +392,7 @@ function formatRoom(mysqli $conn, array $row): array {
         'pricePerMonth' => (int)$row['price_per_month'],
         'status'        => $row['status'],
         'maxOccupant'   => (int)$row['max_occupant'],
+        'rental_type'   => $row['rental_type'] ?? 'monthly',
         'facilities'    => getRoomFacilities($conn, $row['id']),
         'description'   => $row['description'],
         'createdAt'     => $row['created_at'],

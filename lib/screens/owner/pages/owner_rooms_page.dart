@@ -1,10 +1,4 @@
 // lib/screens/owner/pages/owner_rooms_page.dart
-//
-// Perubahan dari versi dummy:
-//   - KosListingRepository.getMyListings() → GET /api/kos_listings (JWT)
-//   - KosRoomRepository.*                  → GET/POST/PUT/DELETE /api/kos_rooms (JWT)
-//
-// Tidak ada perubahan UI sama sekali — hanya lapisan data yang diganti.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,8 +8,10 @@ import '../../../core/api_service.dart';
 import '../../../models/kos_room.dart';
 import '../../../models/kos_listing.dart';
 
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Repository: KosListing milik owner
+// Repository helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RepoResult<T> {
@@ -31,11 +27,9 @@ class KosListingRepository {
 
   static Future<_RepoResult<List<KosListing>>> getMyListings() async {
     final res = await ApiService.get('api/kos_listings');
-
     if (!res.success) {
       return _RepoResult.fail(res.message ?? 'Gagal memuat daftar kos');
     }
-
     try {
       final list = (res.data!['data'] as List)
           .map((e) => KosListing.fromJson(e as Map<String, dynamic>))
@@ -60,13 +54,12 @@ class KosListingRepository {
       'price_per_month': pricePerMonth,
       'owner_contact': ownerContact,
     });
-
     if (!res.success) {
       return _RepoResult.fail(res.message ?? 'Gagal menambah kos');
     }
-
     try {
-      final item = KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
+      final item =
+          KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
       return _RepoResult.ok(item);
     } catch (e) {
       return _RepoResult.fail('Gagal memproses data: $e');
@@ -74,34 +67,19 @@ class KosListingRepository {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Repository: KosRoom
-// ─────────────────────────────────────────────────────────────────────────────
-
 class FacilityOption {
-  const FacilityOption({
-    required this.id,
-    required this.name,
-  });
-
+  const FacilityOption({required this.id, required this.name});
   final int id;
   final String name;
-
-  factory FacilityOption.fromJson(Map<String, dynamic> json) => FacilityOption(
-        id: (json['id'] as num).toInt(),
-        name: json['name'] as String,
-      );
+  factory FacilityOption.fromJson(Map<String, dynamic> json) =>
+      FacilityOption(id: (json['id'] as num).toInt(), name: json['name'] as String);
 }
 
 class RoomFacilityRepository {
   RoomFacilityRepository._();
-
   static Future<_RepoResult<List<FacilityOption>>> getAllFacilities() async {
     final res = await ApiService.get('api/facilities');
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal memuat fasilitas');
-    }
-
+    if (!res.success) return _RepoResult.fail(res.message ?? 'Gagal memuat fasilitas');
     try {
       final list = (res.data!['data'] as List)
           .map((e) => FacilityOption.fromJson(e as Map<String, dynamic>))
@@ -116,20 +94,11 @@ class RoomFacilityRepository {
 class KosRoomRepository {
   KosRoomRepository._();
 
-  // GET /api/kos_rooms?kos_id=xxx[&status=available]
-  static Future<_RepoResult<List<KosRoom>>> getRooms(
-    String kosId, {
-    String? statusFilter,
-  }) async {
+  static Future<_RepoResult<List<KosRoom>>> getRooms(String kosId, {String? statusFilter}) async {
     final params = <String, String>{'kos_id': kosId};
     if (statusFilter != null) params['status'] = statusFilter;
-
     final res = await ApiService.get('api/kos_rooms', queryParams: params);
-
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal memuat kamar');
-    }
-
+    if (!res.success) return _RepoResult.fail(res.message ?? 'Gagal memuat kamar');
     try {
       final list = (res.data!['data'] as List)
           .map((e) => KosRoom.fromJson(e as Map<String, dynamic>))
@@ -140,7 +109,6 @@ class KosRoomRepository {
     }
   }
 
-  // POST /api/kos_rooms
   static Future<_RepoResult<KosRoom>> createRoom({
     required String kosId,
     required String roomNumber,
@@ -148,25 +116,22 @@ class KosRoomRepository {
     required int pricePerMonth,
     required int maxOccupant,
     required RoomStatus status,
+    required RentalType rentalType,
     List<int> facilityIds = const [],
     String? description,
   }) async {
     final res = await ApiService.post('api/kos_rooms', {
-      'kos_id':         kosId,
-      'room_number':    roomNumber,
-      'room_type':      roomType,
+      'kos_id': kosId,
+      'room_number': roomNumber,
+      'room_type': roomType,
       'price_per_month': pricePerMonth,
-      'max_occupant':   maxOccupant,
-      'status':         status.dbValue,
-      'facility_ids':   facilityIds,
-      if (description != null && description.isNotEmpty)
-        'description': description,
+      'max_occupant': maxOccupant,
+      'status': status.dbValue,
+      'rental_type': rentalType.dbValue,
+      'facility_ids': facilityIds,
+      if (description != null && description.isNotEmpty) 'description': description,
     });
-
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal menambah kamar');
-    }
-
+    if (!res.success) return _RepoResult.fail(res.message ?? 'Gagal menambah kamar');
     try {
       final room = KosRoom.fromJson(res.data!['data'] as Map<String, dynamic>);
       return _RepoResult.ok(room);
@@ -175,21 +140,9 @@ class KosRoomRepository {
     }
   }
 
-  // PUT /api/kos_rooms?id=xxx
-  static Future<_RepoResult<KosRoom>> updateRoom(
-    String roomId,
-    Map<String, dynamic> fields,
-  ) async {
-    final res = await ApiService.put(
-      'api/kos_rooms',
-      fields,
-      queryParams: {'id': roomId},
-    );
-
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal memperbarui kamar');
-    }
-
+  static Future<_RepoResult<KosRoom>> updateRoom(String roomId, Map<String, dynamic> fields) async {
+    final res = await ApiService.put('api/kos_rooms', fields, queryParams: {'id': roomId});
+    if (!res.success) return _RepoResult.fail(res.message ?? 'Gagal memperbarui kamar');
     try {
       final room = KosRoom.fromJson(res.data!['data'] as Map<String, dynamic>);
       return _RepoResult.ok(room);
@@ -198,16 +151,9 @@ class KosRoomRepository {
     }
   }
 
-  // DELETE /api/kos_rooms?id=xxx
   static Future<_RepoResult<void>> deleteRoom(String roomId) async {
-    final res = await ApiService.delete(
-      'api/kos_rooms',
-      queryParams: {'id': roomId},
-    );
-
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal menghapus kamar');
-    }
+    final res = await ApiService.delete('api/kos_rooms', queryParams: {'id': roomId});
+    if (!res.success) return _RepoResult.fail(res.message ?? 'Gagal menghapus kamar');
     return const _RepoResult.ok(null);
   }
 }
@@ -224,17 +170,17 @@ class OwnerRoomsPage extends StatefulWidget {
 }
 
 class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
-  List<KosRoom>    _rooms       = [];
+  List<KosRoom> _rooms = [];
   List<KosListing> _kosListings = [];
   List<FacilityOption> _availableFacilities = [];
-  String?          _selectedKosId;
-  bool             _isLoading    = false;
-  bool             _isLoadingKos = true;
-  String?          _errorMessage;
+  String? _selectedKosId;
+  bool _isLoading = false;
+  bool _isLoadingKos = true;
+  String? _errorMessage;
 
-  String      _query        = '';
+  String _query = '';
   RoomStatus? _statusFilter;
-  String      _sortBy       = 'room_number_asc';
+  String _sortBy = 'room_number_asc';
 
   @override
   void initState() {
@@ -242,24 +188,24 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     _loadKosListings();
   }
 
-  // ── Load daftar kos owner ─────────────────────────────────────────────────
-
   Future<void> _loadKosListings() async {
-    setState(() { _isLoadingKos = true; _errorMessage = null; });
-
+    setState(() {
+      _isLoadingKos = true;
+      _errorMessage = null;
+    });
     final result = await KosListingRepository.getMyListings();
     if (!mounted) return;
 
     if (result.isSuccess && result.data!.isNotEmpty) {
       setState(() {
-        _kosListings   = result.data!;
+        _kosListings = result.data!;
         _selectedKosId = result.data!.first.id;
-        _isLoadingKos  = false;
+        _isLoadingKos = false;
       });
       await _loadRooms();
     } else if (result.isSuccess && result.data!.isEmpty) {
       setState(() {
-        _kosListings  = [];
+        _kosListings = [];
         _isLoadingKos = false;
         _errorMessage = 'Anda belum memiliki kos. Tambah kos terlebih dahulu.';
       });
@@ -271,22 +217,24 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
   }
 
-  // ── Load kamar kos terpilih ───────────────────────────────────────────────
-
   Future<void> _loadRooms() async {
     if (_selectedKosId == null) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
-
-    final result = await KosRoomRepository.getRooms(
-      _selectedKosId!,
-      statusFilter: _statusFilter?.dbValue,
-    );
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final result = await KosRoomRepository.getRooms(_selectedKosId!, statusFilter: _statusFilter?.dbValue);
     if (!mounted) return;
-
     if (result.isSuccess) {
-      setState(() { _rooms = result.data!; _isLoading = false; });
+      setState(() {
+        _rooms = result.data!;
+        _isLoading = false;
+      });
     } else {
-      setState(() { _errorMessage = result.error; _isLoading = false; });
+      setState(() {
+        _errorMessage = result.error;
+        _isLoading = false;
+      });
     }
   }
 
@@ -300,8 +248,6 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
   }
 
-  // ── CRUD ──────────────────────────────────────────────────────────────────
-
   Future<bool> _createRoom({
     required String kosId,
     required String roomNumber,
@@ -309,21 +255,22 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     required int pricePerMonth,
     required int maxOccupant,
     required RoomStatus status,
+    required RentalType rentalType,
     required List<int> facilityIds,
     String? description,
   }) async {
     final result = await KosRoomRepository.createRoom(
-      kosId:         kosId,
-      roomNumber:    roomNumber,
-      roomType:      roomType,
+      kosId: kosId,
+      roomNumber: roomNumber,
+      roomType: roomType,
       pricePerMonth: pricePerMonth,
-      maxOccupant:   maxOccupant,
-      status:        status,
-      facilityIds:   facilityIds,
-      description:   description,
+      maxOccupant: maxOccupant,
+      status: status,
+      rentalType: rentalType,
+      facilityIds: facilityIds,
+      description: description,
     );
     if (!mounted) return false;
-
     if (result.isSuccess) {
       if (kosId == _selectedKosId) {
         setState(() => _rooms.insert(0, result.data!));
@@ -351,7 +298,6 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       ownerContact: ownerContact,
     );
     if (!mounted) return false;
-
     if (result.isSuccess) {
       setState(() {
         _kosListings.insert(0, result.data!);
@@ -371,7 +317,6 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   Future<void> _updateRoom(String roomId, Map<String, dynamic> fields) async {
     final result = await KosRoomRepository.updateRoom(roomId, fields);
     if (!mounted) return;
-
     if (result.isSuccess) {
       setState(() {
         final idx = _rooms.indexWhere((r) => r.id == roomId);
@@ -386,7 +331,6 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   Future<void> _deleteRoom(KosRoom room) async {
     final result = await KosRoomRepository.deleteRoom(room.id);
     if (!mounted) return;
-
     if (result.isSuccess) {
       setState(() => _rooms.removeWhere((r) => r.id == room.id));
       _showSnack('Kamar ${room.roomNumber} berhasil dihapus');
@@ -395,13 +339,11 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content:         Text(msg),
+      content: Text(msg),
       backgroundColor: isError ? Colors.red : AppTheme.primaryGreen,
-      behavior:        SnackBarBehavior.floating,
+      behavior: SnackBarBehavior.floating,
     ));
   }
 
@@ -421,17 +363,21 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }).toList();
 
     switch (_sortBy) {
-      case 'room_number_asc':  result.sort((a, b) => a.roomNumber.compareTo(b.roomNumber));
-      case 'room_number_desc': result.sort((a, b) => b.roomNumber.compareTo(a.roomNumber));
-      case 'price_asc':        result.sort((a, b) => a.pricePerMonth.compareTo(b.pricePerMonth));
-      case 'price_desc':       result.sort((a, b) => b.pricePerMonth.compareTo(a.pricePerMonth));
-      case 'type_asc':         result.sort((a, b) => a.roomType.compareTo(b.roomType));
-      case 'type_desc':        result.sort((a, b) => b.roomType.compareTo(a.roomType));
+      case 'room_number_asc':
+        result.sort((a, b) => a.roomNumber.compareTo(b.roomNumber));
+      case 'room_number_desc':
+        result.sort((a, b) => b.roomNumber.compareTo(a.roomNumber));
+      case 'price_asc':
+        result.sort((a, b) => a.pricePerMonth.compareTo(b.pricePerMonth));
+      case 'price_desc':
+        result.sort((a, b) => b.pricePerMonth.compareTo(a.pricePerMonth));
+      case 'type_asc':
+        result.sort((a, b) => a.roomType.compareTo(b.roomType));
+      case 'type_desc':
+        result.sort((a, b) => b.roomType.compareTo(a.roomType));
     }
     return result;
   }
-
-  // ── Sheet tambah kamar ────────────────────────────────────────────────────
 
   Future<void> _openAddSheet() async {
     if (_kosListings.isEmpty) {
@@ -443,18 +389,18 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       if (!mounted) return;
     }
     showModalBottomSheet<void>(
-      context:         context,
+      context: context,
       isScrollControlled: true,
-      useSafeArea:     true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => _AddRoomSheet(
-        kosListings:   _kosListings,
-        defaultKosId:  _selectedKosId,
+        kosListings: _kosListings,
+        defaultKosId: _selectedKosId,
         existingRooms: _rooms,
-        facilities:    _availableFacilities,
-        onSave:        _createRoom,
+        facilities: _availableFacilities,
+        onSave: _createRoom,
       ),
     );
   }
@@ -471,8 +417,6 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     );
   }
 
-  // ── Dialogs ───────────────────────────────────────────────────────────────
-
   void _showEditDialog(KosRoom room) async {
     if (_availableFacilities.isEmpty) {
       await _loadFacilityOptions();
@@ -480,11 +424,14 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
 
     final numberCtrl = TextEditingController(text: room.roomNumber);
-    final typeCtrl   = TextEditingController(text: room.roomType);
-    final priceCtrl  = TextEditingController(text: room.pricePerMonth.toString());
-    final occCtrl    = TextEditingController(text: room.maxOccupant.toString());
-    final descCtrl   = TextEditingController(text: room.description ?? '');
+    final typeCtrl = TextEditingController(text: room.roomType);
+    final priceCtrl =
+        TextEditingController(text: room.pricePerMonth.toString());
+    final occCtrl = TextEditingController(text: room.maxOccupant.toString());
+    final descCtrl = TextEditingController(text: room.description ?? '');
     RoomStatus selectedStatus = room.status;
+    // Ambil rentalType dari room jika ada, default monthly
+    RentalType selectedRentalType = room.rentalType;
     final selectedFacilityIds = room.facilities.map((f) => f.id).toSet();
 
     showDialog(
@@ -498,8 +445,26 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
               const SizedBox(height: 14),
               _outlinedField(typeCtrl, 'Tipe Kamar'),
               const SizedBox(height: 14),
-              _outlinedField(priceCtrl, 'Harga per Bulan',
-                  keyboard: TextInputType.number, prefix: 'Rp '),
+              // ── Tipe Sewa ────────────────────────────────────────────
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Tipe Sewa',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _RentalTypeSelector(
+                value: selectedRentalType,
+                onChanged: (v) => setDialog(() => selectedRentalType = v),
+              ),
+              const SizedBox(height: 14),
+              _outlinedField(
+                priceCtrl,
+                selectedRentalType.priceLabel,
+                keyboard: TextInputType.number,
+                prefix: 'Rp ',
+              ),
               const SizedBox(height: 14),
               _outlinedField(occCtrl, 'Kapasitas',
                   keyboard: TextInputType.number, suffix: 'orang'),
@@ -509,7 +474,8 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 decoration: const InputDecoration(
                     labelText: 'Status', border: OutlineInputBorder()),
                 items: RoomStatus.values
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                    .map((s) =>
+                        DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
                 onChanged: (v) => setDialog(() => selectedStatus = v!),
               ),
@@ -560,18 +526,23 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Batal')),
             FilledButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 _updateRoom(room.id, {
-                  'room_number':     numberCtrl.text.trim(),
-                  'room_type':       typeCtrl.text.trim(),
-                  'price_per_month': int.tryParse(priceCtrl.text) ?? room.pricePerMonth,
-                  'max_occupant':    int.tryParse(occCtrl.text) ?? room.maxOccupant,
-                  'status':          selectedStatus.dbValue,
-                  'facility_ids':    selectedFacilityIds.toList(),
-                  'description':     descCtrl.text.trim(),
+                  'room_number': numberCtrl.text.trim(),
+                  'room_type': typeCtrl.text.trim(),
+                  'price_per_month':
+                      int.tryParse(priceCtrl.text) ?? room.pricePerMonth,
+                  'max_occupant':
+                      int.tryParse(occCtrl.text) ?? room.maxOccupant,
+                  'status': selectedStatus.dbValue,
+                  'rental_type': selectedRentalType.dbValue,
+                  'facility_ids': selectedFacilityIds.toList(),
+                  'description': descCtrl.text.trim(),
                 });
               },
               child: const Text('Simpan'),
@@ -589,23 +560,36 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
             leading: const Icon(Icons.visibility),
-            title:   const Text('Lihat Detail'),
-            onTap:   () { Navigator.pop(ctx); _showDetail(room); },
+            title: const Text('Lihat Detail'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showDetail(room);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.history),
-            title:   const Text('Riwayat Penyewa'),
-            onTap:   () { Navigator.pop(ctx); _showSnack('Coming soon!'); },
+            title: const Text('Riwayat Penyewa'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showSnack('Coming soon!');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.payments_outlined),
-            title:   const Text('Riwayat Pembayaran'),
-            onTap:   () { Navigator.pop(ctx); _showSnack('Coming soon!'); },
+            title: const Text('Riwayat Pembayaran'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showSnack('Coming soon!');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Hapus Kamar', style: TextStyle(color: Colors.red)),
-            onTap: () { Navigator.pop(ctx); _showDeleteConfirm(room); },
+            title: const Text('Hapus Kamar',
+                style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showDeleteConfirm(room);
+            },
           ),
         ]),
       ),
@@ -614,34 +598,46 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
 
   void _showDetail(KosRoom room) {
     showModalBottomSheet(
-      context:         context,
+      context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.55, minChildSize: 0.3, maxChildSize: 0.85,
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
         expand: false,
         builder: (_, ctrl) => SingleChildScrollView(
           controller: ctrl,
           padding: const EdgeInsets.all(20),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(
-              width: 40, height: 4,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+                child: Container(
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color:        Colors.grey.shade300,
+                color: Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(2),
               ),
             )),
             const SizedBox(height: 20),
             Text('Detail Kamar ${room.roomNumber}',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-            Text(room.kosTitle, style: TextStyle(color: Colors.grey.shade600)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 20)),
+            Text(room.kosTitle,
+                style: TextStyle(color: Colors.grey.shade600)),
             const Divider(height: 24),
-            _DetailRow(label: 'Kos',         value: room.kosTitle),
-            _DetailRow(label: 'Kode Kos',    value: _selectedKos?.accessCode ?? '-'),
+            _DetailRow(label: 'Kos', value: room.kosTitle),
+            _DetailRow(
+                label: 'Kode Kos',
+                value: _selectedKos?.accessCode ?? '-'),
             _DetailRow(label: 'Nomor Kamar', value: room.roomNumber),
-            _DetailRow(label: 'Tipe',        value: room.roomType),
-            _DetailRow(label: 'Harga/Bulan', value: _formatPrice(room.pricePerMonth)),
-            _DetailRow(label: 'Kapasitas',   value: '${room.maxOccupant} orang'),
-            _DetailRow(label: 'Status',      value: room.status.label),
+            _DetailRow(label: 'Tipe', value: room.roomType),
+            _DetailRow(
+                label: 'Harga${room.rentalType.priceSuffix}',
+                value: _formatPrice(room.pricePerMonth)),
+            _DetailRow(
+                label: 'Kapasitas', value: '${room.maxOccupant} orang'),
+            _DetailRow(label: 'Status', value: room.status.label),
             if (room.facilities.isNotEmpty)
               _DetailRow(
                 label: 'Fasilitas',
@@ -655,8 +651,11 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () { Navigator.pop(context); _showEditDialog(room); },
-                icon:  const Icon(Icons.edit),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showEditDialog(room);
+                },
+                icon: const Icon(Icons.edit),
                 label: const Text('Edit Kamar'),
               ),
             ),
@@ -670,24 +669,27 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title:   const Text('Hapus Kamar?'),
+        title: const Text('Hapus Kamar?'),
         content: Text(
           'Kamar ${room.roomNumber} di ${room.kosTitle} akan dihapus beserta '
           'seluruh data registrasi dan pembayaran terkait.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal')),
           FilledButton(
-            style:     FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () { Navigator.pop(ctx); _deleteRoom(room); },
-            child:     const Text('Hapus'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteRoom(room);
+            },
+            child: const Text('Hapus'),
           ),
         ],
       ),
     );
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -697,8 +699,8 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
         title: const Text('Kelola Kamar'),
         actions: [
           IconButton(
-            tooltip:  'Refresh',
-            icon:     const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
             onPressed: _loadRooms,
           ),
         ],
@@ -730,34 +732,15 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     );
   }
 
+    // GANTI SELURUH _buildBody() dengan ini:
   Widget _buildBody() {
     if (_kosListings.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.home_work_outlined, size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            const Text('Belum ada kos',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text('Tambahkan kos terlebih dahulu di halaman Properti.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _openAddKosSheet,
-              icon: const Icon(Icons.home_work_outlined),
-              label: const Text('Tambah Kos'),
-            ),
-          ]),
-        ),
-      );
+      return _NoKosYetWidget(onAddKos: _openAddKosSheet);
     }
 
-    final items       = _filtered;
-    final occupied    = _rooms.where((r) => r.status == RoomStatus.occupied).length;
-    final available   = _rooms.where((r) => r.status == RoomStatus.available).length;
+    final items = _filtered;
+    final occupied = _rooms.where((r) => r.status == RoomStatus.occupied).length;
+    final available = _rooms.where((r) => r.status == RoomStatus.available).length;
     final maintenance = _rooms.where((r) => r.status == RoomStatus.maintenance).length;
 
     return RefreshIndicator(
@@ -765,14 +748,14 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
-          // ── Dropdown kos ──────────────────────────────────────────────
+          // Pilih Kos
           DropdownButtonFormField<String>(
             value: _selectedKosId,
             decoration: InputDecoration(
               labelText: 'Pilih Kos',
               prefixIcon: const Icon(Icons.home_work_outlined),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled:    true,
+              filled: true,
               fillColor: Colors.white,
             ),
             items: _kosListings
@@ -782,159 +765,126 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
               if (v != null && v != _selectedKosId) {
                 setState(() {
                   _selectedKosId = v;
-                  _rooms         = [];
-                  _statusFilter  = null;
+                  _rooms = [];
+                  _statusFilter = null;
                 });
                 _loadRooms();
               }
             },
           ),
           const SizedBox(height: 12),
-          if (_selectedKos != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.35)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.vpn_key_rounded, size: 18, color: AppTheme.primaryGreen),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Kode Kos: ${_selectedKos!.accessCode}',
-                      style: const TextStyle(
-                        color: AppTheme.primaryGreen,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Salin kode kos',
-                    icon: const Icon(Icons.copy_rounded, color: AppTheme.primaryGreen, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _selectedKos!.accessCode));
-                      _showSnack('Kode kos disalin');
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
 
-          // ── Ringkasan ──────────────────────────────────────────────────
+          // Kode Akses Kos
+          if (_selectedKos != null)
+            _KosAccessCodeBanner(
+              accessCode: _selectedKos!.accessCode,
+              onCopy: () {
+                Clipboard.setData(ClipboardData(text: _selectedKos!.accessCode));
+                _showSnack('Kode kos disalin');
+              },
+            ),
+
+          const SizedBox(height: 12),
+
+          // Statistik
           Text(
             'Total ${_rooms.length} kamar  •  Terisi: $occupied  •  Kosong: $available  •  Maintenance: $maintenance',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            style: const TextStyle(color: Colors.grey, fontSize: 13),
           ),
           const SizedBox(height: 12),
 
-          // ── Search ────────────────────────────────────────────────────
+          // Search
           TextField(
             onChanged: (v) => setState(() => _query = v),
             decoration: const InputDecoration(
-              hintText:   'Cari nomor atau tipe kamar...',
+              hintText: 'Cari nomor atau tipe kamar...',
               prefixIcon: Icon(Icons.search),
             ),
           ),
           const SizedBox(height: 12),
 
-          // ── Filter & sort ─────────────────────────────────────────────
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final v = await showModalBottomSheet<RoomStatus?>(
-                    context:       context,
-                    showDragHandle: true,
-                    builder: (_) => _StatusSheet(selected: _statusFilter),
-                  );
-                  if (v != _statusFilter) {
-                    setState(() => _statusFilter = v);
-                    _loadRooms();
-                  }
-                },
-                icon:  const Icon(Icons.filter_list_rounded),
-                label: Text(_statusFilter == null
-                    ? 'Filter'
-                    : 'Filter: ${_statusFilter!.label}'),
+          // Filter & Sort
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showStatusFilterSheet,
+                  icon: const Icon(Icons.filter_list_rounded),
+                  label: Text(_statusFilter == null
+                      ? 'Filter'
+                      : 'Filter: ${_statusFilter!.label}'),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final v = await showModalBottomSheet<String>(
-                    context:       context,
-                    showDragHandle: true,
-                    builder: (_) => _SortSheet(selected: _sortBy),
-                  );
-                  if (v != null) setState(() => _sortBy = v);
-                },
-                icon:  const Icon(Icons.swap_vert_rounded),
-                label: Text(_sortBy == 'room_number_asc'
-                    ? 'Urutkan'
-                    : 'Urut: ${_sortBy.replaceAll('_', ' ')}'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showSortSheet,
+                  icon: const Icon(Icons.swap_vert_rounded),
+                  label: Text(_sortBy == 'room_number_asc'
+                      ? 'Urutkan'
+                      : 'Urut: ${_sortBy.replaceAll('_', ' ')}'),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
           const SizedBox(height: 14),
 
-          // ── List / loading / error ────────────────────────────────────
+          // Content
           if (_isLoading)
-            const Center(child: Padding(
-              padding: EdgeInsets.all(32),
-              child:   CircularProgressIndicator(),
-            ))
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
+            )
           else if (_errorMessage != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 12),
-                  Text(_errorMessage!, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _loadRooms,
-                    icon:  const Icon(Icons.refresh),
-                    label: const Text('Coba Lagi'),
-                  ),
-                ]),
-              ),
-            )
+            _ErrorWidget(message: _errorMessage!, onRetry: _loadRooms)
           else if (items.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Column(children: [
-                  Icon(Icons.meeting_room_outlined, size: 48, color: Colors.grey.shade400),
-                  const SizedBox(height: 12),
-                  Text(
-                    _statusFilter != null
-                        ? 'Tidak ada kamar "${_statusFilter!.label}"'
-                        : 'Belum ada kamar.\nTap tombol + untuk menambah.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ]),
-              ),
-            )
+            const _EmptyRoomWidget()
           else
-            ...items.map((r) => _RoomCard(
-                  room:        r,
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final room = items[index];
+                return _RoomCard(
+                  key: ValueKey(room.id),
+                  room: room,
                   kosAccessCode: _selectedKos?.accessCode,
                   formatPrice: _formatPrice,
-                  onEdit:      () => _showEditDialog(r),
-                  onMore:      () => _showMoreOptions(r),
-                )),
+                  onEdit: () => _showEditDialog(room),
+                  onMore: () => _showMoreOptions(room),
+                );
+              },
+            ),
         ],
       ),
     );
+  }
+
+  // Tambahkan dua method ini di dalam class _OwnerRoomsPageState
+  void _showStatusFilterSheet() async {
+    final v = await showModalBottomSheet<RoomStatus?>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _StatusSheet(selected: _statusFilter),
+    );
+    if (v != _statusFilter && mounted) {
+      setState(() => _statusFilter = v);
+      _loadRooms();
+    }
+  }
+
+  void _showSortSheet() async {
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _SortSheet(selected: _sortBy),
+    );
+    if (v != null && mounted) {
+      setState(() => _sortBy = v);
+    }
   }
 
   static Widget _outlinedField(
@@ -946,16 +896,83 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     String? suffix,
   }) =>
       TextField(
-        controller:  ctrl,
+        controller: ctrl,
         keyboardType: keyboard,
-        maxLines:    maxLines,
-        decoration:  InputDecoration(
-          labelText:  label,
-          border:     const OutlineInputBorder(),
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
           prefixText: prefix,
           suffixText: suffix,
         ),
       );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget pemilih tipe sewa (Harian / Bulanan / Tahunan)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RentalTypeSelector extends StatelessWidget {
+  const _RentalTypeSelector({required this.value, required this.onChanged});
+
+  final RentalType value;
+  final ValueChanged<RentalType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: RentalType.values.map((type) {
+        final isSelected = value == type;
+        final color = isSelected ? AppTheme.primaryGreen : Colors.grey.shade400;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onChanged(type),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppTheme.primaryGreen.withOpacity(0.12)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected
+                      ? AppTheme.primaryGreen
+                      : Colors.grey.shade300,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    type == RentalType.daily
+                        ? Icons.wb_sunny_outlined
+                        : type == RentalType.monthly
+                            ? Icons.calendar_month_outlined
+                            : Icons.calendar_today_outlined,
+                    color: color,
+                    size: 20,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    type.label,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: isSelected
+                          ? FontWeight.w800
+                          : FontWeight.normal,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -998,16 +1015,15 @@ class _AddKosSheetState extends State<_AddKosSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isSaving = true);
     final success = await widget.onSave(
       title: _titleCtrl.text.trim(),
       location: _locationCtrl.text.trim(),
       description: _descCtrl.text.trim(),
-      pricePerMonth: int.parse(_priceCtrl.text.replaceAll('.', '').replaceAll(',', '')),
+      pricePerMonth: int.parse(
+          _priceCtrl.text.replaceAll('.', '').replaceAll(',', '')),
       ownerContact: _contactCtrl.text.trim(),
     );
-
     if (mounted) {
       setState(() => _isSaving = false);
       if (success) Navigator.of(context).pop();
@@ -1078,8 +1094,11 @@ class _AddKosSheetState extends State<_AddKosSheet> {
                 ),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Harga wajib diisi';
-                  final parsed = int.tryParse(v.replaceAll('.', '').replaceAll(',', ''));
-                  if (parsed == null || parsed <= 0) return 'Harga harus angka valid';
+                  final parsed = int.tryParse(
+                      v.replaceAll('.', '').replaceAll(',', ''));
+                  if (parsed == null || parsed <= 0) {
+                    return 'Harga harus angka valid';
+                  }
                   return null;
                 },
               ),
@@ -1114,9 +1133,7 @@ class _AddKosSheetState extends State<_AddKosSheet> {
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Simpan Kos'),
               ),
@@ -1134,7 +1151,7 @@ class _AddKosSheetState extends State<_AddKosSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _AddRoomSheet — identik dengan versi sebelumnya, tidak ada perubahan UI
+// _AddRoomSheet — dengan field Tipe Sewa (Harian / Bulanan / Tahunan)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AddRoomSheet extends StatefulWidget {
@@ -1157,6 +1174,7 @@ class _AddRoomSheet extends StatefulWidget {
     required int pricePerMonth,
     required int maxOccupant,
     required RoomStatus status,
+    required RentalType rentalType,
     required List<int> facilityIds,
     String? description,
   }) onSave;
@@ -1166,29 +1184,35 @@ class _AddRoomSheet extends StatefulWidget {
 }
 
 class _AddRoomSheetState extends State<_AddRoomSheet> {
-  final _formKey    = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final _numberCtrl = TextEditingController();
-  final _priceCtrl  = TextEditingController();
-  final _occCtrl    = TextEditingController(text: '1');
-  final _descCtrl   = TextEditingController();
+  final _priceCtrl = TextEditingController();
+  final _occCtrl = TextEditingController(text: '1');
+  final _descCtrl = TextEditingController();
 
   late String _selectedKosId;
-  String     _selectedType   = 'Standard Single';
+  String _selectedType = 'Standard Single';
   RoomStatus _selectedStatus = RoomStatus.available;
-  bool       _isSaving       = false;
-  bool       _isGeneratingCode = false;
+  RentalType _selectedRentalType = RentalType.monthly;
+  bool _isSaving = false;
+  bool _isGeneratingCode = false;
   final Set<int> _selectedFacilityIds = <int>{};
 
   final _roomTypes = const [
-    'Standard Single', 'Standard Double',
-    'Deluxe Single',   'Deluxe Double',
-    'Deluxe Balcony',  'Suite King', 'Suite Queen',
+    'Standard Single',
+    'Standard Double',
+    'Deluxe Single',
+    'Deluxe Double',
+    'Deluxe Balcony',
+    'Suite King',
+    'Suite Queen',
   ];
 
   @override
   void initState() {
     super.initState();
-    _selectedKosId = widget.defaultKosId ?? widget.kosListings.first.id;
+    _selectedKosId =
+        widget.defaultKosId ?? widget.kosListings.first.id;
     _generateRoomCode();
   }
 
@@ -1201,37 +1225,29 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
     super.dispose();
   }
 
-  void _generateRoomCode() {
-    _generateRoomCodeFromServer();
-  }
-
-  Future<void> _generateRoomCodeFromServer() async {
+  Future<void> _generateRoomCode() async {
     setState(() => _isGeneratingCode = true);
-
     final existing = <String>{};
-
     final serverRooms = await KosRoomRepository.getRooms(_selectedKosId);
     if (serverRooms.isSuccess && serverRooms.data != null) {
       existing.addAll(
-        serverRooms.data!
-            .map((r) => r.roomNumber.trim().toUpperCase()),
-      );
+          serverRooms.data!.map((r) => r.roomNumber.trim().toUpperCase()));
     } else {
-      existing.addAll(
-        widget.existingRooms
-            .where((r) => r.kosId == _selectedKosId)
-            .map((r) => r.roomNumber.trim().toUpperCase()),
-      );
+      existing.addAll(widget.existingRooms
+          .where((r) => r.kosId == _selectedKosId)
+          .map((r) => r.roomNumber.trim().toUpperCase()));
     }
 
     const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
     String generated = '';
-
     outer:
     for (final letter in letters) {
       for (int i = 1; i <= 99; i++) {
         final code = '$letter${i.toString().padLeft(2, '0')}';
-        if (!existing.contains(code)) { generated = code; break outer; }
+        if (!existing.contains(code)) {
+          generated = code;
+          break outer;
+        }
       }
     }
 
@@ -1247,14 +1263,17 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
     setState(() => _isSaving = true);
 
     final success = await widget.onSave(
-      kosId:         _selectedKosId,
-      roomNumber:    _numberCtrl.text.trim(),
-      roomType:      _selectedType,
-      pricePerMonth: int.parse(_priceCtrl.text.replaceAll('.', '').replaceAll(',', '')),
-      maxOccupant:   int.parse(_occCtrl.text),
-      status:        _selectedStatus,
-      facilityIds:   _selectedFacilityIds.toList(),
-      description:   _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+      kosId: _selectedKosId,
+      roomNumber: _numberCtrl.text.trim(),
+      roomType: _selectedType,
+      pricePerMonth: int.parse(
+          _priceCtrl.text.replaceAll('.', '').replaceAll(',', '')),
+      maxOccupant: int.parse(_occCtrl.text),
+      status: _selectedStatus,
+      rentalType: _selectedRentalType,
+      facilityIds: _selectedFacilityIds.toList(),
+      description:
+          _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
     );
 
     if (mounted) {
@@ -1270,42 +1289,47 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
 
     return Padding(
       padding: EdgeInsets.only(
-        left: 20, right: 20, top: 20,
+        left: 20,
+        right: 20,
+        top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: Form(
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
-            mainAxisSize:       MainAxisSize.min,
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(child: Container(
-                width: 40, height: 4,
+              Center(
+                  child: Container(
+                width: 40,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color:        Colors.grey.shade300,
+                  color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2),
                 ),
               )),
               Text('Tambah Kamar Baru',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      )),
               const SizedBox(height: 20),
 
-              // Pilih Kos
+              // ── Pilih Kos ──────────────────────────────────────────────
               DropdownButtonFormField<String>(
                 value: _selectedKosId,
                 decoration: const InputDecoration(
-                  labelText:  'Nama Kos',
+                  labelText: 'Nama Kos',
                   prefixIcon: Icon(Icons.home_work_outlined),
-                  border:     OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 items: widget.kosListings
                     .map((k) => DropdownMenuItem(
-                          value: k.id,
-                          child: Text(k.title, overflow: TextOverflow.ellipsis),
-                        ))
+                        value: k.id,
+                        child: Text(k.title,
+                            overflow: TextOverflow.ellipsis)))
                     .toList(),
                 onChanged: (v) {
                   if (v != null) {
@@ -1313,53 +1337,59 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                     _generateRoomCode();
                   }
                 },
-                validator: (v) => v == null ? 'Pilih kos terlebih dahulu' : null,
+                validator: (v) =>
+                    v == null ? 'Pilih kos terlebih dahulu' : null,
               ),
               const SizedBox(height: 14),
 
-              // Kode akses kos
+              // ── Kode akses kos ─────────────────────────────────────────
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color:  Colors.white,
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.3)),
+                  border: Border.all(
+                      color: AppTheme.primaryGreen.withOpacity(0.3)),
                 ),
                 child: Row(children: [
-                  const Icon(Icons.vpn_key_rounded, size: 16, color: AppTheme.primaryGreen),
+                  const Icon(Icons.vpn_key_rounded,
+                      size: 16, color: AppTheme.primaryGreen),
                   const SizedBox(width: 8),
                   Text(
                     'Kode Akses: ${selectedKos.accessCode}',
                     style: const TextStyle(
-                      fontWeight:    FontWeight.w700,
-                      color:         AppTheme.primaryGreen,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.primaryGreen,
                       letterSpacing: 1,
                     ),
                   ),
                   const Spacer(),
                   GestureDetector(
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: selectedKos.accessCode));
+                      Clipboard.setData(
+                          ClipboardData(text: selectedKos.accessCode));
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content:  Text('Kode disalin!'),
+                          content: Text('Kode disalin!'),
                           duration: Duration(seconds: 1),
                         ),
                       );
                     },
-                    child: const Icon(Icons.copy_rounded, size: 16, color: AppTheme.primaryGreen),
+                    child: const Icon(Icons.copy_rounded,
+                        size: 16, color: AppTheme.primaryGreen),
                   ),
                 ]),
               ),
               const SizedBox(height: 14),
 
-              // Kode kamar (auto-generate)
+              // ── Kode kamar (auto-generate) ─────────────────────────────
               TextFormField(
                 controller: _numberCtrl,
                 enabled: false,
                 decoration: InputDecoration(
-                  labelText:  'Kode Kamar',
-                  hintText:   'Auto generate',
+                  labelText: 'Kode Kamar',
+                  hintText: 'Auto generate',
                   prefixIcon: const Icon(Icons.meeting_room_outlined),
                   suffixIcon: _isGeneratingCode
                       ? const SizedBox(
@@ -1367,44 +1397,71 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                           height: 16,
                           child: Padding(
                             padding: EdgeInsets.all(12),
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
                           ),
                         )
                       : null,
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Kode kamar wajib diisi' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Kode kamar wajib diisi'
+                    : null,
               ),
               const SizedBox(height: 14),
 
-              // Tipe
+              // ── Tipe Kamar ─────────────────────────────────────────────
               DropdownButtonFormField<String>(
                 value: _selectedType,
                 decoration: const InputDecoration(
-                  labelText:  'Tipe Kamar',
+                  labelText: 'Tipe Kamar',
                   prefixIcon: Icon(Icons.category_outlined),
-                  border:     OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 items: _roomTypes
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .map((t) =>
+                        DropdownMenuItem(value: t, child: Text(t)))
                     .toList(),
                 onChanged: (v) => setState(() => _selectedType = v!),
               ),
               const SizedBox(height: 14),
 
-              // Harga
+              // ── Tipe Sewa (BARU) ───────────────────────────────────────
+              const Text(
+                'Tipe Sewa',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pilih periode sewa yang berlaku untuk kamar ini',
+                style: TextStyle(
+                    color: Colors.grey.shade600, fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              _RentalTypeSelector(
+                value: _selectedRentalType,
+                onChanged: (v) => setState(() => _selectedRentalType = v),
+              ),
+              const SizedBox(height: 14),
+
+              // ── Harga (label menyesuaikan tipe sewa) ─────────────────
               TextFormField(
-                controller:  _priceCtrl,
+                controller: _priceCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText:  'Harga per Bulan',
-                  prefixIcon: Icon(Icons.attach_money_rounded),
+                decoration: InputDecoration(
+                  labelText: _selectedRentalType.priceLabel,
+                  prefixIcon: const Icon(Icons.attach_money_rounded),
                   prefixText: 'Rp ',
-                  border:     OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  helperText:
+                      'Harga yang ditagih per ${_selectedRentalType.label.toLowerCase()}',
                 ),
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Harga wajib diisi';
-                  if ((int.tryParse(v.replaceAll('.', '').replaceAll(',', '')) ?? 0) <= 0) {
+                  if ((int.tryParse(
+                              v.replaceAll('.', '').replaceAll(',', '')) ??
+                          0) <=
+                      0) {
                     return 'Harga harus angka valid';
                   }
                   return null;
@@ -1412,39 +1469,43 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
               ),
               const SizedBox(height: 14),
 
-              // Kapasitas
+              // ── Kapasitas ─────────────────────────────────────────────
               TextFormField(
-                controller:  _occCtrl,
+                controller: _occCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText:  'Kapasitas',
+                  labelText: 'Kapasitas',
                   prefixIcon: Icon(Icons.people_outline),
                   suffixText: 'orang',
-                  border:     OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Kapasitas wajib diisi';
-                  if ((int.tryParse(v) ?? 0) <= 0) return 'Masukkan angka valid';
+                  if ((int.tryParse(v) ?? 0) <= 0) {
+                    return 'Masukkan angka valid';
+                  }
                   return null;
                 },
               ),
               const SizedBox(height: 14),
 
-              // Status
+              // ── Status ────────────────────────────────────────────────
               DropdownButtonFormField<RoomStatus>(
                 value: _selectedStatus,
                 decoration: const InputDecoration(
-                  labelText:  'Status',
+                  labelText: 'Status',
                   prefixIcon: Icon(Icons.info_outline),
-                  border:     OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 items: RoomStatus.values
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                    .map((s) =>
+                        DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
                 onChanged: (v) => setState(() => _selectedStatus = v!),
               ),
               const SizedBox(height: 14),
 
+              // ── Fasilitas ─────────────────────────────────────────────
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -1472,7 +1533,8 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                   spacing: 8,
                   runSpacing: 8,
                   children: widget.facilities.map((facility) {
-                    final selected = _selectedFacilityIds.contains(facility.id);
+                    final selected =
+                        _selectedFacilityIds.contains(facility.id);
                     return FilterChip(
                       label: Text(facility.name),
                       selected: selected,
@@ -1490,15 +1552,15 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                 ),
               const SizedBox(height: 14),
 
-              // Catatan
+              // ── Catatan ───────────────────────────────────────────────
               TextFormField(
                 controller: _descCtrl,
-                maxLines:   2,
+                maxLines: 2,
                 decoration: const InputDecoration(
-                  labelText:  'Catatan (Opsional)',
-                  hintText:   'Lantai, kondisi khusus, dll...',
+                  labelText: 'Catatan (Opsional)',
+                  hintText: 'Lantai, kondisi khusus, dll...',
                   prefixIcon: Icon(Icons.notes_outlined),
-                  border:     OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 24),
@@ -1507,15 +1569,17 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                 onPressed: _isSaving ? null : _submit,
                 child: _isSaving
                     ? const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Simpan Kamar'),
               ),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child:     const Text('Batal'),
+                child: const Text('Batal'),
               ),
             ],
           ),
@@ -1531,31 +1595,32 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
 
 class _RoomCard extends StatelessWidget {
   const _RoomCard({
+    super.key,
     required this.room,
-    this.kosAccessCode,
     required this.formatPrice,
     required this.onEdit,
     required this.onMore,
+    this.kosAccessCode,
   });
 
   final KosRoom room;
-  final String? kosAccessCode;
   final String Function(int) formatPrice;
   final VoidCallback onEdit;
   final VoidCallback onMore;
+  final String? kosAccessCode;
 
   Color get _badgeBg {
     switch (room.status) {
-      case RoomStatus.occupied:    return const Color(0xFFE8F5E9);
-      case RoomStatus.available:   return const Color(0xFFE3F2FD);
+      case RoomStatus.occupied: return const Color(0xFFE8F5E9);
+      case RoomStatus.available: return const Color(0xFFE3F2FD);
       case RoomStatus.maintenance: return const Color(0xFFFFF3E0);
     }
   }
 
   Color get _badgeFg {
     switch (room.status) {
-      case RoomStatus.occupied:    return AppTheme.primaryGreen;
-      case RoomStatus.available:   return const Color(0xFF1565C0);
+      case RoomStatus.occupied: return AppTheme.primaryGreen;
+      case RoomStatus.available: return const Color(0xFF1565C0);
       case RoomStatus.maintenance: return const Color(0xFFEF6C00);
     }
   }
@@ -1566,71 +1631,92 @@ class _RoomCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 46, height: 46,
-            decoration: BoxDecoration(
-              color:        AppTheme.surfaceTint,
-              borderRadius: BorderRadius.circular(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceTint,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                room.roomNumber,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+              ),
             ),
-            alignment: Alignment.center,
-            child: Text(room.roomNumber,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(
-                  child: Text(room.roomType,
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color:        _badgeBg,
-                    borderRadius: BorderRadius.circular(999),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          room.roomType,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _badgeBg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          room.status.label,
+                          style: TextStyle(
+                            color: _badgeFg,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(room.status.label,
-                      style: TextStyle(
-                          color: _badgeFg, fontWeight: FontWeight.w800, fontSize: 12)),
-                ),
-              ]),
-              const SizedBox(height: 4),
-              Text(room.kosTitle,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-              if (kosAccessCode != null && kosAccessCode!.isNotEmpty)
-                Text(
-                  'Kode Kos: $kosAccessCode • Kode Kamar: ${room.roomNumber}',
-                  style: const TextStyle(
-                    color: AppTheme.primaryGreen,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${formatPrice(room.pricePerMonth)}${room.rentalType.priceSuffix}', // ← Diperbaiki
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              Text('${formatPrice(room.pricePerMonth)}/bln',
-                  style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w700)),
-              Text('Kapasitas: ${room.maxOccupant} orang',
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-              if (room.facilities.isNotEmpty)
-                Text(
-                  'Fasilitas: ${room.facilities.map((f) => f.name).join(', ')}',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-              if (room.description != null && room.description!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(room.description!, style: TextStyle(color: Colors.grey.shade600)),
-              ],
-              const SizedBox(height: 10),
-              Row(children: [
-                const Spacer(),
-                IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined), tooltip: 'Edit'),
-                IconButton(onPressed: onMore, icon: const Icon(Icons.more_vert), tooltip: 'Lainnya'),
-              ]),
-            ]),
-          ),
-        ]),
+                  Text(
+                    'Kapasitas: ${room.maxOccupant} orang',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                  ),
+                  if (room.description != null && room.description!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      room.description!,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      IconButton(
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Edit',
+                      ),
+                      IconButton(
+                        onPressed: onMore,
+                        icon: const Icon(Icons.more_vert),
+                        tooltip: 'Lainnya',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1665,15 +1751,18 @@ class _StatusSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
         child: ListView(shrinkWrap: true, children: [
-          const ListTile(title: Text('Filter Status',
-              style: TextStyle(fontWeight: FontWeight.w800))),
+          const ListTile(
+              title: Text('Filter Status',
+                  style: TextStyle(fontWeight: FontWeight.w800))),
           RadioListTile<RoomStatus?>(
-            value: null, groupValue: selected,
+            value: null,
+            groupValue: selected,
             onChanged: (v) => Navigator.of(context).pop(v),
             title: const Text('Semua'),
           ),
           ...RoomStatus.values.map((s) => RadioListTile<RoomStatus?>(
-                value: s, groupValue: selected,
+                value: s,
+                groupValue: selected,
                 onChanged: (v) => Navigator.of(context).pop(v),
                 title: Text(s.label),
               )),
@@ -1688,23 +1777,146 @@ class _SortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const options = [
-      ('room_number_asc',  'Nomor Kamar (A-Z)'),
+      ('room_number_asc', 'Nomor Kamar (A-Z)'),
       ('room_number_desc', 'Nomor Kamar (Z-A)'),
-      ('price_asc',        'Harga (Terendah)'),
-      ('price_desc',       'Harga (Tertinggi)'),
-      ('type_asc',         'Tipe (A-Z)'),
-      ('type_desc',        'Tipe (Z-A)'),
+      ('price_asc', 'Harga (Terendah)'),
+      ('price_desc', 'Harga (Tertinggi)'),
+      ('type_asc', 'Tipe (A-Z)'),
+      ('type_desc', 'Tipe (Z-A)'),
     ];
     return SafeArea(
       child: ListView(shrinkWrap: true, children: [
-        const ListTile(title: Text('Urutkan Kamar',
-            style: TextStyle(fontWeight: FontWeight.w800))),
+        const ListTile(
+            title: Text('Urutkan Kamar',
+                style: TextStyle(fontWeight: FontWeight.w800))),
         ...options.map((o) => RadioListTile<String>(
-              value: o.$1, groupValue: selected,
+              value: o.$1,
+              groupValue: selected,
               onChanged: (v) => Navigator.of(context).pop(v),
               title: Text(o.$2),
             )),
       ]),
+    );
+  }
+}
+
+class _KosAccessCodeBanner extends StatelessWidget {
+  const _KosAccessCodeBanner({required this.accessCode, required this.onCopy});
+
+  final String accessCode;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.vpn_key_rounded, size: 18, color: AppTheme.primaryGreen),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Kode Kos: $accessCode',
+              style: const TextStyle(
+                color: AppTheme.primaryGreen,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Salin kode kos',
+            icon: const Icon(Icons.copy_rounded, color: AppTheme.primaryGreen, size: 18),
+            onPressed: onCopy,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoKosYetWidget extends StatelessWidget {
+  const _NoKosYetWidget({required this.onAddKos});
+
+  final VoidCallback onAddKos;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.home_work_outlined, size: 56, color: Colors.grey.shade400),
+          const SizedBox(height: 12),
+          const Text('Belum ada kos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          const Text(
+            'Tambahkan kos terlebih dahulu di halaman Properti.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF757575)),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: onAddKos,
+            icon: const Icon(Icons.home_work_outlined),
+            label: const Text('Tambah Kos'),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ErrorWidget extends StatelessWidget {
+  const _ErrorWidget({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Coba Lagi'),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _EmptyRoomWidget extends StatelessWidget {
+  const _EmptyRoomWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Column(children: [
+          Icon(Icons.meeting_room_outlined, size: 48, color: Colors.grey.shade400),
+          const SizedBox(height: 12),
+          const Text(
+            'Belum ada kamar.\nTap tombol + untuk menambah.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF757575)),
+          ),
+        ]),
+      ),
     );
   }
 }

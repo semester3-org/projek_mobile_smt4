@@ -268,6 +268,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
             _DetailRow(label: 'room_number',     value: room.roomNumber),
             _DetailRow(label: 'room_type',       value: room.roomType),
             _DetailRow(label: 'price_per_month', value: _formatPrice(room.pricePerMonth)),
+            _DetailRow(label: 'rental_type', value: room.rentalType.label),
             _DetailRow(label: 'max_occupant',    value: '${room.maxOccupant} orang'),
             _DetailRow(label: 'status',          value: room.status.dbValue),
             if (room.description != null && room.description!.isNotEmpty)
@@ -733,7 +734,7 @@ class _RoomCard extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 4),
-              Text('${formatPrice(room.pricePerMonth)}/bln',
+              Text('${formatPrice(room.pricePerMonth)}${room.rentalType.priceSuffix}',
                   style: TextStyle(
                       color: Colors.grey.shade700, fontWeight: FontWeight.w700)),
               Text('Kapasitas: ${room.maxOccupant} orang',

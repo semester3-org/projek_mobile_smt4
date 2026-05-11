@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
@@ -23,6 +25,21 @@ class _UserHomePageState extends State<UserHomePage> {
   UserDashboard? _dashboard;
   bool _loading = true;
   bool _didLoad = false;
+  StreamSubscription<void>? _dashboardRefreshSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _dashboardRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
+      if (mounted) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dashboardRefreshSub?.cancel();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -224,11 +241,17 @@ class _BillingHero extends StatelessWidget {
             width: double.infinity,
             child: FilledButton(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const BillingListPage(),
-                  ),
-                );
+                Navigator.of(context)
+                    .push<bool>(
+                      MaterialPageRoute<bool>(
+                        builder: (_) => const BillingListPage(),
+                      ),
+                    )
+                    .then((changed) {
+                  if (changed == true) {
+                    UserRepository.requestProfileRefresh();
+                  }
+                });
               },
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white,
@@ -272,9 +295,17 @@ class _ServiceGrid extends StatelessWidget {
           title: 'Pembayaran Kos',
           subtitle: 'Sewa & Listrik',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const BillingListPage()),
-            );
+            Navigator.of(context)
+                .push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const BillingListPage(),
+                  ),
+                )
+                .then((changed) {
+              if (changed == true) {
+                UserRepository.requestProfileRefresh();
+              }
+            });
           },
         ),
         _ServiceTile(

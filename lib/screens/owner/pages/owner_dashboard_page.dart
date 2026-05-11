@@ -324,7 +324,7 @@ class _RevenueCard extends StatelessWidget {
                 foregroundColor: Colors.white,
               ),
               onPressed: () {
-                onNavigateToFinance?.call(2);
+                onNavigateToFinance?.call(3);
               },
               child: const Text('Detail'),
             ),

@@ -52,6 +52,97 @@ function monthNameShort(string $date): string {
     return (int)($parts[2] ?? 5) . ' ' . ($months[$parts[1] ?? ''] ?? '');
 }
 
+function currentPeriodKey(string $rentalType): string {
+    return match ($rentalType) {
+        'daily' => date('Y-m-d'),
+        'yearly' => date('Y'),
+        default => date('Y-m'),
+    };
+}
+
+function dateFromPeriodKey(string $period, string $rentalType, ?string $startDate = null): DateTime {
+    $defaultDay = 5;
+    $dueDay = $defaultDay;
+
+    if ($startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        $dueDay = (int)substr($startDate, 8, 2);
+        if ($dueDay < 1 || $dueDay > 31) {
+            $dueDay = $defaultDay;
+        }
+    }
+
+    if ($rentalType === 'daily') {
+        $date = DateTime::createFromFormat('Y-m-d', $period);
+        return $date ?: new DateTime(date('Y-m-d'));
+    }
+
+    if ($rentalType === 'yearly') {
+        $monthDay = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
+            ? substr($startDate, 5, 5)
+            : '01-01';
+        $date = DateTime::createFromFormat('Y-m-d', $period . '-' . $monthDay);
+        return $date ?: new DateTime(date('Y-m-d'));
+    }
+
+    $date = DateTime::createFromFormat('Y-m-d', $period . '-01');
+    if (!$date) {
+        return new DateTime(date('Y-m-d'));
+    }
+
+    $daysInMonth = (int)$date->format('t');
+    if ($dueDay > $daysInMonth) {
+        $dueDay = $daysInMonth;
+    }
+
+    return DateTime::createFromFormat('Y-m-d', $period . '-' . sprintf('%02d', $dueDay))
+        ?: new DateTime(date('Y-m-d'));
+}
+
+function dueDateForPeriod(string $period, ?string $startDate = null, string $rentalType = 'monthly'): string {
+    $date = dateFromPeriodKey($period, $rentalType, $startDate);
+    $date->modify(match ($rentalType) {
+        'daily' => '+1 day',
+        'yearly' => '+1 year',
+        default => '+1 month',
+    });
+    return $date->format('Y-m-d');
+}
+
+function addRentalPeriods(DateTime $date, string $rentalType, int $periods): DateTime {
+    if ($periods <= 0) {
+        return $date;
+    }
+
+    $date->modify(match ($rentalType) {
+        'daily' => '+' . $periods . ' day',
+        'yearly' => '+' . $periods . ' year',
+        default => '+' . $periods . ' month',
+    });
+    return $date;
+}
+
+function activeUntilFromPaidPeriods(?string $startDate, string $rentalType, int $paidPeriods): ?string {
+    if ($paidPeriods <= 0) {
+        return null;
+    }
+
+    $today = new DateTime(date('Y-m-d'));
+    $base = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
+        ? new DateTime($startDate)
+        : new DateTime(date('Y-m-d'));
+    if ($base < $today) {
+        $base = $today;
+    }
+
+    return addRentalPeriods($base, $rentalType, $paidPeriods)->format('Y-m-d');
+}
+
+function paymentLimitText(string $activeUntil): string {
+    $date = new DateTime($activeUntil);
+    $date->modify('+1 day');
+    return 'Batas bayar ' . monthNameShort($date->format('Y-m-d'));
+}
+
 if (
     $userId &&
     tableExists($conn, 'room_registrations') &&
@@ -60,21 +151,47 @@ if (
 ) {
     $hasPayments = tableExists($conn, 'payment_history');
     $stmt = $conn->prepare($hasPayments ? "
-        SELECT ph.amount, ph.period_month, r.room_number, k.title AS kos_name
-        FROM payment_history ph
-        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
-        INNER JOIN kos_rooms r ON r.id = rr.room_id
-        INNER JOIN kos_listings k ON k.id = rr.kos_id
-        WHERE rr.user_id = ? AND ph.payment_status <> 'paid'
-        ORDER BY ph.period_month ASC
-        LIMIT 1
-    " : "
-        SELECT r.price_per_month AS amount, DATE_FORMAT(CURDATE(), '%Y-%m') AS period_month,
-               r.room_number, k.title AS kos_name
+        SELECT
+            rr.id AS registration_id,
+            rr.start_date,
+            r.room_number,
+            r.price_per_month,
+            r.rental_type,
+            k.title AS kos_name,
+            ph.amount,
+            ph.period_month,
+            ph.payment_status,
+            (
+                SELECT COUNT(*)
+                FROM payment_history paid_ph
+                WHERE paid_ph.registration_id = rr.id
+                  AND paid_ph.payment_status = 'paid'
+            ) AS paid_periods
         FROM room_registrations rr
         INNER JOIN kos_rooms r ON r.id = rr.room_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
-        WHERE rr.user_id = ? AND rr.status IN ('active', 'approved', 'pending')
+        LEFT JOIN payment_history ph
+            ON ph.registration_id = rr.id
+            AND ph.payment_status NOT IN ('paid', 'cancelled')
+        WHERE rr.user_id = ?
+          AND rr.status IN ('active', 'approved')
+        ORDER BY ph.period_month ASC, rr.registered_at DESC
+        LIMIT 1
+    " : "
+        SELECT
+            rr.id AS registration_id,
+            rr.start_date,
+            r.room_number,
+            r.price_per_month,
+            r.price_per_month AS amount,
+            r.rental_type,
+            k.title AS kos_name,
+            NULL AS period_month,
+            0 AS paid_periods
+        FROM room_registrations rr
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        WHERE rr.user_id = ? AND rr.status IN ('active', 'approved')
         ORDER BY rr.registered_at DESC
         LIMIT 1
     ");
@@ -84,10 +201,17 @@ if (
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($row) {
-            $dueDate = $row['period_month'] . '-05';
-            $activeBillAmount = (float)$row['amount'];
+            $rentalType = $row['rental_type'] ?? 'monthly';
+            $period = $row['period_month'] ?: currentPeriodKey($rentalType);
+            $activeUntil = activeUntilFromPaidPeriods(
+                $row['start_date'] ?? null,
+                $rentalType,
+                (int)($row['paid_periods'] ?? 0)
+            ) ?? dueDateForPeriod($period, $row['start_date'] ?? null, $rentalType);
+
+            $activeBillAmount = (float)($row['amount'] ?? $row['price_per_month'] ?? 0);
             $activeBillLabel = ($row['kos_name'] ?? 'Kos') . ' - Kamar ' . $row['room_number'];
-            $dueDateText = 'Jatuh tempo ' . monthNameShort($dueDate);
+            $dueDateText = paymentLimitText($activeUntil);
             $billProgress = min(1, max(0.15, (int)date('d') / 30));
         }
     }

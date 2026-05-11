@@ -6,6 +6,7 @@ import 'pages/owner_finance_page.dart';
 import 'pages/owner_rooms_page.dart';
 import 'pages/owner_notifications_page.dart';
 import 'pages/owner_profile_page.dart';
+import 'subpages/owner_tenants_page.dart';
 
 class OwnerShell extends StatefulWidget {
   const OwnerShell({super.key});
@@ -28,7 +29,8 @@ class _OwnerShellState extends State<OwnerShell> {
         index: _index,
         children: [
           OwnerDashboardPage(onNavigateToFinance: _navigateToTab),
-          OwnerRoomsPage(),
+          const OwnerRoomsPage(),
+          const OwnerTenantsPage(),
           const OwnerFinancePage(),
           const OwnerNotificationsPage(),
           const OwnerProfilePage(),
@@ -50,6 +52,11 @@ class _OwnerShellState extends State<OwnerShell> {
             icon: Icon(Icons.meeting_room_outlined),
             activeIcon: Icon(Icons.meeting_room_rounded),
             label: 'Kamar',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.how_to_reg_outlined),
+            activeIcon: Icon(Icons.how_to_reg_rounded),
+            label: 'Approval',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.account_balance_wallet_outlined),

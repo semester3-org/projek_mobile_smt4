@@ -40,6 +40,8 @@ if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_or
 if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
+if ($path === 'api/midtrans')             { require_once __DIR__ . '/api/midtrans.php';            exit; }
+if ($path === 'api/midtrans_notification') { require_once __DIR__ . '/api/midtrans_notification.php'; exit; }
 
 // ── Endpoint owner (butuh JWT) ────────────────────────────────────────────────
 if ($path === 'api/kos_listings')        { require_once __DIR__ . '/api/kos_listings.php';        exit; }
@@ -79,6 +81,8 @@ if (empty($path)) {
             'GET  /api/user_notifications',
             'GET|POST /api/user_profile',
             'POST /api/user_ratings',
+            'POST /api/midtrans',
+            'POST /api/midtrans_notification',
             // Owner (JWT required)
             'GET  /api/kos_listings',
             'GET|POST|PUT|DELETE /api/kos_rooms',

@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Methods: GET, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -9,14 +9,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Only GET method allowed']);
-    exit();
-}
-
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    handlePut($conn, JWT::getPayloadFromRequest());
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Only GET or PUT method allowed']);
+    exit();
+}
 
 function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
     http_response_code($code);
@@ -59,6 +63,75 @@ function tenantPayload(array $row): array {
     ];
 }
 
+function handlePut(mysqli $conn, ?array $payload): void {
+    if (!$payload) {
+        sendJson(false, null, 'Unauthorized', 401);
+    }
+
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($body)) {
+        sendJson(false, null, 'Invalid JSON request', 400);
+    }
+
+    $registrationId = trim((string)($body['registrationId'] ?? ''));
+    $status = trim((string)($body['status'] ?? ''));
+    if ($registrationId === '' || !in_array($status, ['approved', 'rejected'], true)) {
+        sendJson(false, null, 'Invalid registration or status', 400);
+    }
+
+    $ownerId = $payload['sub'] ?? '';
+    $role = $payload['role'] ?? '';
+    if (!in_array($role, ['owner', 'admin'], true)) {
+        sendJson(false, null, 'Forbidden: hanya owner yang bisa akses', 403);
+    }
+
+    $stmt = $conn->prepare("SELECT rr.status, rr.room_id FROM room_registrations rr INNER JOIN kos_listings k ON k.id = rr.kos_id WHERE rr.id = ? AND k.owner_id = ? LIMIT 1");
+    if (!$stmt) {
+        sendJson(false, null, 'Database error', 500);
+    }
+    $stmt->bind_param('ss', $registrationId, $ownerId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        sendJson(false, null, 'Registrasi penghuni tidak ditemukan', 404);
+    }
+
+    if ($row['status'] !== 'pending') {
+        sendJson(false, null, 'Hanya registrasi yang menunggu persetujuan yang bisa diperbarui', 400);
+    }
+
+    if ($status === 'approved') {
+        $upd = $conn->prepare("UPDATE room_registrations SET status = 'approved', start_date = CURDATE(), updated_at = NOW() WHERE id = ?");
+        if (!$upd) {
+            sendJson(false, null, 'Database error', 500);
+        }
+        $upd->bind_param('s', $registrationId);
+        $upd->execute();
+        $upd->close();
+        sendJson(true, true, 'Pengajuan kamar disetujui');
+    }
+
+    $upd = $conn->prepare("UPDATE room_registrations SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+    if (!$upd) {
+        sendJson(false, null, 'Database error', 500);
+    }
+    $upd->bind_param('s', $registrationId);
+    $upd->execute();
+    $upd->close();
+
+    $free = $conn->prepare("UPDATE kos_rooms SET status = 'available' WHERE id = ?");
+    if (!$free) {
+        sendJson(false, null, 'Database error', 500);
+    }
+    $free->bind_param('s', $row['room_id']);
+    $free->execute();
+    $free->close();
+
+    sendJson(true, true, 'Pengajuan kamar ditolak');
+}
+
 $payload = JWT::getPayloadFromRequest();
 if (!$payload) {
     sendJson(false, null, 'Unauthorized', 401);
@@ -81,7 +154,7 @@ $params = [$ownerId];
 $types = 's';
 $statusSql = '';
 
-if ($status !== '' && in_array($status, ['active', 'approved', 'pending', 'rejected', 'ended'], true)) {
+if ($status !== '' && in_array($status, ['active', 'approved', 'pending', 'rejected', 'cancelled', 'completed'], true)) {
     $statusSql = ' AND rr.status = ?';
     $params[] = $status;
     $types .= 's';

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
@@ -19,10 +21,20 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final _codeCtrl = TextEditingController();
+  final _roomCodeCtrl = TextEditingController();
   UserProfile? _profile;
   bool _loading = true;
   bool _connecting = false;
   bool _didLoad = false;
+  StreamSubscription<void>? _profileRefreshSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
+      if (mounted) _load();
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -34,7 +46,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   void dispose() {
+    _profileRefreshSub?.cancel();
     _codeCtrl.dispose();
+    _roomCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -49,26 +63,38 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       _profile = result.data;
       _codeCtrl.text = _profile?.kosAccessCode ?? '';
+      _roomCodeCtrl.text = _profile?.roomNumber ?? '';
       _loading = false;
     });
   }
 
   Future<void> _connectCode() async {
-    final code = _codeCtrl.text.trim();
-    if (code.isEmpty) {
+    final accessCode = _codeCtrl.text.trim();
+    final roomCode = _roomCodeCtrl.text.trim();
+    if (accessCode.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Masukkan kode unik kos terlebih dahulu')),
       );
       return;
     }
 
+    if (roomCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masukkan kode unik kamar terlebih dahulu')),
+      );
+      return;
+    }
+
     setState(() => _connecting = true);
-    final result = await UserRepository.connectKosCode(code);
+    final result = await UserRepository.connectKosCode(accessCode, roomCode);
     if (!mounted) return;
     setState(() => _connecting = false);
 
     if (result.isSuccess) {
-      setState(() => _profile = result.data);
+      setState(() {
+        _profile = result.data;
+        _roomCodeCtrl.text = _profile?.roomNumber ?? '';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Kode kos berhasil disambungkan')),
       );
@@ -120,9 +146,14 @@ class _ProfilePageState extends State<ProfilePage> {
                     profile: _profile,
                     sessionName: session?.displayName,
                   ),
+                  if (_profile != null) ...[
+                    const SizedBox(height: 14),
+                    _ActiveRentBanner(profile: _profile!),
+                  ],
                   const SizedBox(height: 18),
                   _KosCodeCard(
-                    controller: _codeCtrl,
+                    accessCodeController: _codeCtrl,
+                    roomCodeController: _roomCodeCtrl,
                     isConnecting: _connecting,
                     onConnect: _connectCode,
                   ),
@@ -140,6 +171,11 @@ class _ProfilePageState extends State<ProfilePage> {
                     value: _profile?.kosName ?? 'Belum tersambung',
                   ),
                   _InfoTile(
+                    icon: Icons.vpn_key_outlined,
+                    label: 'Kode Unik Kos',
+                    value: _profile?.kosAccessCode ?? 'Belum tersambung',
+                  ),
+                  _InfoTile(
                     icon: Icons.meeting_room_outlined,
                     label: 'Kamar',
                     value: _roomLabel(_profile),
@@ -148,11 +184,17 @@ class _ProfilePageState extends State<ProfilePage> {
                   _ActionTile(
                     icon: Icons.receipt_long_outlined,
                     label: 'Tagihan & Pembayaran',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const BillingListPage(),
-                      ),
-                    ),
+                    onTap: () {
+                      Navigator.of(context)
+                          .push<bool>(
+                            MaterialPageRoute<bool>(
+                              builder: (_) => const BillingListPage(),
+                            ),
+                          )
+                          .then((changed) {
+                        if (changed == true) _load();
+                      });
+                    },
                   ),
                   _ActionTile(
                     icon: Icons.shopping_bag_outlined,
@@ -189,6 +231,154 @@ class _ProfilePageState extends State<ProfilePage> {
       if (number != null && number.isNotEmpty) 'No. $number',
       if (type != null && type.isNotEmpty) type,
     ].join(' - ');
+  }
+}
+
+class _ActiveRentBanner extends StatelessWidget {
+  const _ActiveRentBanner({required this.profile});
+
+  final UserProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeUntil = profile.activeUntil;
+    final hasRoom = (profile.roomNumber ?? '').isNotEmpty ||
+        (profile.kosAccessCode ?? '').isNotEmpty;
+
+    if (activeUntil == null) {
+      if (!hasRoom) return const SizedBox.shrink();
+      return _RentBannerShell(
+        backgroundColor: const Color(0xFFF3F4F6),
+        iconColor: UserTheme.muted,
+        icon: Icons.calendar_today_rounded,
+        title: 'Belum ada masa sewa aktif',
+        subtitle: 'Bayar tagihan kos untuk mengaktifkan durasi sewa.',
+        badge: 'Belum aktif',
+      );
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+    final remainingDays = until.difference(today).inDays;
+    final isExpired = remainingDays < 0;
+    final isNearEnd = remainingDays >= 0 && remainingDays <= 7;
+
+    final iconColor = isExpired
+        ? UserTheme.danger
+        : isNearEnd
+            ? const Color(0xFFE66000)
+            : UserTheme.primary;
+    final backgroundColor = isExpired
+        ? const Color(0xFFFFEBEB)
+        : isNearEnd
+            ? const Color(0xFFFFF4E5)
+            : const Color(0xFFE8F5FF);
+
+    return _RentBannerShell(
+      backgroundColor: backgroundColor,
+      iconColor: iconColor,
+      icon: isExpired
+          ? Icons.warning_amber_rounded
+          : isNearEnd
+              ? Icons.timer_outlined
+              : Icons.home_rounded,
+      title: isExpired
+          ? 'Masa sewa telah berakhir'
+          : isNearEnd
+              ? 'Masa sewa segera berakhir'
+              : 'Masa sewa aktif',
+      subtitle: 'Aktif sampai ${formatShortDate(activeUntil)}',
+      badge: isExpired
+          ? '${remainingDays.abs()} hari lalu'
+          : remainingDays == 0
+              ? 'Hari ini'
+              : '$remainingDays hari lagi',
+    );
+  }
+}
+
+class _RentBannerShell extends StatelessWidget {
+  const _RentBannerShell({
+    required this.backgroundColor,
+    required this.iconColor,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.badge,
+  });
+
+  final Color backgroundColor;
+  final Color iconColor;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: iconColor.withOpacity(0.18)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: iconColor,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.72),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              badge,
+              style: TextStyle(
+                color: iconColor,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -258,12 +448,14 @@ class _ProfileHeader extends StatelessWidget {
 
 class _KosCodeCard extends StatelessWidget {
   const _KosCodeCard({
-    required this.controller,
+    required this.accessCodeController,
+    required this.roomCodeController,
     required this.isConnecting,
     required this.onConnect,
   });
 
-  final TextEditingController controller;
+  final TextEditingController accessCodeController;
+  final TextEditingController roomCodeController;
   final bool isConnecting;
   final VoidCallback onConnect;
 
@@ -288,11 +480,27 @@ class _KosCodeCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: controller,
+            controller: accessCodeController,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
               hintText: 'Masukkan kode kos',
               prefixIcon: const Icon(Icons.vpn_key_outlined),
+              filled: true,
+              fillColor: const Color(0xFFF7F9FC),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: roomCodeController,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              hintText: 'Masukkan kode unik kamar (opsional)',
+              labelText: 'Kode Unik Kamar',
+              prefixIcon: const Icon(Icons.meeting_room_outlined),
               filled: true,
               fillColor: const Color(0xFFF7F9FC),
               border: OutlineInputBorder(

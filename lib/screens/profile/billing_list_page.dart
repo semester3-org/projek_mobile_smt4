@@ -16,6 +16,7 @@ class BillingListPage extends StatefulWidget {
 class _BillingListPageState extends State<BillingListPage> {
   List<BillingRecord> _billings = [];
   bool _loading = true;
+  bool _didChange = false;
   String? _error;
 
   @override
@@ -28,7 +29,9 @@ class _BillingListPageState extends State<BillingListPage> {
     final result = await UserRepository.getBillings();
     if (!mounted) return;
     setState(() {
-      _billings = result.data ?? [];
+      _billings = (result.data ?? [])
+          .where((billing) => billing.registrationStatus != 'pending')
+          .toList();
       _error = result.error;
       _loading = false;
     });
@@ -36,101 +39,181 @@ class _BillingListPageState extends State<BillingListPage> {
 
   BillingRecord? get _activeBill {
     for (final billing in _billings) {
-      if (billing.status != 'lunas') return billing;
+      if (billing.canPay) return billing;
+    }
+    for (final billing in _billings) {
+      if (_isActivePaidBill(billing)) return billing;
     }
     return null;
+  }
+
+  BillingRecord? get _activePaidBill {
+    for (final billing in _billings) {
+      if (_isActivePaidBill(billing)) return billing;
+    }
+    return null;
+  }
+
+  DateTime? get _activeUntil {
+    DateTime? latest;
+    for (final billing in _billings) {
+      final activeUntil = billing.activeUntil;
+      if (activeUntil == null) continue;
+      if (latest == null || activeUntil.isAfter(latest)) {
+        latest = activeUntil;
+      }
+    }
+    return latest ?? _activePaidBill?.dueDate;
+  }
+
+  List<BillingRecord> get _historyBillings {
+    final activeBill = _activeBill;
+    return _billings
+        .where((billing) => billing.isPaid || billing.isCancelled)
+        .where((billing) => billing.id != activeBill?.id)
+        .toList();
+  }
+
+  bool _isActivePaidBill(BillingRecord billing) {
+    if (!billing.isPaid) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dueDay = DateTime(
+      billing.dueDate.year,
+      billing.dueDate.month,
+      billing.dueDate.day,
+    );
+    return !today.isAfter(dueDay);
   }
 
   @override
   Widget build(BuildContext context) {
     final activeBill = _activeBill;
+    final historyBillings = _historyBillings;
+    final activeUntil = _activeUntil;
 
-    return Scaffold(
-      backgroundColor: UserTheme.background,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        title: const Text(
-          'Tagihan Anda',
-          style: TextStyle(
-            color: UserTheme.primaryDark,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 18),
-            child: CircleAvatar(
-              backgroundColor: UserTheme.primaryDark,
-              child: Icon(Icons.person, color: Colors.white),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.of(context).pop(_didChange);
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: UserTheme.background,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          title: const Text(
+            'Tagihan Anda',
+            style: TextStyle(
+              color: UserTheme.primaryDark,
+              fontWeight: FontWeight.w800,
             ),
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        color: UserTheme.primary,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(20, 30, 20, 32),
-                children: [
-                  if (_error != null) ...[
-                    _InfoMessage(message: _error!),
-                    const SizedBox(height: 18),
-                  ],
-                  if (activeBill != null) _ActiveBillingCard(billing: activeBill),
-                  const SizedBox(height: 28),
-                  Row(
-                    children: [
-                      Text(
-                        'Riwayat Tagihan',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: UserTheme.text,
-                            ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.filter_list_rounded),
-                      ),
+          actions: const [
+            Padding(
+              padding: EdgeInsets.only(right: 18),
+              child: CircleAvatar(
+                backgroundColor: UserTheme.primaryDark,
+                child: Icon(Icons.person, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _load,
+          color: UserTheme.primary,
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 30, 20, 32),
+                  children: [
+                    if (_error != null) ...[
+                      _InfoMessage(message: _error!),
+                      const SizedBox(height: 18),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (_billings.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Text(
-                          'Belum ada tagihan.',
-                          style: TextStyle(color: UserTheme.muted),
+                    if (activeBill != null)
+                      _ActiveBillingCard(
+                        billing: activeBill,
+                        activeUntil: activeUntil,
+                        onUpdated: () {
+                          _didChange = true;
+                          UserRepository.requestProfileRefresh();
+                          return _load();
+                        },
+                      ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Text(
+                          'Riwayat Tagihan',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: UserTheme.text,
+                              ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          onPressed: () {},
+                          icon: const Icon(Icons.filter_list_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (historyBillings.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Text(
+                            'Belum ada riwayat tagihan.',
+                            style: TextStyle(color: UserTheme.muted),
+                          ),
+                        ),
+                      )
+                    else
+                      ...historyBillings.map(
+                        (billing) => Padding(
+                          padding: const EdgeInsets.only(bottom: 18),
+                          child: _BillingHistoryCard(
+                            billing: billing,
+                            onUpdated: () {
+                              _didChange = true;
+                              UserRepository.requestProfileRefresh();
+                              _load();
+                            },
+                          ),
                         ),
                       ),
-                    )
-                  else
-                    ..._billings.map(
-                      (billing) => Padding(
-                        padding: const EdgeInsets.only(bottom: 18),
-                        child: _BillingHistoryCard(billing: billing),
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  const _HelpCard(),
-                  const UserBottomSpacer(),
-                ],
-              ),
+                    const SizedBox(height: 14),
+                    const _HelpCard(),
+                    const UserBottomSpacer(),
+                  ],
+                ),
+        ),
       ),
     );
   }
 }
 
 class _ActiveBillingCard extends StatelessWidget {
-  const _ActiveBillingCard({required this.billing});
+  const _ActiveBillingCard({
+    required this.billing,
+    required this.activeUntil,
+    required this.onUpdated,
+  });
 
   final BillingRecord billing;
+  final DateTime? activeUntil;
+  final Future<void> Function() onUpdated;
 
   @override
   Widget build(BuildContext context) {
+    final isPaid = billing.isPaid;
+    final title = isPaid ? 'Masa Sewa Aktif' : 'Total Tagihan Aktif';
+    final rentActiveUntil = activeUntil ?? billing.activeUntil ?? billing.dueDate;
+    final dateLabel = isPaid
+        ? 'Aktif sampai: ${formatShortDate(rentActiveUntil)}'
+        : 'Batas bayar: ${formatShortDate(rentActiveUntil.add(const Duration(days: 1)))}';
+    final actionLabel = isPaid ? 'Tidak Perpanjang' : 'Bayar Sekarang';
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -149,7 +232,7 @@ class _ActiveBillingCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Total Tagihan Aktif',
+                  title,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.72),
                     fontSize: 16,
@@ -157,7 +240,9 @@ class _ActiveBillingCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.account_balance_wallet_outlined,
+                isPaid
+                    ? Icons.event_available_rounded
+                    : Icons.account_balance_wallet_outlined,
                 color: Colors.white.withOpacity(0.5),
               ),
             ],
@@ -209,7 +294,7 @@ class _ActiveBillingCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Jatuh tempo: ${formatShortDate(billing.dueDate)}',
+                  dateLabel,
                   style: const TextStyle(color: Colors.white),
                 ),
               ],
@@ -220,14 +305,21 @@ class _ActiveBillingCard extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => BillingDetailPage(billing: billing),
+                Navigator.of(context).push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => BillingDetailPage(
+                      billing: billing,
+                      cancellationMeansStopRenewal:
+                          !billing.isPaid && activeUntil != null,
+                      activeUntilForStopRenewal: rentActiveUntil,
+                    ),
                   ),
-                );
+                ).then((changed) {
+                  if (changed == true) onUpdated();
+                });
               },
               icon: const Icon(Icons.arrow_forward_rounded),
-              label: const Text('Bayar Sekarang'),
+              label: Text(actionLabel),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: UserTheme.primaryDark,
@@ -245,23 +337,33 @@ class _ActiveBillingCard extends StatelessWidget {
 }
 
 class _BillingHistoryCard extends StatelessWidget {
-  const _BillingHistoryCard({required this.billing});
+  const _BillingHistoryCard({
+    required this.billing,
+    required this.onUpdated,
+  });
 
   final BillingRecord billing;
+  final VoidCallback onUpdated;
 
   @override
   Widget build(BuildContext context) {
-    final paid = billing.status == 'lunas';
+    final paid = billing.isPaid;
+    final cancelled = billing.isCancelled;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => BillingDetailPage(billing: billing),
+          Navigator.of(context).push<bool>(
+            MaterialPageRoute<bool>(
+              builder: (_) => BillingDetailPage(
+                billing: billing,
+                actionsEnabled: false,
+              ),
             ),
-          );
+          ).then((changed) {
+            if (changed == true) onUpdated();
+          });
         },
         borderRadius: BorderRadius.circular(22),
         child: Container(
@@ -276,13 +378,24 @@ class _BillingHistoryCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color:
-                      paid ? const Color(0xFFE6FAEF) : const Color(0xFFFFF1E4),
+                  color: paid
+                      ? const Color(0xFFE6FAEF)
+                      : cancelled
+                          ? const Color(0xFFE6E8EE)
+                          : const Color(0xFFFFF1E4),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  paid ? Icons.check_circle : Icons.error,
-                  color: paid ? UserTheme.success : const Color(0xFFE66000),
+                  paid
+                      ? Icons.check_circle
+                      : cancelled
+                          ? Icons.cancel_rounded
+                          : Icons.error,
+                  color: paid
+                      ? UserTheme.success
+                      : cancelled
+                          ? UserTheme.muted
+                          : const Color(0xFFE66000),
                 ),
               ),
               const SizedBox(width: 18),
@@ -337,13 +450,23 @@ class _BillingHistoryCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: paid
                           ? const Color(0xFFD9F9E7)
+                          : cancelled
+                              ? const Color(0xFFE6E8EE)
                           : const Color(0xFFFFEBD1),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      paid ? 'Lunas' : 'Belum Bayar',
+                      paid
+                          ? 'Lunas'
+                          : cancelled
+                              ? 'Dibatalkan'
+                              : 'Belum Bayar',
                       style: TextStyle(
-                        color: paid ? UserTheme.success : const Color(0xFFE66000),
+                        color: paid
+                            ? UserTheme.success
+                            : cancelled
+                                ? UserTheme.muted
+                                : const Color(0xFFE66000),
                         fontWeight: FontWeight.w800,
                       ),
                     ),

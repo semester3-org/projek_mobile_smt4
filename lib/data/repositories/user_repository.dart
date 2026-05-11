@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/api_service.dart';
 import '../../models/billing_record.dart';
 import '../../models/notification.dart';
@@ -9,6 +11,18 @@ import 'kos_repository.dart' show RepoResult;
 
 class UserRepository {
   UserRepository._();
+
+  static final StreamController<void> _profileRefreshController =
+      StreamController<void>.broadcast();
+
+  static Stream<void> get profileRefreshRequests =>
+      _profileRefreshController.stream;
+
+  static void requestProfileRefresh() {
+    if (!_profileRefreshController.isClosed) {
+      _profileRefreshController.add(null);
+    }
+  }
 
   static Future<RepoResult<UserDashboard>> getDashboard({
     required String displayName,
@@ -85,6 +99,72 @@ class UserRepository {
     }
   }
 
+  static Future<RepoResult<bool>> cancelBillingOrder({
+    required String billingId,
+    required bool keepDueDateIfPaid,
+    DateTime? paidUntil,
+  }) async {
+    final res = await ApiService.put('api/user_billings', {
+      'id': billingId,
+      'action': 'cancel_order',
+      'keep_due_date_if_paid': keepDueDateIfPaid,
+      if (paidUntil != null) 'paid_until': paidUntil.toIso8601String(),
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membatalkan order');
+    }
+
+    return RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> createMidtransPayment({
+    required String orderId,
+    required double amount,
+    required String customerName,
+    required String customerEmail,
+    required String paymentMethod,
+  }) async {
+    final res = await ApiService.post('api/midtrans', {
+      'order_id': orderId,
+      'amount': amount,
+      'customer_name': customerName,
+      'customer_email': customerEmail,
+      'payment_method': paymentMethod,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membuat transaksi Midtrans');
+    }
+
+    final data = res.data?['data'] as Map<String, dynamic>?;
+    if (data == null) {
+      return const RepoResult.fail('Response Midtrans tidak valid');
+    }
+
+    return RepoResult.ok(data);
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> syncMidtransPaymentStatus({
+    required String midtransOrderId,
+  }) async {
+    final res = await ApiService.post('api/midtrans', {
+      'action': 'sync_status',
+      'midtrans_order_id': midtransOrderId,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal mengecek status Midtrans');
+    }
+
+    final data = res.data?['data'] as Map<String, dynamic>?;
+    if (data == null) {
+      return const RepoResult.fail('Response status Midtrans tidak valid');
+    }
+
+    return RepoResult.ok(data);
+  }
+
   static Future<RepoResult<List<Order>>> getOrders() async {
     final res = await ApiService.get('api/user_orders');
 
@@ -148,10 +228,12 @@ class UserRepository {
     }
   }
 
-  static Future<RepoResult<UserProfile>> connectKosCode(String accessCode) async {
-    final res = await ApiService.post('api/user_profile', {
+  static Future<RepoResult<UserProfile>> connectKosCode(String accessCode, [String? roomNumber]) async {
+    final payload = {
       'accessCode': accessCode,
-    });
+      if (roomNumber != null && roomNumber.isNotEmpty) 'roomNumber': roomNumber,
+    };
+    final res = await ApiService.post('api/user_profile', payload);
 
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menyambungkan kode kos');

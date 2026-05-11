@@ -5,6 +5,8 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'projek_kos');
 
+mysqli_report(MYSQLI_REPORT_OFF);
+
 // Create connection
 $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
 
 /// Halaman detail profil user - menampilkan info lengkap user yang login
@@ -33,15 +34,19 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
       final session = auth.session;
 
       if (session != null) {
-        // TODO: Untuk integrasi lebih lanjut, bisa fetch data lebih lengkap dari backend
-        // Saat ini menggunakan data dari session yang sudah login
+        final result = await UserRepository.getProfile(
+          displayName: session.displayName,
+          email: session.email,
+          role: session.role.label,
+        );
         setState(() {
-          _userProfile = UserProfile(
-            id: '',
-            email: session.email,
-            displayName: session.displayName,
-            role: session.role.label,
-          );
+          _userProfile = result.data ??
+              UserProfile(
+                id: '',
+                email: session.email,
+                displayName: session.displayName,
+                role: session.role.label,
+              );
           _isLoading = false;
         });
       } else {
@@ -145,6 +150,25 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
             value: _userProfile?.email ?? '',
           ),
           _InfoTile(
+            icon: Icons.key_outlined,
+            label: 'Kode Unik Kos',
+            value: _userProfile?.kosAccessCode ?? 'Belum tersedia',
+          ),
+          _InfoTile(
+            icon: Icons.bed_outlined,
+            label: 'Kamar',
+            value: (() {
+              final rooms = [
+                if ((_userProfile?.roomNumber ?? '').isNotEmpty)
+                  'No ${_userProfile!.roomNumber}',
+                if ((_userProfile?.roomType ?? '').isNotEmpty)
+                  _userProfile!.roomType!,
+              ];
+              final label = rooms.join(' - ');
+              return label.isEmpty ? 'Belum diisi' : label;
+            })(),
+          ),
+          _InfoTile(
             icon: Icons.phone_outlined,
             label: 'Nomor Telepon',
             value: _userProfile?.phone ?? 'Belum diisi',
@@ -168,7 +192,8 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
             label: 'Edit Profil',
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Edit profil akan segera tersedia')),
+                const SnackBar(
+                    content: Text('Edit profil akan segera tersedia')),
               );
             },
           ),

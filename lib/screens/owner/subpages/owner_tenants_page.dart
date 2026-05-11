@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
-
 class OwnerTenantsPage extends StatefulWidget {
   const OwnerTenantsPage({super.key});
 
@@ -12,6 +11,7 @@ class OwnerTenantsPage extends StatefulWidget {
 
 class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
   List<OwnerTenant> _tenants = [];
+  final Set<String> _updatingIds = <String>{};
   bool _loading = true;
   String? _error;
 
@@ -52,6 +52,58 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
         _error = 'Gagal membaca data penghuni';
       });
     }
+  }
+
+  Future<bool> _updateTenantStatus(
+    OwnerTenant tenant,
+    String newStatus,
+  ) async {
+    if (_updatingIds.contains(tenant.registrationId)) return false;
+    setState(() => _updatingIds.add(tenant.registrationId));
+
+    final res = await ApiService.put(
+      'api/owner_tenants',
+      {
+        'registrationId': tenant.registrationId,
+        'status': newStatus,
+      },
+    );
+
+    if (!mounted) return false;
+    setState(() => _updatingIds.remove(tenant.registrationId));
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.message ?? 'Gagal memperbarui status penghuni'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+
+    setState(() {
+      _tenants = _tenants.map((item) {
+        if (item.registrationId != tenant.registrationId) return item;
+        return item.copyWith(
+          status: newStatus,
+          startDate: newStatus == 'approved'
+              ? (item.startDate ?? DateTime.now().toIso8601String())
+              : item.startDate,
+        );
+      }).toList();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newStatus == 'approved'
+              ? 'Pengajuan kamar disetujui'
+              : 'Pengajuan kamar ditolak',
+        ),
+      ),
+    );
+    return true;
   }
 
   void _showDetail(OwnerTenant tenant) {
@@ -103,6 +155,46 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                 _DetailRow(label: 'Harga Kamar', value: _formatPrice(tenant.roomPrice)),
                 if (tenant.startDate != null)
                   _DetailRow(label: 'Mulai Sewa', value: tenant.startDate!),
+                if (tenant.status == 'pending') ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _updatingIds.contains(tenant.registrationId)
+                              ? null
+                              : () async {
+                                  final ok = await _updateTenantStatus(
+                                    tenant,
+                                    'rejected',
+                                  );
+                                  if (ok && mounted) Navigator.of(context).pop();
+                                },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                            side: BorderSide(color: Colors.red.shade300),
+                          ),
+                          child: const Text('Tolak'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _updatingIds.contains(tenant.registrationId)
+                              ? null
+                              : () async {
+                                  final ok = await _updateTenantStatus(
+                                    tenant,
+                                    'approved',
+                                  );
+                                  if (ok && mounted) Navigator.of(context).pop();
+                                },
+                          child: const Text('Setujui'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -144,7 +236,18 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                         ..._tenants.map(
                           (tenant) => _TenantTile(
                             tenant: tenant,
+                            isUpdating: _updatingIds.contains(
+                              tenant.registrationId,
+                            ),
                             onTap: () => _showDetail(tenant),
+                            onApprove: () => _updateTenantStatus(
+                              tenant,
+                              'approved',
+                            ),
+                            onReject: () => _updateTenantStatus(
+                              tenant,
+                              'rejected',
+                            ),
                           ),
                         ),
                     ],
@@ -216,19 +319,46 @@ class OwnerTenant {
         return status;
     }
   }
+
+  OwnerTenant copyWith({
+    String? status,
+    String? startDate,
+  }) {
+    return OwnerTenant(
+      registrationId: registrationId,
+      userId: userId,
+      name: name,
+      email: email,
+      kosId: kosId,
+      kosName: kosName,
+      kosAccessCode: kosAccessCode,
+      roomNumber: roomNumber,
+      roomType: roomType,
+      roomPrice: roomPrice,
+      status: status ?? this.status,
+      startDate: startDate ?? this.startDate,
+    );
+  }
 }
 
 class _TenantTile extends StatelessWidget {
   const _TenantTile({
     required this.tenant,
     required this.onTap,
+    required this.onApprove,
+    required this.onReject,
+    this.isUpdating = false,
   });
 
   final OwnerTenant tenant;
   final VoidCallback onTap;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  final bool isUpdating;
 
   @override
   Widget build(BuildContext context) {
+    final canAction = tenant.status == 'pending' && !isUpdating;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -255,6 +385,39 @@ class _TenantTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     _KosBadge(tenant: tenant, compact: true),
+                    if (tenant.status == 'pending') ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: canAction ? onReject : null,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                side: BorderSide(color: Colors.red.shade300),
+                              ),
+                              child: const Text('Tolak'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: canAction ? onApprove : null,
+                              child: isUpdating
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Setujui'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

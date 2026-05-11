@@ -11,6 +11,7 @@ class UserProfile {
   final String? kosAccessCode;
   final String? roomNumber;
   final String? roomType;
+  final DateTime? activeUntil;
 
   UserProfile({
     required this.id,
@@ -24,6 +25,7 @@ class UserProfile {
     this.kosAccessCode,
     this.roomNumber,
     this.roomType,
+    this.activeUntil,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -39,6 +41,7 @@ class UserProfile {
       kosAccessCode: json['kosAccessCode'] as String?,
       roomNumber: json['roomNumber'] as String?,
       roomType: json['roomType'] as String?,
+      activeUntil: DateTime.tryParse(json['activeUntil'] as String? ?? ''),
     );
   }
 
@@ -55,6 +58,7 @@ class UserProfile {
       'kosAccessCode': kosAccessCode,
       'roomNumber': roomNumber,
       'roomType': roomType,
+      'activeUntil': activeUntil?.toIso8601String(),
     };
   }
 }

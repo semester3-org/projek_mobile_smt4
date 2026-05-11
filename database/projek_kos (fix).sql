@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 29, 2026 at 05:53 PM
+-- Generation Time: May 05, 2026 at 07:34 PM
 -- Server version: 8.0.30
 -- PHP Version: 8.3.30
 
@@ -28,15 +28,15 @@ SET time_zone = "+00:00";
 --
 
 CREATE TABLE `cafe_places` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `vibe` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `vibe` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rating` decimal(3,2) NOT NULL DEFAULT '0.00',
-  `image_url` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `image_url` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `distance_km` decimal(5,2) NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `merchant_id` varchar(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -58,15 +58,15 @@ INSERT INTO `cafe_places` (`id`, `name`, `vibe`, `rating`, `image_url`, `distanc
 --
 
 CREATE TABLE `catering_places` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `address` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `specialty` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `specialty` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rating` decimal(3,2) NOT NULL DEFAULT '0.00',
   `distance_km` decimal(5,2) NOT NULL,
-  `image_url` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `image_url` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `min_order_portion` int NOT NULL DEFAULT '20',
-  `merchant_id` varchar(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -79,9 +79,9 @@ CREATE TABLE `catering_places` (
 
 CREATE TABLE `facilities` (
   `id` int NOT NULL,
-  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `created_by` varchar(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+  `created_by` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -108,38 +108,9 @@ INSERT INTO `facilities` (`id`, `name`, `created_at`, `created_by`) VALUES
 
 CREATE TABLE `kos_facilities` (
   `id` int NOT NULL,
-  `kos_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `kos_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `facility_id` int NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `kos_facilities`
---
-
-INSERT INTO `kos_facilities` (`id`, `kos_id`, `facility_id`) VALUES
-(1, 'k1', 1),
-(2, 'k1', 2),
-(3, 'k1', 3),
-(4, 'k1', 5),
-(5, 'k2', 1),
-(6, 'k2', 3),
-(7, 'k2', 4),
-(8, 'k3', 1),
-(9, 'k3', 2),
-(10, 'k3', 3),
-(12, 'k3', 6),
-(11, 'k3', 7),
-(13, 'k4', 1),
-(14, 'k4', 2),
-(15, 'k4', 3),
-(16, 'k4', 5),
-(17, 'k4', 6),
-(18, 'k5', 1),
-(19, 'k5', 2),
-(20, 'k5', 3),
-(22, 'k5', 6),
-(21, 'k5', 7),
-(23, 'k5', 8);
 
 -- --------------------------------------------------------
 
@@ -149,28 +120,11 @@ INSERT INTO `kos_facilities` (`id`, `kos_id`, `facility_id`) VALUES
 
 CREATE TABLE `kos_images` (
   `id` int NOT NULL,
-  `kos_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `image_url` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `kos_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `image_url` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `display_order` int DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `kos_images`
---
-
-INSERT INTO `kos_images` (`id`, `kos_id`, `image_url`, `display_order`, `created_at`) VALUES
-(1, 'k1', 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800', 1, '2026-04-19 17:06:30'),
-(2, 'k1', 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800', 2, '2026-04-19 17:06:30'),
-(3, 'k1', 'https://images.unsplash.com/photo-1584622650111-993a426fbf80?w=800', 3, '2026-04-19 17:06:30'),
-(4, 'k2', 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800', 1, '2026-04-19 17:06:30'),
-(5, 'k2', 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800', 2, '2026-04-19 17:06:30'),
-(6, 'k3', 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800', 1, '2026-04-19 17:06:30'),
-(7, 'k3', 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800', 2, '2026-04-19 17:06:30'),
-(8, 'k4', 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800', 1, '2026-04-19 17:06:30'),
-(9, 'k4', 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800', 2, '2026-04-19 17:06:30'),
-(10, 'k5', 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800', 1, '2026-04-19 17:06:30'),
-(11, 'k5', 'https://images.unsplash.com/photo-1584622650111-993a426fbf80?w=800', 2, '2026-04-19 17:06:30');
 
 -- --------------------------------------------------------
 
@@ -179,15 +133,15 @@ INSERT INTO `kos_images` (`id`, `kos_id`, `image_url`, `display_order`, `created
 --
 
 CREATE TABLE `kos_listings` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `owner_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `owner_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `access_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `location` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `title` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `location` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `price_per_month` int NOT NULL,
   `rating` decimal(3,2) NOT NULL DEFAULT '0.00',
-  `owner_contact` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `owner_contact` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -197,12 +151,7 @@ CREATE TABLE `kos_listings` (
 --
 
 INSERT INTO `kos_listings` (`id`, `owner_id`, `access_code`, `title`, `location`, `description`, `price_per_month`, `rating`, `owner_contact`, `created_at`, `updated_at`) VALUES
-('254952fa-366a-417f-bbf7-43126254772c', '8b7bb846-be70-4a29-8fd1-f29d9f248f8d', 'KOS-254952', 'kosku', 'disini', 'p', 5000000, '0.00', '0812345678', '2026-04-26 14:21:28', '2026-04-26 14:21:28'),
-('k1', 'user_owner_1', 'KOS-K1-7971', 'Kos Hijau Asri', 'Jl. Melati No. 12, Sleman', 'Kos nyaman dengan taman kecil di depan. Cocok untuk mahasiswa dan pekerja. Lingkungan tenang.', 1200000, '4.80', '0812-3456-7890', '2026-04-19 17:06:30', '2026-04-23 07:05:30'),
-('k2', 'user_owner_2', 'KOS-K2-9510', 'Kost Minimalis Putih', 'Jl. Kenanga 5, Depok', 'Desain minimalis, bersih, dekat kampus dan angkot.', 950000, '4.50', '0813-9999-0001', '2026-04-19 17:06:30', '2026-04-23 07:05:30'),
-('k3', 'user_owner_3', 'KOS-K3-4637', 'Green House Residence', 'Jl. Merpati 88, Condongcatur', 'Fasilitas lengkap, akses kartu, area joging dekat kos.', 1500000, '4.90', '0821-1111-2222', '2026-04-19 17:06:30', '2026-04-23 07:05:30'),
-('k4', 'user_owner_1', 'KOS-K4-2655', 'Kos Nyaman Dian', 'Jl. Cendana 45, Yogyakarta', 'Kos yang sangat nyaman dengan lokasi strategis dekat dengan berbagai tempat umum.', 850000, '4.60', '0812-3456-7890', '2026-04-19 17:06:30', '2026-04-23 07:05:30'),
-('k5', 'user_owner_2', 'KOS-K5-7366', 'Rumah Kost Makmur', 'Jl. Sudirman 23, Jakarta', 'Rumah kost dengan fasilitas modern dan lokasi premium.', 2000000, '4.70', '0813-9999-0001', '2026-04-19 17:06:30', '2026-04-23 07:05:30');
+('254952fa-366a-417f-bbf7-43126254772c', '8b7bb846-be70-4a29-8fd1-f29d9f248f8d', 'KOS-254952', 'kosku', 'disini', 'p', 5000000, '0.00', '0812345678', '2026-04-26 14:21:28', '2026-04-26 14:21:28');
 
 -- --------------------------------------------------------
 
@@ -216,7 +165,7 @@ CREATE TABLE `kos_rooms` (
   `room_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: A1, B2, 101',
   `room_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Contoh: Standard, Deluxe, AC',
   `price_per_month` int NOT NULL,
-  `rental_type` enum('daily','monthly','yearly') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly',
+  `rental_type` enum('daily','monthly','yearly') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly',
   `status` enum('available','occupied','maintenance') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'available',
   `max_occupant` int NOT NULL DEFAULT '1',
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
@@ -229,10 +178,10 @@ CREATE TABLE `kos_rooms` (
 --
 
 INSERT INTO `kos_rooms` (`id`, `kos_id`, `room_number`, `room_type`, `price_per_month`, `rental_type`, `status`, `max_occupant`, `description`, `created_at`, `updated_at`) VALUES
-('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'monthly', 'maintenance', 1, NULL, '2026-04-26 15:35:22', '2026-04-29 13:57:02'),
+('588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'A02', 'Standard Single', 300000, 'monthly', 'occupied', 1, NULL, '2026-04-26 15:35:22', '2026-04-29 23:56:44'),
 ('5ed6dc94-b084-4505-af02-16fd6f8ee38d', '254952fa-366a-417f-bbf7-43126254772c', 'A04', 'Standard Single', 20000, 'daily', 'available', 1, NULL, '2026-04-29 16:14:32', '2026-04-29 16:20:58'),
-('930a9f7d-e912-476c-b836-973c31b8e535', '254952fa-366a-417f-bbf7-43126254772c', 'A03', 'Standard Single', 10000, 'daily', 'available', 1, NULL, '2026-04-29 16:22:04', '2026-04-29 16:22:04'),
-('9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'A01', 'Standard Single', 200000, 'monthly', 'available', 1, NULL, '2026-04-26 15:19:28', '2026-04-26 15:19:28');
+('930a9f7d-e912-476c-b836-973c31b8e535', '254952fa-366a-417f-bbf7-43126254772c', 'A03', 'Standard Single', 10000, 'daily', 'available', 1, NULL, '2026-04-29 16:22:04', '2026-05-05 19:33:01'),
+('9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'A01', 'Standard Single', 200000, 'monthly', 'occupied', 1, NULL, '2026-04-26 15:19:28', '2026-04-29 23:41:43');
 
 -- --------------------------------------------------------
 
@@ -241,16 +190,16 @@ INSERT INTO `kos_rooms` (`id`, `kos_id`, `room_number`, `room_type`, `price_per_
 --
 
 CREATE TABLE `laundry_places` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `address` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `rating` decimal(3,2) NOT NULL DEFAULT '0.00',
   `distance_km` decimal(5,2) NOT NULL,
-  `image_url` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `open_hours` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `image_url` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `open_hours` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `merchant_id` varchar(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -271,12 +220,12 @@ INSERT INTO `laundry_places` (`id`, `name`, `address`, `rating`, `distance_km`, 
 --
 
 CREATE TABLE `merchants` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `business_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `merchant_type` enum('catering','cafe','laundry') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `phone` varchar(25) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `address` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `business_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `merchant_type` enum('catering','cafe','laundry') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `phone` varchar(25) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -289,20 +238,13 @@ CREATE TABLE `merchants` (
 
 CREATE TABLE `password_resets` (
   `id` int NOT NULL,
-  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `token` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `token` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `expires_at` timestamp NOT NULL,
   `used_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `user_id` varchar(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+  `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `password_resets`
---
-
-INSERT INTO `password_resets` (`id`, `email`, `token`, `expires_at`, `used_at`, `created_at`, `user_id`) VALUES
-(2, 'owner1@gmail.com', '81b4a719dd9cd8067c72d5c4904fbd727871c4c05568f6fe1aaa7bd6ade1f75d', '2026-04-22 09:56:38', NULL, '2026-04-22 15:56:38', 'user_owner_1');
 
 -- --------------------------------------------------------
 
@@ -315,12 +257,20 @@ CREATE TABLE `payment_history` (
   `registration_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `amount` int NOT NULL,
   `period_month` varchar(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Format: YYYY-MM, contoh: 2026-04',
-  `payment_status` enum('unpaid','paid','overdue') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unpaid',
+  `payment_status` enum('unpaid','paid','overdue','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unpaid',
   `payment_method` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'transfer, cash, dll',
   `proof_url` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'Bukti transfer',
   `paid_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `payment_history`
+--
+
+INSERT INTO `payment_history` (`id`, `registration_id`, `amount`, `period_month`, `payment_status`, `payment_method`, `proof_url`, `paid_at`, `created_at`) VALUES
+(1, 'db51febd-ecde-445f-9c9c-ec83e448bb67', 200000, '2026-05', 'paid', 'bank_transfer', NULL, '2026-05-05 19:11:32', '2026-05-05 19:11:21'),
+(2, '3da74e70-942b-47fc-b5e6-198bad98794b', 300000, '2026-05', 'paid', 'bank_transfer', NULL, '2026-05-05 19:27:16', '2026-05-05 19:27:02');
 
 -- --------------------------------------------------------
 
@@ -343,7 +293,7 @@ CREATE TABLE `registration_documents` (
 --
 
 CREATE TABLE `room_facilities` (
-  `room_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `room_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `facility_id` int NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -353,9 +303,9 @@ CREATE TABLE `room_facilities` (
 --
 
 INSERT INTO `room_facilities` (`room_id`, `facility_id`, `created_at`) VALUES
-('588ea0ad-708b-47df-90e1-6591b885c456', 2, '2026-04-29 13:57:02'),
-('588ea0ad-708b-47df-90e1-6591b885c456', 4, '2026-04-29 13:57:02'),
-('588ea0ad-708b-47df-90e1-6591b885c456', 6, '2026-04-29 13:57:02'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 2, '2026-04-29 23:55:09'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 4, '2026-04-29 23:55:09'),
+('588ea0ad-708b-47df-90e1-6591b885c456', 6, '2026-04-29 23:55:09'),
 ('9455bdec-b0d5-4d0c-9d76-0d197b8db240', 2, '2026-04-26 15:41:32'),
 ('9455bdec-b0d5-4d0c-9d76-0d197b8db240', 4, '2026-04-26 15:41:32');
 
@@ -370,8 +320,8 @@ CREATE TABLE `room_registrations` (
   `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `room_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `kos_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Redundan untuk query cepat',
-  `status` enum('pending','active','completed','rejected','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
-  `start_date` date NOT NULL,
+  `status` enum('pending','approved','active','completed','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `start_date` date DEFAULT NULL COMMENT 'NULL jika belum disetujui atau belum mulai',
   `end_date` date DEFAULT NULL COMMENT 'NULL jika belum ditentukan',
   `notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'Catatan dari user saat daftar',
   `reviewed_by` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'owner_id yang approve/reject',
@@ -380,6 +330,15 @@ CREATE TABLE `room_registrations` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Dumping data for table `room_registrations`
+--
+
+INSERT INTO `room_registrations` (`id`, `user_id`, `room_id`, `kos_id`, `status`, `start_date`, `end_date`, `notes`, `reviewed_by`, `reviewed_at`, `registered_at`, `updated_at`) VALUES
+('3da74e70-942b-47fc-b5e6-198bad98794b', 'ac2cab5d-10ee-4a89-9586-a263e78df0c0', '588ea0ad-708b-47df-90e1-6591b885c456', '254952fa-366a-417f-bbf7-43126254772c', 'approved', '2026-04-30', NULL, NULL, NULL, NULL, '2026-04-29 23:56:44', '2026-04-29 23:57:05'),
+('ad760b8d-277a-49e1-8389-c272d89a7a03', 'ac2cab5d-10ee-4a89-9586-a263e78df0c0', '930a9f7d-e912-476c-b836-973c31b8e535', '254952fa-366a-417f-bbf7-43126254772c', 'rejected', NULL, NULL, NULL, NULL, NULL, '2026-04-29 23:54:21', '2026-04-29 23:55:39'),
+('db51febd-ecde-445f-9c9c-ec83e448bb67', 'fd7a0a79-e540-4acc-b486-1159fde58e66', '9455bdec-b0d5-4d0c-9d76-0d197b8db240', '254952fa-366a-417f-bbf7-43126254772c', 'approved', '2026-04-30', NULL, NULL, NULL, NULL, '2026-04-29 23:41:43', '2026-04-29 23:42:22');
+
 -- --------------------------------------------------------
 
 --
@@ -387,11 +346,11 @@ CREATE TABLE `room_registrations` (
 --
 
 CREATE TABLE `users` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Password harus disimpan sebagai hash, bukan teks biasa',
-  `display_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role` enum('admin','merchant','user','owner') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user',
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Password harus disimpan sebagai hash, bukan teks biasa',
+  `display_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('admin','merchant','user','owner') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -403,13 +362,10 @@ CREATE TABLE `users` (
 INSERT INTO `users` (`id`, `email`, `password`, `display_name`, `role`, `created_at`, `updated_at`) VALUES
 ('2940a8c6-6a2d-4e11-8f15-347f8fdd63d6', 'test@gmail.com', '$2y$12$4KzresTejEcWprLSOCjVo.STFs.zvkthMk82CBNn571Wz7XeIExUK', 'Test User', 'user', '2026-04-26 13:06:32', '2026-04-26 13:06:32'),
 ('8b7bb846-be70-4a29-8fd1-f29d9f248f8d', 'naufalzyram@gmail.com', '$2y$12$C8Lr1KwhYxOtZYTSBAHesefwEz9wa1dCux3GGpWpawYq5K1W4Ytri', 'ramzuy', 'owner', '2026-04-22 17:01:40', '2026-04-22 17:01:40'),
+('ac2cab5d-10ee-4a89-9586-a263e78df0c0', 'user2@gmail.com', '$2y$12$efP3ZA6Ha1yX/ZkprVb0geRcN109/8EyfyeY6m9cYuVJGHUHf7.eK', 'user2', 'user', '2026-04-29 23:53:31', '2026-04-29 23:53:31'),
 ('cf9ab5ba-6cb0-4368-bd51-9c036357980e', 'ramzynaufal77@gmail.com', '$2y$12$RMrfs.4t2W2uvLOf1UggEejJfYIu/SY4Tk2KSuoWVL90IoVr.nOfy', 'ramzy', 'owner', '2026-04-26 15:42:43', '2026-04-26 15:42:43'),
-('user_admin', 'admin@gmail.com', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'Admin KosFinder', 'admin', '2026-04-19 17:06:30', '2026-04-19 17:06:30'),
-('user_merchant_1', 'merchant1@gmail.com', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Dian Permata', 'merchant', '2026-04-19 17:06:30', '2026-04-19 17:06:30'),
-('user_owner_1', 'owner1@gmail.com', '$2y$12$Nx/X1agj8Ijh.bzk9VqR4.Fibq3N39vCTz76GApfP9ph8eHox6fvq', 'Budi Santoso', 'owner', '2026-04-19 17:06:30', '2026-04-26 13:06:04'),
-('user_owner_2', 'owner2@gmail.com', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Siti Nurhaliza', 'owner', '2026-04-19 17:06:30', '2026-04-19 17:06:30'),
-('user_owner_3', 'owner3@gmail.com', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Rini Wijaya', 'owner', '2026-04-19 17:06:30', '2026-04-19 17:06:30'),
-('user_user_1', 'user1@gmail.com', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Andi Prasetyo', 'user', '2026-04-19 17:06:30', '2026-04-19 17:06:30');
+('fd7a0a79-e540-4acc-b486-1159fde58e66', 'user1@gmail.com', '$2y$12$AFYmqUnAK.RhMAdMZGYo5.HyNyrr2G4Kd4WtofTA/p9yNe.yuB12u', 'tes1', 'user', '2026-04-29 23:41:16', '2026-04-29 23:41:16'),
+('user_admin', 'admin@gmail.com', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'Admin KosFinder', 'admin', '2026-04-19 17:06:30', '2026-04-19 17:06:30');
 
 --
 -- Indexes for dumped tables
@@ -573,7 +529,7 @@ ALTER TABLE `password_resets`
 -- AUTO_INCREMENT for table `payment_history`
 --
 ALTER TABLE `payment_history`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `registration_documents`

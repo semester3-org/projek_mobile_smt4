@@ -536,7 +536,8 @@ class _HelpCard extends StatelessWidget {
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.info_outline_rounded, color: UserTheme.accent),
+            child:
+                const Icon(Icons.info_outline_rounded, color: UserTheme.accent),
           ),
           const SizedBox(width: 16),
           const Expanded(
@@ -557,14 +558,6 @@ class _HelpCard extends StatelessWidget {
                   style: TextStyle(
                     color: Color(0xFF6078D8),
                     height: 1.45,
-                  ),
-                ),
-                SizedBox(height: 14),
-                Text(
-                  'Ajukan Komplain >',
-                  style: TextStyle(
-                    color: UserTheme.accent,
-                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],

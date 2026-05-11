@@ -11,7 +11,7 @@ extension PaymentStatusExt on PaymentStatus {
       case PaymentStatus.paid:
         return 'Berhasil';
       case PaymentStatus.unpaid:
-        return 'Tertunda';
+        return 'Menunggu Persetujuan';
       case PaymentStatus.overdue:
         return 'Jatuh Tempo';
     }
@@ -67,6 +67,26 @@ class _PaymentItem {
   final String? paymentMethod;
   final String? proofUrl;
   final String? paidAt;
+
+  _PaymentItem copyWith({
+    PaymentStatus? paymentStatus,
+    String? paymentMethod,
+    String? paidAt,
+  }) {
+    return _PaymentItem(
+      id: id,
+      registrationId: registrationId,
+      tenantName: tenantName,
+      roomNumber: roomNumber,
+      kosTitle: kosTitle,
+      amount: amount,
+      periodMonth: periodMonth,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      proofUrl: proofUrl,
+      paidAt: paidAt ?? this.paidAt,
+    );
+  }
 }
 
 // ── Data grafik per tab ────────────────────────────────────────────────────────
@@ -153,7 +173,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     return idx;
   }
 
-  final _payments = const <_PaymentItem>[
+  late final List<_PaymentItem> _payments = [
     _PaymentItem(
       id: 1,
       registrationId: 'reg_001',
@@ -215,6 +235,26 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       paidAt: null,
     ),
   ];
+
+  void _confirmPayment(_PaymentItem item) {
+    final index = _payments.indexWhere((payment) => payment.id == item.id);
+    if (index == -1) return;
+
+    final today = DateTime.now().toIso8601String().split('T').first;
+    setState(() {
+      _payments[index] = item.copyWith(
+        paymentStatus: PaymentStatus.paid,
+        paymentMethod: item.paymentMethod ?? 'transfer',
+        paidAt: today,
+      );
+    });
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Pembayaran ${item.tenantName} berhasil dikonfirmasi'),
+      ),
+    );
+  }
 
   List<_PaymentItem> get _filtered {
     return _payments.where((p) {
@@ -352,14 +392,11 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                     label: 'Kamar',
                     value: '${item.roomNumber} • ${item.kosTitle}'),
                 _DetailRow(label: 'period_month', value: item.periodMonth),
+                _DetailRow(label: 'amount', value: _formatPrice(item.amount)),
                 _DetailRow(
-                    label: 'amount', value: _formatPrice(item.amount)),
+                    label: 'payment_status', value: item.paymentStatus.dbValue),
                 _DetailRow(
-                    label: 'payment_status',
-                    value: item.paymentStatus.dbValue),
-                _DetailRow(
-                    label: 'payment_method',
-                    value: item.paymentMethod ?? '-'),
+                    label: 'payment_method', value: item.paymentMethod ?? '-'),
                 _DetailRow(label: 'paid_at', value: item.paidAt ?? '-'),
                 const SizedBox(height: 16),
                 if (item.paymentStatus == PaymentStatus.unpaid ||
@@ -367,14 +404,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text(
-                                  'Fitur konfirmasi pembayaran coming soon!')),
-                        );
-                      },
+                      onPressed: () => _confirmPayment(item),
                       icon: const Icon(Icons.check_circle_outline),
                       label: const Text('Konfirmasi Pembayaran'),
                     ),
@@ -399,8 +429,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
   Widget build(BuildContext context) {
     const tabs = ['Harian', 'Bulanan', 'Tahunan'];
     final filtered = _filtered;
-    final hasActiveFilter =
-        _filterStatus != null || _filterKosId != 'semua';
+    final hasActiveFilter = _filterStatus != null || _filterKosId != 'semua';
 
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
@@ -525,8 +554,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
               OutlinedButton.icon(
                 onPressed: _showFilterDialog,
                 icon: const Icon(Icons.filter_list_rounded),
-                label: Text(
-                    hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
+                label: Text(hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
               ),
             ],
           ),
@@ -595,9 +623,7 @@ class _DynamicChart extends StatelessWidget {
                       ? AppTheme.primaryGreen
                       : Colors.grey.shade700,
                   fontSize: isScrollable ? 10 : 12,
-                  fontWeight: isHighlight
-                      ? FontWeight.w700
-                      : FontWeight.normal,
+                  fontWeight: isHighlight ? FontWeight.w700 : FontWeight.normal,
                 ),
               ),
             ],
@@ -621,8 +647,7 @@ class _DynamicChart extends StatelessWidget {
                 )
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children:
-                      bars.map((b) => Expanded(child: b)).toList(),
+                  children: bars.map((b) => Expanded(child: b)).toList(),
                 ),
         ),
       ),
@@ -707,8 +732,7 @@ class _TxTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: status.color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(999),
@@ -786,8 +810,7 @@ class _MoneyCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: TextStyle(color: Colors.grey.shade700)),
+                  Text(title, style: TextStyle(color: Colors.grey.shade700)),
                   const SizedBox(height: 6),
                   Text(
                     value,
@@ -796,8 +819,7 @@ class _MoneyCard extends StatelessWidget {
                         ),
                   ),
                   const SizedBox(height: 4),
-                  Text(delta,
-                      style: TextStyle(color: Colors.grey.shade700)),
+                  Text(delta, style: TextStyle(color: Colors.grey.shade700)),
                 ],
               ),
             ),
@@ -835,8 +857,8 @@ class _EfficiencyCard extends StatelessWidget {
             alignment: Alignment.center,
             child: const Text(
               '85%',
-              style: TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w900),
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
             ),
           ),
           const SizedBox(width: 12),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../app/app_theme.dart';
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
+import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
+import '../user/user_theme.dart';
 
-/// Halaman detail profil user - menampilkan info lengkap user yang login
 class UserProfileDetailPage extends StatefulWidget {
   const UserProfileDetailPage({super.key});
 
@@ -15,16 +15,39 @@ class UserProfileDetailPage extends StatefulWidget {
 }
 
 class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
-  UserProfile? _userProfile;
-  bool _isLoading = true;
-  bool _didLoad = false;
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _photoCtrl = TextEditingController();
+  final _currentPasswordCtrl = TextEditingController();
+  final _newPasswordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+
+  UserProfile? _profile;
+  bool _loading = true;
+  bool _savingProfile = false;
+  bool _savingPassword = false;
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_didLoad) return;
-    _didLoad = true;
-    _loadUserProfile();
+    if (_profile == null) _loadUserProfile();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _addressCtrl.dispose();
+    _photoCtrl.dispose();
+    _currentPasswordCtrl.dispose();
+    _newPasswordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserProfile() async {
@@ -68,17 +91,19 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Profil Saya')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
+    final profile = _profile;
 
     return Scaffold(
+      backgroundColor: UserTheme.background,
       appBar: AppBar(
-        title: const Text('Profil Saya'),
-        elevation: 0,
+        backgroundColor: Colors.white,
+        title: const Text(
+          'Profil Saya',
+          style: TextStyle(
+            color: UserTheme.primaryDark,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -207,41 +232,23 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
               );
             },
           ),
-          _ActionTile(
-            icon: Icons.logout,
-            label: 'Keluar',
-            trailing: Icons.chevron_right,
-            onTap: () {
-              _showLogoutDialog(context);
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Keluar dari akun?'),
-        content: const Text(
-            'Apakah Anda yakin ingin keluar? Anda harus login kembali untuk mengakses akun.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () {
-              final auth = AuthScope.of(context);
-              auth.logout();
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            child: const Text(
-              'Keluar',
-              style: TextStyle(color: Colors.red),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  profile.displayName,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(profile.email,
+                    style: const TextStyle(color: UserTheme.muted)),
+              ],
             ),
           ),
         ],
@@ -250,62 +257,116 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
   }
 }
 
-class _InfoTile extends StatelessWidget {
-  const _InfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.children});
 
-  final IconData icon;
-  final String label;
-  final String value;
+  final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(icon, color: AppTheme.primaryGreen),
-        title: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.grey,
-            fontWeight: FontWeight.w500,
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
           ),
-        ),
-        subtitle: Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge,
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _InputField extends StatelessWidget {
+  const _InputField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.keyboardType,
+    this.maxLines = 1,
+    this.validator,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final int maxLines;
+  final String? Function(String?)? validator;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          filled: true,
+          fillColor: const Color(0xFFF7F9FC),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );
   }
 }
 
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.icon,
+class _PasswordField extends StatelessWidget {
+  const _PasswordField({
+    required this.controller,
     required this.label,
-    required this.onTap,
-    this.trailing,
+    required this.obscure,
+    required this.onToggle,
   });
 
-  final IconData icon;
+  final TextEditingController controller;
   final String label;
-  final VoidCallback onTap;
-  final IconData? trailing;
+  final bool obscure;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(icon, color: AppTheme.primaryGreen),
-        title: Text(label),
-        trailing: Icon(trailing ?? Icons.chevron_right),
-        onTap: onTap,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.lock_outline),
+          suffixIcon: IconButton(
+            onPressed: onToggle,
+            icon: Icon(obscure
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined),
+          ),
+          filled: true,
+          fillColor: const Color(0xFFF7F9FC),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
       ),
     );
   }

@@ -61,4 +61,32 @@ class UserProfile {
       'activeUntil': activeUntil?.toIso8601String(),
     };
   }
+
+  UserProfile copyWith({
+    String? id,
+    String? email,
+    String? displayName,
+    String? phone,
+    String? address,
+    String? role,
+    String? photoUrl,
+    String? kosName,
+    String? kosAccessCode,
+    String? roomNumber,
+    String? roomType,
+  }) {
+    return UserProfile(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      displayName: displayName ?? this.displayName,
+      phone: phone ?? this.phone,
+      address: address ?? this.address,
+      role: role ?? this.role,
+      photoUrl: photoUrl ?? this.photoUrl,
+      kosName: kosName ?? this.kosName,
+      kosAccessCode: kosAccessCode ?? this.kosAccessCode,
+      roomNumber: roomNumber ?? this.roomNumber,
+      roomType: roomType ?? this.roomType,
+    );
+  }
 }

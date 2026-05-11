@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api_service.dart';
 import '../../models/billing_record.dart';
@@ -11,6 +14,10 @@ import 'kos_repository.dart' show RepoResult;
 
 class UserRepository {
   UserRepository._();
+
+  static const String _profileKey = 'user_profile';
+  static const String _billingStatusKey = 'user_billing_statuses';
+  static const String _favoriteMerchantsKey = 'favorite_merchants';
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();

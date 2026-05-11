@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
-import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
 import '../user/user_theme.dart';
 
@@ -15,84 +14,187 @@ class UserProfileDetailPage extends StatefulWidget {
 }
 
 class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
-  final _photoCtrl = TextEditingController();
-  final _currentPasswordCtrl = TextEditingController();
-  final _newPasswordCtrl = TextEditingController();
-  final _confirmPasswordCtrl = TextEditingController();
-
   UserProfile? _profile;
   bool _loading = true;
-  bool _savingProfile = false;
-  bool _savingPassword = false;
-  bool _obscureCurrent = true;
-  bool _obscureNew = true;
-  bool _obscureConfirm = true;
+  bool _didLoad = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_profile == null) _loadUserProfile();
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _addressCtrl.dispose();
-    _photoCtrl.dispose();
-    _currentPasswordCtrl.dispose();
-    _newPasswordCtrl.dispose();
-    _confirmPasswordCtrl.dispose();
-    super.dispose();
+    if (_didLoad) return;
+    _didLoad = true;
+    _loadUserProfile();
   }
 
   Future<void> _loadUserProfile() async {
-    try {
-      // Ambil session dari auth
-      final auth = AuthScope.of(context);
-      final session = auth.session;
+    final session = AuthScope.of(context).session;
+    final result = await UserRepository.getProfile(
+      displayName: session?.displayName ?? 'User',
+      email: session?.email ?? '',
+      role: session?.role.label ?? 'User',
+    );
 
-      if (session != null) {
-        final result = await UserRepository.getProfile(
-          displayName: session.displayName,
-          email: session.email,
-          role: session.role.label,
-        );
-        setState(() {
-          _userProfile = result.data ??
-              UserProfile(
-                id: '',
-                email: session.email,
-                displayName: session.displayName,
-                role: session.role.label,
-              );
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _userProfile = UserProfile(
+    if (!mounted) return;
+    setState(() {
+      _profile = result.data ??
+          UserProfile(
             id: '',
-            email: '',
-            displayName: 'User',
-            role: 'User',
+            email: session?.email ?? '',
+            displayName: session?.displayName ?? 'User',
+            role: session?.role.label ?? 'User',
           );
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading user profile: $e');
-      setState(() => _isLoading = false);
+      _loading = false;
+    });
+  }
+
+  void _showComingSoon(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature akan segera tersedia')),
+    );
+  }
+
+  String _roomLabel(UserProfile? profile) {
+    final rooms = [
+      if ((profile?.roomNumber ?? '').isNotEmpty) 'No ${profile!.roomNumber}',
+      if ((profile?.roomType ?? '').isNotEmpty) profile!.roomType!,
+    ];
+    final label = rooms.join(' - ');
+    return label.isEmpty ? 'Belum diisi' : label;
+  }
+
+  String _initial(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'U';
+    return trimmed[0].toUpperCase();
+  }
+
+  Widget _buildBody() {
+    final profile = _profile;
+    if (profile == null) {
+      return const Center(child: Text('Profil belum tersedia'));
     }
+
+    return RefreshIndicator(
+      onRefresh: _loadUserProfile,
+      color: UserTheme.primary,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+            ),
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 50,
+                  backgroundColor: UserTheme.softBlue,
+                  backgroundImage:
+                      (profile.photoUrl == null || profile.photoUrl!.isEmpty)
+                          ? null
+                          : NetworkImage(profile.photoUrl!),
+                  child: profile.photoUrl == null || profile.photoUrl!.isEmpty
+                      ? Text(
+                          _initial(profile.displayName),
+                          style: const TextStyle(
+                            color: UserTheme.primary,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  profile.displayName,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  profile.email,
+                  style: const TextStyle(color: UserTheme.muted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: UserTheme.softBlue,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    profile.role,
+                    style: const TextStyle(
+                      color: UserTheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const _SectionTitle('Informasi Pribadi'),
+          const SizedBox(height: 12),
+          _InfoTile(
+            icon: Icons.email_outlined,
+            label: 'Email',
+            value: profile.email.isEmpty ? '-' : profile.email,
+          ),
+          _InfoTile(
+            icon: Icons.home_work_outlined,
+            label: 'Nama Kos',
+            value: profile.kosName ?? 'Belum tersambung',
+          ),
+          _InfoTile(
+            icon: Icons.key_outlined,
+            label: 'Kode Unik Kos',
+            value: profile.kosAccessCode ?? 'Belum tersedia',
+          ),
+          _InfoTile(
+            icon: Icons.bed_outlined,
+            label: 'Kamar',
+            value: _roomLabel(profile),
+          ),
+          _InfoTile(
+            icon: Icons.phone_outlined,
+            label: 'Nomor Telepon',
+            value: profile.phone ?? 'Belum diisi',
+          ),
+          _InfoTile(
+            icon: Icons.location_on_outlined,
+            label: 'Alamat',
+            value: profile.address ?? 'Belum diisi',
+          ),
+          const SizedBox(height: 18),
+          const _SectionTitle('Pengaturan'),
+          const SizedBox(height: 12),
+          _ActionTile(
+            icon: Icons.edit_outlined,
+            label: 'Edit Profil',
+            onTap: () => _showComingSoon('Edit profil'),
+          ),
+          _ActionTile(
+            icon: Icons.lock_outline,
+            label: 'Ubah Kata Sandi',
+            onTap: () => _showComingSoon('Ubah kata sandi'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final profile = _profile;
-
     return Scaffold(
       backgroundColor: UserTheme.background,
       appBar: AppBar(
@@ -105,149 +207,68 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
           ),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildBody(),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: UserTheme.text,
+        fontWeight: FontWeight.w900,
+        fontSize: 18,
+      ),
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  const _InfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
         children: [
-          // Card profil utama
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const CircleAvatar(
-                    radius: 50,
-                    backgroundColor: AppTheme.primaryGreen,
-                    child: Icon(
-                      Icons.person,
-                      size: 50,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _userProfile?.displayName ?? 'User',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _userProfile?.email ?? '',
-                    style: TextStyle(color: Colors.grey.shade700),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _userProfile?.role ?? 'User',
-                      style: TextStyle(
-                        color: AppTheme.primaryGreen,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Section: Informasi Pribadi
-          Text(
-            'Informasi Pribadi',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 12),
-          _InfoTile(
-            icon: Icons.email_outlined,
-            label: 'Email',
-            value: _userProfile?.email ?? '',
-          ),
-          _InfoTile(
-            icon: Icons.key_outlined,
-            label: 'Kode Unik Kos',
-            value: _userProfile?.kosAccessCode ?? 'Belum tersedia',
-          ),
-          _InfoTile(
-            icon: Icons.bed_outlined,
-            label: 'Kamar',
-            value: (() {
-              final rooms = [
-                if ((_userProfile?.roomNumber ?? '').isNotEmpty)
-                  'No ${_userProfile!.roomNumber}',
-                if ((_userProfile?.roomType ?? '').isNotEmpty)
-                  _userProfile!.roomType!,
-              ];
-              final label = rooms.join(' - ');
-              return label.isEmpty ? 'Belum diisi' : label;
-            })(),
-          ),
-          _InfoTile(
-            icon: Icons.phone_outlined,
-            label: 'Nomor Telepon',
-            value: _userProfile?.phone ?? 'Belum diisi',
-          ),
-          _InfoTile(
-            icon: Icons.location_on_outlined,
-            label: 'Alamat',
-            value: _userProfile?.address ?? 'Belum diisi',
-          ),
-          const SizedBox(height: 24),
-          // Section: Aksi
-          Text(
-            'Pengaturan',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 12),
-          _ActionTile(
-            icon: Icons.edit,
-            label: 'Edit Profil',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Edit profil akan segera tersedia')),
-              );
-            },
-          ),
-          _ActionTile(
-            icon: Icons.lock_outline,
-            label: 'Ubah Kata Sandi',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Ubah kata sandi akan segera tersedia')),
-              );
-            },
-          ),
-          const SizedBox(width: 16),
+          Icon(icon, color: UserTheme.primary),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(label, style: const TextStyle(color: UserTheme.muted)),
+                const SizedBox(height: 4),
                 Text(
-                  profile.displayName,
+                  value,
                   style: const TextStyle(
                     color: UserTheme.text,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text(profile.email,
-                    style: const TextStyle(color: UserTheme.muted)),
               ],
             ),
           ),
@@ -257,115 +278,35 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
   }
 }
 
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: UserTheme.text,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ...children,
-        ],
-      ),
-    );
-  }
-}
-
-class _InputField extends StatelessWidget {
-  const _InputField({
-    required this.controller,
-    required this.label,
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
     required this.icon,
-    this.keyboardType,
-    this.maxLines = 1,
-    this.validator,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final IconData icon;
-  final TextInputType? keyboardType;
-  final int maxLines;
-  final String? Function(String?)? validator;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        validator: validator,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          filled: true,
-          fillColor: const Color(0xFFF7F9FC),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PasswordField extends StatelessWidget {
-  const _PasswordField({
-    required this.controller,
     required this.label,
-    required this.obscure,
-    required this.onToggle,
+    required this.onTap,
   });
 
-  final TextEditingController controller;
+  final IconData icon;
   final String label;
-  final bool obscure;
-  final VoidCallback onToggle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: TextField(
-        controller: controller,
-        obscureText: obscure,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: const Icon(Icons.lock_outline),
-          suffixIcon: IconButton(
-            onPressed: onToggle,
-            icon: Icon(obscure
-                ? Icons.visibility_outlined
-                : Icons.visibility_off_outlined),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: ListTile(
+          leading: Icon(icon, color: UserTheme.primaryDark),
+          title: Text(
+            label,
+            style: const TextStyle(color: UserTheme.text),
           ),
-          filled: true,
-          fillColor: const Color(0xFFF7F9FC),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
+          trailing: const Icon(Icons.chevron_right_rounded),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
           ),
+          onTap: onTap,
         ),
       ),
     );

@@ -37,7 +37,8 @@ class BillingRecord {
       id: json['id'] as String? ?? '',
       itemDescription: json['itemDescription'] as String? ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
-      dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '') ?? DateTime.now(),
+      dueDate:
+          DateTime.tryParse(json['dueDate'] as String? ?? '') ?? DateTime.now(),
       activeUntil: DateTime.tryParse(json['activeUntil'] as String? ?? ''),
       status: json['status'] as String? ?? '',
       paymentMethod: json['paymentMethod'] as String?,
@@ -68,6 +69,40 @@ class BillingRecord {
       'roomType': roomType,
       'registrationStatus': registrationStatus,
     };
+  }
+
+  BillingRecord copyWith({
+    String? id,
+    String? itemDescription,
+    double? amount,
+    DateTime? dueDate,
+    DateTime? activeUntil,
+    String? status,
+    String? paymentMethod,
+    DateTime? paymentDate,
+    String? notes,
+    String? kosName,
+    String? kosAccessCode,
+    String? roomNumber,
+    String? roomType,
+    String? registrationStatus,
+  }) {
+    return BillingRecord(
+      id: id ?? this.id,
+      itemDescription: itemDescription ?? this.itemDescription,
+      amount: amount ?? this.amount,
+      dueDate: dueDate ?? this.dueDate,
+      activeUntil: activeUntil ?? this.activeUntil,
+      status: status ?? this.status,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      paymentDate: paymentDate ?? this.paymentDate,
+      notes: notes ?? this.notes,
+      kosName: kosName ?? this.kosName,
+      kosAccessCode: kosAccessCode ?? this.kosAccessCode,
+      roomNumber: roomNumber ?? this.roomNumber,
+      roomType: roomType ?? this.roomType,
+      registrationStatus: registrationStatus ?? this.registrationStatus,
+    );
   }
 
   bool get isLate => status == 'belum_bayar' && DateTime.now().isAfter(dueDate);

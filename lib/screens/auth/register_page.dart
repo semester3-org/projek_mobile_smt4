@@ -15,6 +15,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   String _selectedRole = 'user';
+  String? _selectedMerchantType;
   bool _obscure = true;
   bool _isLoading = false;
   String? _errorText;
@@ -23,6 +24,11 @@ class _RegisterPageState extends State<RegisterPage> {
     {'value': 'user', 'label': 'User'},
     {'value': 'owner', 'label': 'Owner'},
     {'value': 'merchant', 'label': 'Merchant'},
+  ];
+
+  final List<Map<String, dynamic>> _merchantTypes = [
+    {'value': 'laundry', 'label': 'Laundry'},
+    {'value': 'catering', 'label': 'Catering'},
   ];
 
   @override
@@ -35,6 +41,14 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    
+    // Validasi merchant_type untuk owner/merchant
+    if ((['owner', 'merchant'].contains(_selectedRole)) && _selectedMerchantType == null) {
+      setState(() {
+        _errorText = 'Tipe merchant harus dipilih untuk role ' + _selectedRole;
+      });
+      return;
+    }
     
     setState(() {
       _isLoading = true;
@@ -68,6 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
         password: _passCtrl.text,
         displayName: _nameCtrl.text.trim(),
         role: _selectedRole,
+        merchantType: _selectedMerchantType,
       );
 
       // Close loading dialog
@@ -258,7 +273,13 @@ class _RegisterPageState extends State<RegisterPage> {
                             selected: isSelected,
                             onSelected: (selected) {
                               if (selected) {
-                                setState(() => _selectedRole = role['value']);
+                                setState(() {
+                                  _selectedRole = role['value'];
+                                  // Reset merchant type if not owner/merchant
+                                  if (!['owner', 'merchant'].contains(role['value'])) {
+                                    _selectedMerchantType = null;
+                                  }
+                                });
                               }
                             },
                             selectedColor: AppTheme.primaryGreen,
@@ -269,6 +290,34 @@ class _RegisterPageState extends State<RegisterPage> {
                           );
                         }).toList(),
                       ),
+                      // Tampilkan merchant type selection jika role adalah owner/merchant
+                      if (['owner', 'merchant'].contains(_selectedRole)) ...[
+                        const SizedBox(height: 24),
+                        Text(
+                          'Tipe Layanan',
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: _merchantTypes.map((type) {
+                            final isSelected = _selectedMerchantType == type['value'];
+                            return ChoiceChip(
+                              label: Text(type['label']),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                setState(() => _selectedMerchantType = selected ? type['value'] : null);
+                              },
+                              selectedColor: AppTheme.primaryGreen,
+                              backgroundColor: Colors.grey.shade200,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : Colors.black87,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _passCtrl,

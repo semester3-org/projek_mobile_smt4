@@ -5,6 +5,34 @@ enum UserRole {
   owner,
 }
 
+enum MerchantType {
+  laundry,
+  catering,
+}
+
+extension MerchantTypeLabel on MerchantType {
+  String get label {
+    switch (this) {
+      case MerchantType.laundry:
+        return 'Laundry';
+      case MerchantType.catering:
+        return 'Catering';
+    }
+  }
+
+  static MerchantType? fromString(String? type) {
+    if (type == null) return null;
+    final normalized = type.trim().toLowerCase();
+    try {
+      return MerchantType.values.firstWhere(
+        (t) => t.name.toLowerCase() == normalized,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
 extension UserRoleLabel on UserRole {
   String get label {
     switch (this) {

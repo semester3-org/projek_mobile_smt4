@@ -136,14 +136,10 @@ function getActiveUntil(mysqli $conn, string $userId): ?string {
     $paidPeriods = (int)($row['paid_periods'] ?? 0);
     if ($paidPeriods <= 0) return null;
 
-    $today = new DateTime(date('Y-m-d'));
     $startDate = $row['start_date'] ?? null;
     $base = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
         ? new DateTime($startDate)
         : new DateTime(date('Y-m-d'));
-    if ($base < $today) {
-        $base = $today;
-    }
 
     return addRentalPeriods(
         $base,

@@ -156,13 +156,9 @@ function activeUntilFromPaidPeriods(?string $startDate, string $rentalType, int 
         return null;
     }
 
-    $today = new DateTime(date('Y-m-d'));
     $base = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
         ? new DateTime($startDate)
         : new DateTime(date('Y-m-d'));
-    if ($base < $today) {
-        $base = $today;
-    }
 
     return addRentalPeriods($base, $rentalType, $paidPeriods)->format('Y-m-d');
 }
@@ -289,10 +285,6 @@ function generatedCurrentBill(mysqli $conn, string $userId): array {
     $start = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
         ? new DateTime($startDate)
         : new DateTime(date('Y-m-d'));
-    $today = new DateTime(date('Y-m-d'));
-    if ($start < $today) {
-        $start = $today;
-    }
     $period = periodKeyFromDate($start, $rentalType);
 
     if (tableExists($conn, 'payment_history')) {

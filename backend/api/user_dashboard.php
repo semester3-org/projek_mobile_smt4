@@ -60,6 +60,19 @@ function currentPeriodKey(string $rentalType): string {
     };
 }
 
+function periodKeyFromStartDate(?string $startDate, string $rentalType): string {
+    if (!$startDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        return currentPeriodKey($rentalType);
+    }
+
+    $date = new DateTime($startDate);
+    return match ($rentalType) {
+        'daily' => $date->format('Y-m-d'),
+        'yearly' => $date->format('Y'),
+        default => $date->format('Y-m'),
+    };
+}
+
 function dateFromPeriodKey(string $period, string $rentalType, ?string $startDate = null): DateTime {
     $defaultDay = 5;
     $dueDay = $defaultDay;
@@ -126,13 +139,9 @@ function activeUntilFromPaidPeriods(?string $startDate, string $rentalType, int 
         return null;
     }
 
-    $today = new DateTime(date('Y-m-d'));
     $base = $startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
         ? new DateTime($startDate)
         : new DateTime(date('Y-m-d'));
-    if ($base < $today) {
-        $base = $today;
-    }
 
     return addRentalPeriods($base, $rentalType, $paidPeriods)->format('Y-m-d');
 }
@@ -202,7 +211,7 @@ if (
         $stmt->close();
         if ($row) {
             $rentalType = $row['rental_type'] ?? 'monthly';
-            $period = $row['period_month'] ?: currentPeriodKey($rentalType);
+            $period = $row['period_month'] ?: periodKeyFromStartDate($row['start_date'] ?? null, $rentalType);
             $activeUntil = activeUntilFromPaidPeriods(
                 $row['start_date'] ?? null,
                 $rentalType,

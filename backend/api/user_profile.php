@@ -333,6 +333,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     $data = profilePayload($conn, $updatedPayload);
     $data['phone'] = trim($body['phone'] ?? '');
     $data['address'] = trim($body['address'] ?? '');
+    $data['latitude'] = isset($body['latitude']) && $body['latitude'] !== null && $body['latitude'] !== ''
+        ? (float)$body['latitude']
+        : null;
+    $data['longitude'] = isset($body['longitude']) && $body['longitude'] !== null && $body['longitude'] !== ''
+        ? (float)$body['longitude']
+        : null;
     $data['photoUrl'] = trim($body['photoUrl'] ?? '');
 
     sendJson(true, $data, 'Profil berhasil diperbarui');

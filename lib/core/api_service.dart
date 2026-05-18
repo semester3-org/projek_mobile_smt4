@@ -24,7 +24,9 @@ class ApiResponse<T> {
 
 class ApiService {
   // ── Base URL ───────────────────────────────────────────────────────────────
-  // Server: php -S localhost:8000 router.php
+  // Server:
+  // - Laptop saja: php -S localhost:8000 router.php
+  // - HP fisik satu Wi-Fi: php -S 0.0.0.0:8000 router.php
   //
   // Web / iOS Simulator / Desktop  → localhost:8000
   // Android Emulator               → 10.0.2.2:8000
@@ -35,7 +37,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://10.0.2.2:8000';
+      return 'http://192.168.1.105:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {

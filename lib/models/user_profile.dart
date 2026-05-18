@@ -5,6 +5,8 @@ class UserProfile {
   final String displayName;
   final String? phone;
   final String? address;
+  final double? latitude;
+  final double? longitude;
   final String role;
   final String? photoUrl;
   final String? kosName;
@@ -19,6 +21,8 @@ class UserProfile {
     required this.displayName,
     this.phone,
     this.address,
+    this.latitude,
+    this.longitude,
     required this.role,
     this.photoUrl,
     this.kosName,
@@ -35,6 +39,8 @@ class UserProfile {
       displayName: json['displayName'] as String? ?? '',
       phone: json['phone'] as String?,
       address: json['address'] as String?,
+      latitude: _toDouble(json['latitude']),
+      longitude: _toDouble(json['longitude']),
       role: json['role'] as String? ?? 'user',
       photoUrl: json['photoUrl'] as String?,
       kosName: json['kosName'] as String?,
@@ -52,6 +58,8 @@ class UserProfile {
       'displayName': displayName,
       'phone': phone,
       'address': address,
+      'latitude': latitude,
+      'longitude': longitude,
       'role': role,
       'photoUrl': photoUrl,
       'kosName': kosName,
@@ -68,12 +76,15 @@ class UserProfile {
     String? displayName,
     String? phone,
     String? address,
+    double? latitude,
+    double? longitude,
     String? role,
     String? photoUrl,
     String? kosName,
     String? kosAccessCode,
     String? roomNumber,
     String? roomType,
+    DateTime? activeUntil,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -81,12 +92,21 @@ class UserProfile {
       displayName: displayName ?? this.displayName,
       phone: phone ?? this.phone,
       address: address ?? this.address,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       role: role ?? this.role,
       photoUrl: photoUrl ?? this.photoUrl,
       kosName: kosName ?? this.kosName,
       kosAccessCode: kosAccessCode ?? this.kosAccessCode,
       roomNumber: roomNumber ?? this.roomNumber,
       roomType: roomType ?? this.roomType,
+      activeUntil: activeUntil ?? this.activeUntil,
     );
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 }

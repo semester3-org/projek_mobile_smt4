@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -425,7 +426,7 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = profile?.displayName ?? sessionName ?? 'User';
-    final photoUrl = profile?.photoUrl;
+    final image = _profileImage(profile?.photoUrl);
 
     return Material(
       color: Colors.white,
@@ -444,10 +445,8 @@ class _ProfileHeader extends StatelessWidget {
               CircleAvatar(
                 radius: 36,
                 backgroundColor: UserTheme.softBlue,
-                backgroundImage: photoUrl == null || photoUrl.isEmpty
-                    ? null
-                    : NetworkImage(photoUrl),
-                child: photoUrl == null || photoUrl.isEmpty
+                backgroundImage: image,
+                child: image == null
                     ? Text(
                         name.isEmpty ? 'U' : name[0].toUpperCase(),
                         style: const TextStyle(
@@ -485,6 +484,21 @@ class _ProfileHeader extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  ImageProvider? _profileImage(String? photoUrl) {
+    final value = photoUrl?.trim() ?? '';
+    if (value.isEmpty) return null;
+    if (value.startsWith('data:image')) {
+      final commaIndex = value.indexOf(',');
+      if (commaIndex == -1) return null;
+      try {
+        return MemoryImage(base64Decode(value.substring(commaIndex + 1)));
+      } catch (_) {
+        return null;
+      }
+    }
+    return NetworkImage(value);
   }
 }
 

@@ -9,7 +9,8 @@ class MerchantProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final session = AuthScope.of(context).session;
+    final auth = AuthScope.of(context);
+    final session = auth.session;
     final merchantType = session?.merchantType ?? MerchantType.laundry;
     final isLaundry = merchantType == MerchantType.laundry;
     final name = (session?.displayName.trim().isNotEmpty ?? false)
@@ -176,6 +177,23 @@ class MerchantProfilePage extends StatelessWidget {
         const Divider(height: 1),
         const SizedBox(height: 34),
         const _CloseMerchantCard(),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => auth.logout(),
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Keluar'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: MerchantPalette.primary,
+              side: const BorderSide(color: MerchantPalette.primary),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
         const MerchantBottomSpacer(),
       ],
     );

@@ -237,7 +237,10 @@ class UserRepository {
     }
   }
 
-  static Future<RepoResult<UserProfile>> connectKosCode(String accessCode, [String? roomNumber]) async {
+  static Future<RepoResult<UserProfile>> connectKosCode(
+    String accessCode, [
+    String? roomNumber,
+  ]) async {
     final payload = {
       'accessCode': accessCode,
       if (roomNumber != null && roomNumber.isNotEmpty) 'roomNumber': roomNumber,
@@ -254,6 +257,54 @@ class UserRepository {
     } catch (_) {
       return const RepoResult.fail('Gagal membaca data profil terbaru');
     }
+  }
+
+  static Future<RepoResult<UserProfile>> updateProfile({
+    required String displayName,
+    String? phone,
+    String? address,
+    double? latitude,
+    double? longitude,
+    String? photoUrl,
+  }) async {
+    final res = await ApiService.put('api/user_profile', {
+      'displayName': displayName.trim(),
+      'phone': phone?.trim() ?? '',
+      'address': address?.trim() ?? '',
+      'latitude': latitude,
+      'longitude': longitude,
+      'photoUrl': photoUrl?.trim() ?? '',
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperbarui profil');
+    }
+
+    try {
+      final data = res.data!['data'] as Map<String, dynamic>;
+      final profile = UserProfile.fromJson(data);
+      await _saveLocalProfile(profile);
+      requestProfileRefresh();
+      return RepoResult.ok(profile);
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca data profil terbaru');
+    }
+  }
+
+  static Future<RepoResult<bool>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final res = await ApiService.post('api/change-password', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal mengubah kata sandi');
+    }
+
+    return const RepoResult.ok(true);
   }
 
   static Future<Set<String>> getFavoriteMerchantKeys() async {
@@ -312,11 +363,18 @@ class UserRepository {
         displayName: local.displayName.isNotEmpty ? local.displayName : null,
         phone: local.phone,
         address: local.address,
+        latitude: local.latitude,
+        longitude: local.longitude,
         photoUrl: local.photoUrl,
       );
     } catch (_) {
       return profile;
     }
+  }
+
+  static Future<void> _saveLocalProfile(UserProfile profile) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
   }
 
   static Future<List<BillingRecord>> _applyLocalBillingStatuses(

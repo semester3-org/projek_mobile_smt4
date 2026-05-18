@@ -4,6 +4,7 @@ import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../main_shell.dart';
 import '../owner/owner_shell.dart';
+import '../merchant/merchant_shell.dart';
 import 'login_page.dart';
 
 class AuthGate extends StatelessWidget {
@@ -23,9 +24,10 @@ class AuthGate extends StatelessWidget {
         return const MainShell();
       case UserRole.owner:
         return const OwnerShell();
-      case UserRole.admin:
       case UserRole.merchant:
-        return RolePendingPage(role: session.role);
+        return const MerchantShell();
+      case UserRole.admin:
+        return const RolePendingPage(role: UserRole.admin);
     }
   }
 }

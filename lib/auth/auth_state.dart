@@ -9,11 +9,13 @@ class AuthSession {
     required this.email,
     required this.role,
     required this.displayName,
+    this.merchantType,
   });
 
   final String email;
   final UserRole role;
   final String displayName;
+  final MerchantType? merchantType;
 }
 
 class AuthState extends ChangeNotifier {
@@ -29,6 +31,7 @@ class AuthState extends ChangeNotifier {
       email: current.email,
       role: current.role,
       displayName: displayName,
+      merchantType: current.merchantType,
     );
     await AuthStorage.updateDisplayName(displayName);
     notifyListeners();
@@ -46,10 +49,12 @@ class AuthState extends ChangeNotifier {
 
       if (result['success'] == true) {
         final userData = result['data'] as Map<String, dynamic>;
+        final merchantTypeStr = userData['merchantType'] as String?;
         _session = AuthSession(
           email: userData['email'],
           role: UserRoleLabel.fromString(userData['role'] as String? ?? ''),
           displayName: userData['displayName'],
+          merchantType: MerchantTypeLabel.fromString(merchantTypeStr),
         );
         notifyListeners();
         return true;

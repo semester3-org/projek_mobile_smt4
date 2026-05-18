@@ -42,7 +42,10 @@ if (empty($email) || empty($password)) {
 
 // Ambil user berdasarkan email
 $stmt = $conn->prepare(
-    "SELECT id, email, password, display_name, role FROM users WHERE email = ? LIMIT 1"
+    "SELECT u.id, u.email, u.password, u.display_name, u.role, m.merchant_type
+     FROM users u 
+     LEFT JOIN merchants m ON u.id = m.user_id
+     WHERE u.email = ? LIMIT 1"
 );
 if (!$stmt) {
     sendResponse(false, 'Database error: ' . $conn->error, null, 500);
@@ -112,20 +115,30 @@ if (!in_array($role, $allowedRoles, true)) {
     $role = 'user';
 }
 
+// Get merchant_type if available
+$merchantType = $user['merchant_type'] ?? null;
+
 // Generate JWT
 $token = JWT::generate([
-    'sub'         => $user['id'],
-    'email'       => $user['email'],
-    'displayName' => $user['display_name'],
-    'role'        => $role,
+    'sub'          => $user['id'],
+    'email'        => $user['email'],
+    'displayName'  => $user['display_name'],
+    'role'         => $role,
+    'merchantType' => $merchantType,
 ]);
 
 $conn->close();
 
-sendResponse(true, 'Login berhasil', [
-    'token'       => $token,
-    'id'          => $user['id'],
-    'email'       => $user['email'],
-    'displayName' => $user['display_name'],
-    'role'        => $role,
-]);
+$responseData = [
+    'token'        => $token,
+    'id'           => $user['id'],
+    'email'        => $user['email'],
+    'displayName'  => $user['display_name'],
+    'role'         => $role,
+];
+
+if ($merchantType) {
+    $responseData['merchantType'] = $merchantType;
+}
+
+sendResponse(true, 'Login berhasil', $responseData);

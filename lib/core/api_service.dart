@@ -66,18 +66,25 @@ class ApiService {
     required String password,
     required String displayName,
     required String role,
+    String? merchantType,
   }) async {
     try {
+      final body = {
+        'email': email.trim().toLowerCase(),
+        'password': password,
+        'displayName': displayName.trim(),
+        'role': role.toLowerCase(),
+      };
+      
+      if (merchantType != null) {
+        body['merchantType'] = merchantType.toLowerCase();
+      }
+      
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/register'),
             headers: _publicHeaders,
-            body: jsonEncode({
-              'email': email.trim().toLowerCase(),
-              'password': password,
-              'displayName': displayName.trim(),
-              'role': role.toLowerCase(),
-            }),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 30));
 

@@ -42,10 +42,10 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     
-    // Validasi merchant_type untuk owner/merchant
-    if ((['owner', 'merchant'].contains(_selectedRole)) && _selectedMerchantType == null) {
+    // Validasi merchant_type hanya untuk merchant (bukan owner)
+    if (_selectedRole == 'merchant' && _selectedMerchantType == null) {
       setState(() {
-        _errorText = 'Tipe merchant harus dipilih untuk role ' + _selectedRole;
+        _errorText = 'Tipe merchant harus dipilih untuk role merchant';
       });
       return;
     }
@@ -275,8 +275,8 @@ class _RegisterPageState extends State<RegisterPage> {
                               if (selected) {
                                 setState(() {
                                   _selectedRole = role['value'];
-                                  // Reset merchant type if not owner/merchant
-                                  if (!['owner', 'merchant'].contains(role['value'])) {
+                                  // Reset merchant type jika bukan merchant
+                                  if (role['value'] != 'merchant') {
                                     _selectedMerchantType = null;
                                   }
                                 });
@@ -290,8 +290,8 @@ class _RegisterPageState extends State<RegisterPage> {
                           );
                         }).toList(),
                       ),
-                      // Tampilkan merchant type selection jika role adalah owner/merchant
-                      if (['owner', 'merchant'].contains(_selectedRole)) ...[
+                      // Tampilkan merchant type selection HANYA jika role adalah merchant
+                      if (_selectedRole == 'merchant') ...[
                         const SizedBox(height: 24),
                         Text(
                           'Tipe Layanan',

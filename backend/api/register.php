@@ -76,11 +76,11 @@ if (!in_array($role, $allowedRoles)) {
     $role = 'user';
 }
 
-// Validasi merchant_type untuk role owner/merchant
-if (in_array($role, ['owner', 'merchant'])) {
+// Validasi merchant_type hanya untuk role merchant (bukan owner)
+if ($role === 'merchant') {
     $allowedMerchantTypes = ['laundry', 'catering'];
     if (empty($merchantType) || !in_array($merchantType, $allowedMerchantTypes)) {
-        $errors[] = 'Tipe merchant harus dipilih (laundry atau catering) untuk role ' . $role;
+        $errors[] = 'Tipe merchant harus dipilih (laundry atau catering) untuk role merchant';
     }
 }
 
@@ -127,8 +127,8 @@ if (!$stmt->execute()) {
 
 $stmt->close();
 
-// Jika role adalah owner/merchant, buat merchant record
-if (in_array($role, ['owner', 'merchant']) && $merchantType) {
+// Jika role adalah merchant, buat merchant record
+if ($role === 'merchant' && $merchantType) {
     $merchantId = generateUUID();
     $merchantStmt = $conn->prepare(
         "INSERT INTO merchants (id, user_id, business_name, merchant_type, created_at, updated_at)

@@ -206,7 +206,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text('Email:', style: TextStyle(fontSize: 12, color: Colors.blue.shade700)),
-                                    Text(widget.email, style: TextStyle(fontWeight: FontWeight.bold)),
+                                    Text(widget.email, style: const TextStyle(fontWeight: FontWeight.bold)),
                                   ],
                                 ),
                               ),

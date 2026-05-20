@@ -174,7 +174,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
   }
 
   late final List<_PaymentItem> _payments = [
-    _PaymentItem(
+    const _PaymentItem(
       id: 1,
       registrationId: 'reg_001',
       tenantName: 'Budi Santoso',
@@ -186,7 +186,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       paymentMethod: 'transfer',
       paidAt: '2026-04-03',
     ),
-    _PaymentItem(
+    const _PaymentItem(
       id: 2,
       registrationId: 'reg_002',
       tenantName: 'Dian Permata',
@@ -198,7 +198,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       paymentMethod: 'transfer',
       paidAt: '2026-04-05',
     ),
-    _PaymentItem(
+    const _PaymentItem(
       id: 3,
       registrationId: 'reg_003',
       tenantName: 'Randy Panglila',
@@ -210,7 +210,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       paymentMethod: null,
       paidAt: null,
     ),
-    _PaymentItem(
+    const _PaymentItem(
       id: 4,
       registrationId: 'reg_004',
       tenantName: 'Siti Aminah',
@@ -222,7 +222,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       paymentMethod: 'cash',
       paidAt: '2026-04-01',
     ),
-    _PaymentItem(
+    const _PaymentItem(
       id: 5,
       registrationId: 'reg_005',
       tenantName: 'Andi Saputra',
@@ -708,7 +708,7 @@ class _TxTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         onTap: onTap,
-        leading: CircleAvatar(
+        leading: const CircleAvatar(
           backgroundColor: AppTheme.surfaceTint,
           child:
               Icon(Icons.account_balance_rounded, color: AppTheme.primaryGreen),

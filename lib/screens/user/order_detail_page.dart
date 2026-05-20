@@ -72,10 +72,10 @@ class UserOrderDetailPage extends StatelessWidget {
           const SizedBox(height: 18),
           _OrderItemsCard(order: order),
           const SizedBox(height: 18),
-          _InfoCard(
+          const _InfoCard(
             icon: Icons.local_shipping_outlined,
             title: 'Informasi Pengiriman',
-            children: const [
+            children: [
               Text(
                 'Budi Setiawan',
                 style: TextStyle(

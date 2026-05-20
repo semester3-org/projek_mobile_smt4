@@ -774,7 +774,7 @@ class _LocationPickerPage extends StatefulWidget {
 }
 
 class _LocationPickerPageState extends State<_LocationPickerPage> {
-  static final LatLng _defaultCenter = LatLng(-6.200000, 106.816666);
+  static const LatLng _defaultCenter = LatLng(-6.200000, 106.816666);
 
   final MapController _mapController = MapController();
   late LatLng _selectedPoint;

@@ -472,7 +472,7 @@ class _CafeInfo extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 22),
-        UserSectionHeader(title: 'Informasi Kafe'),
+        const UserSectionHeader(title: 'Informasi Kafe'),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(22),

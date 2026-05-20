@@ -115,9 +115,9 @@ class _SplashScreenState extends State<SplashScreen>
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 15),
                 ),
                 const SizedBox(height: 30),
-                Row(
+                const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
+                  children: [
                     _Dot(active: true),
                     _Dot(active: false),
                     _Dot(active: false),

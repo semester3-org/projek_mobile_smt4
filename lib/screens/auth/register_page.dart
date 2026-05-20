@@ -45,7 +45,7 @@ class _RegisterPageState extends State<RegisterPage> {
     // Validasi merchant_type untuk owner/merchant
     if ((['owner', 'merchant'].contains(_selectedRole)) && _selectedMerchantType == null) {
       setState(() {
-        _errorText = 'Tipe merchant harus dipilih untuk role ' + _selectedRole;
+        _errorText = 'Tipe merchant harus dipilih untuk role $_selectedRole';
       });
       return;
     }

@@ -123,7 +123,7 @@ class UserRepository {
       return RepoResult.fail(res.message ?? 'Gagal membatalkan order');
     }
 
-    return RepoResult.ok(true);
+    return const RepoResult.ok(true);
   }
 
   static Future<RepoResult<Map<String, dynamic>>> createMidtransPayment({
@@ -240,10 +240,12 @@ class UserRepository {
   static Future<RepoResult<UserProfile>> connectKosCode(
     String accessCode, [
     String? roomNumber,
+    bool confirmStopPreviousRent = false,
   ]) async {
     final payload = {
       'accessCode': accessCode,
       if (roomNumber != null && roomNumber.isNotEmpty) 'roomNumber': roomNumber,
+      'confirmStopPreviousRent': confirmStopPreviousRent,
     };
     final res = await ApiService.post('api/user_profile', payload);
 
@@ -253,7 +255,10 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserProfile.fromJson(data));
+      final profile = UserProfile.fromJson(data);
+      await _saveLocalProfile(profile);
+      requestProfileRefresh();
+      return RepoResult.ok(profile);
     } catch (_) {
       return const RepoResult.fail('Gagal membaca data profil terbaru');
     }
@@ -353,7 +358,7 @@ class UserRepository {
 
   static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_profileKey);
+    final raw = prefs.getString(_profileKeyFor(profile));
     if (raw == null || raw.isEmpty) return profile;
 
     try {
@@ -366,6 +371,7 @@ class UserRepository {
         latitude: local.latitude,
         longitude: local.longitude,
         photoUrl: local.photoUrl,
+        activeRentHistory: profile.activeRentHistory,
       );
     } catch (_) {
       return profile;
@@ -374,7 +380,12 @@ class UserRepository {
 
   static Future<void> _saveLocalProfile(UserProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
+    await prefs.setString(_profileKeyFor(profile), jsonEncode(profile.toJson()));
+  }
+
+  static String _profileKeyFor(UserProfile profile) {
+    final owner = profile.id.isNotEmpty ? profile.id : profile.email;
+    return '$_profileKey:$owner';
   }
 
   static Future<List<BillingRecord>> _applyLocalBillingStatuses(

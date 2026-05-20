@@ -88,8 +88,56 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
+    final profile = _profile;
+    final isChangingKos = (profile?.kosAccessCode ?? '').isNotEmpty &&
+        (profile?.kosAccessCode ?? '').toUpperCase() !=
+            accessCode.toUpperCase();
+    final isChangingRoom = (profile?.roomNumber ?? '').isNotEmpty &&
+        (profile?.roomNumber ?? '').toUpperCase() != roomCode.toUpperCase();
+    final activeUntil = profile?.activeUntil;
+    final hasPreviousRoom = (profile?.kosAccessCode ?? '').isNotEmpty ||
+        (profile?.roomNumber ?? '').isNotEmpty;
+    final isReturningToOwnedActiveRoom = _hasActiveRentForRoom(
+      profile,
+      accessCode,
+      roomCode,
+    );
+
+    var confirmStopPreviousRent = false;
+    if ((isChangingKos || isChangingRoom) && hasPreviousRoom) {
+      final activeUntilText = activeUntil == null
+          ? 'Jika masih ada tagihan aktif, tagihan kamar lama akan dibuat tidak diperpanjang.'
+          : 'Masa aktif tetap berjalan sampai ${formatShortDate(activeUntil)} lalu kamar lama akan dilepas.';
+      final message = isReturningToOwnedActiveRoom
+          ? 'Kamar tujuan masih memiliki masa sewa aktif milik Anda. Anda bisa kembali tanpa persetujuan owner ulang. $activeUntilText'
+          : 'Kamar sebelumnya tidak akan diperpanjang otomatis. $activeUntilText Lanjutkan perpindahan kamar?';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Ganti Kos/Kamar?'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Lanjutkan'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      confirmStopPreviousRent = true;
+    }
+
     setState(() => _connecting = true);
-    final result = await UserRepository.connectKosCode(accessCode, roomCode);
+    final result = await UserRepository.connectKosCode(
+      accessCode,
+      roomCode,
+      confirmStopPreviousRent,
+    );
     if (!mounted) return;
     setState(() => _connecting = false);
 
@@ -99,7 +147,15 @@ class _ProfilePageState extends State<ProfilePage> {
         _roomCodeCtrl.text = _profile?.roomNumber ?? '';
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kode kos berhasil disambungkan')),
+        SnackBar(
+          content: Text(
+            isReturningToOwnedActiveRoom
+                ? 'Berhasil kembali ke kamar yang masa sewanya masih aktif'
+                : (isChangingKos || isChangingRoom)
+                    ? 'Pengajuan perpindahan kamar dikirim dan menunggu verifikasi owner'
+                : 'Kode kos berhasil disambungkan',
+          ),
+        ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,6 +215,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   if (_profile != null) ...[
                     const SizedBox(height: 14),
                     _ActiveRentBanner(profile: _profile!),
+                    const SizedBox(height: 14),
+                    _RentHistorySection(profile: _profile!),
                   ],
                   const SizedBox(height: 18),
                   _KosCodeCard(
@@ -186,22 +244,16 @@ class _ProfilePageState extends State<ProfilePage> {
                     value: _profile?.kosAccessCode ?? 'Belum tersambung',
                   ),
                   _InfoTile(
+                    icon: Icons.key_rounded,
+                    label: 'Kode Unik Kamar',
+                    value: _profile?.roomNumber ?? 'Belum tersambung',
+                  ),
+                  _InfoTile(
                     icon: Icons.meeting_room_outlined,
                     label: 'Kamar',
                     value: _roomLabel(_profile),
                   ),
                   const SizedBox(height: 18),
-                  _ActionTile(
-                    icon: Icons.person_outline_rounded,
-                    label: 'Edit Profil',
-                    onTap: () => Navigator.of(context)
-                        .push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const UserProfileDetailPage(),
-                          ),
-                        )
-                        .then((_) => _load()),
-                  ),
                   _ActionTile(
                     icon: Icons.favorite_border_rounded,
                     label: 'Favorite',
@@ -262,6 +314,30 @@ class _ProfilePageState extends State<ProfilePage> {
       if (type != null && type.isNotEmpty) type,
     ].join(' - ');
   }
+
+  bool _hasActiveRentForRoom(
+    UserProfile? profile,
+    String accessCode,
+    String roomCode,
+  ) {
+    if (profile == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return profile.activeRentHistory.any((item) {
+      if (item.status == 'pending') return false;
+      if (item.kosAccessCode.toUpperCase() != accessCode.toUpperCase()) {
+        return false;
+      }
+      if (item.roomNumber.toUpperCase() != roomCode.toUpperCase()) {
+        return false;
+      }
+      final activeUntil = item.activeUntil;
+      if (activeUntil == null) return false;
+      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      return !until.isBefore(today);
+    });
+  }
+
 }
 
 class _ActiveRentBanner extends StatelessWidget {
@@ -271,18 +347,73 @@ class _ActiveRentBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeUntil = profile.activeUntil;
-    final hasRoom = (profile.roomNumber ?? '').isNotEmpty ||
-        (profile.kosAccessCode ?? '').isNotEmpty;
+    final activeItems = _activeRentItems(profile);
 
-    if (activeUntil == null) {
+    if (activeItems.isEmpty) {
+      final hasRoom = (profile.roomNumber ?? '').isNotEmpty ||
+          (profile.kosAccessCode ?? '').isNotEmpty;
       if (!hasRoom) return const SizedBox.shrink();
+      return const _RentBannerShell(
+        backgroundColor: Color(0xFFF3F4F6),
+        iconColor: UserTheme.muted,
+        icon: Icons.calendar_today_rounded,
+        title: 'Belum ada masa sewa aktif',
+        subtitle: 'Menunggu pembayaran atau persetujuan owner.',
+        badge: 'Belum aktif',
+      );
+    }
+
+    return Column(
+      children: [
+        for (var i = 0; i < activeItems.length; i++) ...[
+          _bannerForRent(activeItems[i]),
+          if (i != activeItems.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
+  List<ActiveRentHistory> _activeRentItems(UserProfile profile) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final items = profile.activeRentHistory.where((item) {
+      if (item.status == 'pending') return true;
+      final activeUntil = item.activeUntil;
+      if (activeUntil == null) return false;
+      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      return !until.isBefore(today);
+    }).toList();
+
+    items.sort((a, b) {
+      if (a.status == 'pending' && b.status != 'pending') return -1;
+      if (a.status != 'pending' && b.status == 'pending') return 1;
+      final aDate = a.activeUntil ?? DateTime(9999);
+      final bDate = b.activeUntil ?? DateTime(9999);
+      return aDate.compareTo(bDate);
+    });
+    return items;
+  }
+
+  Widget _bannerForRent(ActiveRentHistory rent) {
+    if (rent.status == 'pending') {
+      return _RentBannerShell(
+        backgroundColor: const Color(0xFFF3F4F6),
+        iconColor: UserTheme.muted,
+        icon: Icons.hourglass_top_rounded,
+        title: 'Pengajuan kamar menunggu',
+        subtitle: '${_rentLabel(rent)}\nBelum ada nominal tagihan sampai owner menyetujui.',
+        badge: 'Pending',
+      );
+    }
+
+    final activeUntil = rent.activeUntil;
+    if (activeUntil == null) {
       return _RentBannerShell(
         backgroundColor: const Color(0xFFF3F4F6),
         iconColor: UserTheme.muted,
         icon: Icons.calendar_today_rounded,
         title: 'Belum ada masa sewa aktif',
-        subtitle: 'Bayar tagihan kos untuk mengaktifkan durasi sewa.',
+        subtitle: _rentLabel(rent),
         badge: 'Belum aktif',
       );
     }
@@ -318,13 +449,24 @@ class _ActiveRentBanner extends StatelessWidget {
           : isNearEnd
               ? 'Masa sewa segera berakhir'
               : 'Masa sewa aktif',
-      subtitle: 'Aktif sampai ${formatShortDate(activeUntil)}',
+      subtitle: 'Aktif sampai ${formatShortDate(activeUntil)}\n${_rentLabel(rent)}',
       badge: isExpired
           ? '${remainingDays.abs()} hari lalu'
           : remainingDays == 0
               ? 'Hari ini'
               : '$remainingDays hari lagi',
     );
+  }
+
+  String _rentLabel(ActiveRentHistory rent) {
+    final parts = <String>[
+      if (rent.kosName.trim().isNotEmpty) rent.kosName.trim(),
+      if (rent.kosAccessCode.trim().isNotEmpty)
+        'Kode kos: ${rent.kosAccessCode.trim()}',
+      if (rent.roomNumber.trim().isNotEmpty)
+        'Kode kamar: ${rent.roomNumber.trim()}',
+    ];
+    return parts.isEmpty ? 'Kos/kamar belum lengkap' : parts.join(' - ');
   }
 }
 
@@ -385,6 +527,7 @@ class _RentBannerShell extends StatelessWidget {
                     color: UserTheme.text,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
+                    height: 1.35,
                   ),
                 ),
               ],
@@ -410,6 +553,108 @@ class _RentBannerShell extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RentHistorySection extends StatelessWidget {
+  const _RentHistorySection({required this.profile});
+
+  final UserProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final histories = _historyItems(profile.activeRentHistory);
+    if (histories.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Riwayat Masa Aktif Kos',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...histories.map((history) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F9FC),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          history.kosName.isEmpty
+                              ? 'Kos'
+                              : history.kosName,
+                          style: const TextStyle(
+                            color: UserTheme.text,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    [
+                      'Kode kos: ${history.kosAccessCode}',
+                      'Kamar: ${history.roomNumber}',
+                      if (history.roomType.isNotEmpty) history.roomType,
+                    ].join(' - '),
+                    style: const TextStyle(
+                      color: UserTheme.muted,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    history.activeUntil == null
+                        ? 'Belum ada masa aktif'
+                        : 'Aktif sampai ${formatShortDate(history.activeUntil!)}',
+                    style: const TextStyle(
+                      color: UserTheme.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  List<ActiveRentHistory> _historyItems(List<ActiveRentHistory> items) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return items.where((item) {
+      if (item.status == 'pending') return false;
+      final activeUntil = item.activeUntil;
+      if (activeUntil == null) return true;
+      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      return until.isBefore(today);
+    }).toList();
+  }
+
 }
 
 class _ProfileHeader extends StatelessWidget {
@@ -500,6 +745,7 @@ class _ProfileHeader extends StatelessWidget {
     }
     return NetworkImage(value);
   }
+
 }
 
 class _KosCodeCard extends StatelessWidget {

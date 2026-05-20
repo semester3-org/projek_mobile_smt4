@@ -205,7 +205,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                 else
                   ..._filteredOrders.map((order) {
                     return _OrderCard(order: order);
-                  }).toList(),
+                  }),
               ],
             ),
     );
@@ -343,14 +343,14 @@ class _OrderCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     order.service.toUpperCase(),
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: AppTheme.primaryGreen,
                       fontWeight: FontWeight.w500,
                       fontSize: 12,
                     ),
                   ),
                   const Spacer(),
-                  Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                  const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
                     formatDate(order.orderDate),
@@ -472,14 +472,14 @@ class _OrderCard extends StatelessWidget {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Total'),
+                  const Text('Total'),
                   Text(
                     formatCurrency(order.totalAmount),
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(

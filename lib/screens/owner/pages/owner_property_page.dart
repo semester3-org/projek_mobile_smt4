@@ -69,11 +69,11 @@ class OwnerPropertyPage extends StatelessWidget {
                     color: AppTheme.primaryGreen.withOpacity(0.25),
                   ),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
                     Icon(Icons.info_outline,
                         size: 16, color: AppTheme.primaryGreen),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Kode akses kos akan di-generate otomatis setelah properti disimpan.',

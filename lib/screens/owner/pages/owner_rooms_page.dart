@@ -470,7 +470,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                   keyboard: TextInputType.number, suffix: 'orang'),
               const SizedBox(height: 14),
               DropdownButtonFormField<RoomStatus>(
-                value: selectedStatus,
+                initialValue: selectedStatus,
                 decoration: const InputDecoration(
                     labelText: 'Status', border: OutlineInputBorder()),
                 items: RoomStatus.values
@@ -750,7 +750,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
         children: [
           // Pilih Kos
           DropdownButtonFormField<String>(
-            value: _selectedKosId,
+            initialValue: _selectedKosId,
             decoration: InputDecoration(
               labelText: 'Pilih Kos',
               prefixIcon: const Icon(Icons.home_work_outlined),
@@ -1319,7 +1319,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
 
               // ── Pilih Kos ──────────────────────────────────────────────
               DropdownButtonFormField<String>(
-                value: _selectedKosId,
+                initialValue: _selectedKosId,
                 decoration: const InputDecoration(
                   labelText: 'Nama Kos',
                   prefixIcon: Icon(Icons.home_work_outlined),
@@ -1411,7 +1411,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
 
               // ── Tipe Kamar ─────────────────────────────────────────────
               DropdownButtonFormField<String>(
-                value: _selectedType,
+                initialValue: _selectedType,
                 decoration: const InputDecoration(
                   labelText: 'Tipe Kamar',
                   prefixIcon: Icon(Icons.category_outlined),
@@ -1491,7 +1491,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
 
               // ── Status ────────────────────────────────────────────────
               DropdownButtonFormField<RoomStatus>(
-                value: _selectedStatus,
+                initialValue: _selectedStatus,
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   prefixIcon: Icon(Icons.info_outline),

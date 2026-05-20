@@ -174,7 +174,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                   keyboard: TextInputType.number, suffix: 'orang'),
               const SizedBox(height: 14),
               DropdownButtonFormField<RoomStatus>(
-                value: selectedStatus,
+                initialValue: selectedStatus,
                 decoration: const InputDecoration(
                     labelText: 'Status', border: OutlineInputBorder()),
                 items: RoomStatus.values
@@ -578,7 +578,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
-                value: _selectedType,
+                initialValue: _selectedType,
                 decoration: const InputDecoration(
                   labelText: 'Tipe Kamar',
                   prefixIcon: Icon(Icons.category_outlined),
@@ -622,7 +622,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<RoomStatus>(
-                value: _selectedStatus,
+                initialValue: _selectedStatus,
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   prefixIcon: Icon(Icons.info_outline),

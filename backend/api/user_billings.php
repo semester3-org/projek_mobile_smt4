@@ -169,6 +169,16 @@ function expireDateForPeriod(string $period, ?string $startDate = null, string $
     return $date->format('Y-m-d');
 }
 
+function paymentWindowBaseForPeriod(
+    string $period,
+    ?string $startDate,
+    string $rentalType,
+    int $paidPeriods
+): string {
+    return activeUntilFromPaidPeriods($startDate, $rentalType, $paidPeriods)
+        ?? dateFromPeriodKey($period, $rentalType, $startDate)->format('Y-m-d');
+}
+
 function getActiveUntil(mysqli $conn, string $userId): ?string {
     if (!tableExists($conn, 'payment_history') ||
         !tableExists($conn, 'room_registrations') ||
@@ -190,7 +200,9 @@ function getActiveUntil(mysqli $conn, string $userId): ?string {
         WHERE rr.user_id = ?
           AND rr.status IN ('active', 'approved')
         GROUP BY rr.id, rr.start_date, r.rental_type
-        ORDER BY rr.registered_at DESC
+        ORDER BY
+            CASE WHEN rr.end_date IS NULL THEN 0 ELSE 1 END,
+            rr.registered_at DESC
         LIMIT 1
     ");
     if (!$stmt) return null;
@@ -263,8 +275,10 @@ function activeRoomForUser(mysqli $conn, string $userId): ?array {
         FROM room_registrations rr
         INNER JOIN kos_listings k ON k.id = rr.kos_id
         INNER JOIN kos_rooms r ON r.id = rr.room_id
-        WHERE rr.user_id = ? AND rr.status IN ('active', 'approved')
-        ORDER BY rr.registered_at DESC
+        WHERE rr.user_id = ?
+          AND rr.status IN ('active', 'approved')
+          AND rr.end_date IS NULL
+        ORDER BY rr.updated_at DESC, rr.registered_at DESC
         LIMIT 1
     ");
     if (!$stmt) return null;
@@ -305,10 +319,11 @@ function generatedCurrentBill(mysqli $conn, string $userId): array {
                 if ((int)($summary['open_bills'] ?? 0) > 0) {
                     return [];
                 }
+                $paidPeriods = (int)($summary['paid_periods'] ?? 0);
                 $lastActiveUntil = activeUntilFromPaidPeriods(
                     $startDate,
                     $rentalType,
-                    (int)($summary['paid_periods'] ?? 0)
+                    $paidPeriods
                 );
                 if ($lastActiveUntil !== null) {
                     $nextStart = new DateTime($lastActiveUntil);
@@ -318,11 +333,13 @@ function generatedCurrentBill(mysqli $conn, string $userId): array {
         }
     }
 
-    $dueDate = activeUntilFromPaidPeriods(
+    $paidPeriods = isset($summary) ? (int)($summary['paid_periods'] ?? 0) : 0;
+    $dueDate = paymentWindowBaseForPeriod(
+        $period,
         $startDate,
         $rentalType,
-        isset($summary) ? (int)($summary['paid_periods'] ?? 0) : 0
-    ) ?? dueDateForPeriod($period, $startDate, $rentalType);
+        $paidPeriods
+    );
     $room['active_until'] = $dueDate;
 
     return [
@@ -945,21 +962,24 @@ while ($r = $result->fetch_assoc()) {
     } else {
         $status = 'belum_bayar';
     }
-    $activeUntil = activeUntilFromPaidPeriods(
-        $r['start_date'] ?? null,
-        $r['rental_type'] ?? 'monthly',
-        (int)($r['paid_periods'] ?? 0)
-    );
     $dueDate = $status === 'belum_bayar'
-        ? ($activeUntil ?? dueDateForPeriod(
+        ? paymentWindowBaseForPeriod(
             $r['period_month'],
             $r['start_date'] ?? null,
-            $r['rental_type'] ?? 'monthly'
-        ))
+            $r['rental_type'] ?? 'monthly',
+            (int)($r['paid_periods'] ?? 0)
+        )
         : dueDateForPeriod(
             $r['period_month'],
             $r['start_date'] ?? null,
             $r['rental_type'] ?? 'monthly'
+        );
+    $activeUntil = $status === 'belum_bayar'
+        ? $dueDate
+        : activeUntilFromPaidPeriods(
+            $r['start_date'] ?? null,
+            $r['rental_type'] ?? 'monthly',
+            (int)($r['paid_periods'] ?? 0)
         );
     $r['active_until'] = $activeUntil;
     $rows[] = billPayload(
@@ -975,15 +995,29 @@ while ($r = $result->fetch_assoc()) {
 }
 $stmt->close();
 
-$hasPayableBill = false;
-foreach ($rows as $row) {
-    if (($row['status'] ?? '') === 'belum_bayar') {
-        $hasPayableBill = true;
-        break;
+$activeRoom = activeRoomForUser($conn, $userId);
+
+$hasPayableBillForActiveRoom = false;
+if ($activeRoom !== null) {
+    $activeRegId = (string)$activeRoom['registration_id'];
+    foreach ($rows as $row) {
+        if (($row['status'] ?? '') === 'belum_bayar' &&
+            ($row['kosAccessCode'] ?? '') === ($activeRoom['access_code'] ?? '') &&
+            ($row['roomNumber'] ?? '') === ($activeRoom['room_number'] ?? '')) {
+            $hasPayableBillForActiveRoom = true;
+            break;
+        }
+    }
+} else {
+    foreach ($rows as $row) {
+        if (($row['status'] ?? '') === 'belum_bayar') {
+            $hasPayableBillForActiveRoom = true;
+            break;
+        }
     }
 }
 
-if (!$hasPayableBill) {
+if (!$hasPayableBillForActiveRoom) {
     $rows = array_merge(generatedCurrentBill($conn, $userId), $rows);
 }
 

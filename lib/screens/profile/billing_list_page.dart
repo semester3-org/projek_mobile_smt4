@@ -47,25 +47,6 @@ class _BillingListPageState extends State<BillingListPage> {
     return null;
   }
 
-  BillingRecord? get _activePaidBill {
-    for (final billing in _billings) {
-      if (_isActivePaidBill(billing)) return billing;
-    }
-    return null;
-  }
-
-  DateTime? get _activeUntil {
-    DateTime? latest;
-    for (final billing in _billings) {
-      final activeUntil = billing.activeUntil;
-      if (activeUntil == null) continue;
-      if (latest == null || activeUntil.isAfter(latest)) {
-        latest = activeUntil;
-      }
-    }
-    return latest ?? _activePaidBill?.dueDate;
-  }
-
   List<BillingRecord> get _historyBillings {
     final activeBill = _activeBill;
     return _billings
@@ -90,7 +71,7 @@ class _BillingListPageState extends State<BillingListPage> {
   Widget build(BuildContext context) {
     final activeBill = _activeBill;
     final historyBillings = _historyBillings;
-    final activeUntil = _activeUntil;
+    final activeUntil = activeBill?.activeUntil;
 
     return WillPopScope(
       onWillPop: () async {

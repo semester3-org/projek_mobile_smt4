@@ -184,6 +184,7 @@ if (
             AND ph.payment_status NOT IN ('paid', 'cancelled')
         WHERE rr.user_id = ?
           AND rr.status IN ('active', 'approved')
+          AND rr.end_date IS NULL
         ORDER BY ph.period_month ASC, rr.registered_at DESC
         LIMIT 1
     " : "
@@ -201,6 +202,7 @@ if (
         INNER JOIN kos_rooms r ON r.id = rr.room_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
         WHERE rr.user_id = ? AND rr.status IN ('active', 'approved')
+          AND rr.end_date IS NULL
         ORDER BY rr.registered_at DESC
         LIMIT 1
     ");
@@ -212,11 +214,12 @@ if (
         if ($row) {
             $rentalType = $row['rental_type'] ?? 'monthly';
             $period = $row['period_month'] ?: periodKeyFromStartDate($row['start_date'] ?? null, $rentalType);
+            $paidPeriods = (int)($row['paid_periods'] ?? 0);
             $activeUntil = activeUntilFromPaidPeriods(
                 $row['start_date'] ?? null,
                 $rentalType,
-                (int)($row['paid_periods'] ?? 0)
-            ) ?? dueDateForPeriod($period, $row['start_date'] ?? null, $rentalType);
+                $paidPeriods
+            ) ?? dateFromPeriodKey($period, $rentalType, $row['start_date'] ?? null)->format('Y-m-d');
 
             $activeBillAmount = (float)($row['amount'] ?? $row['price_per_month'] ?? 0);
             $activeBillLabel = ($row['kos_name'] ?? 'Kos') . ' - Kamar ' . $row['room_number'];

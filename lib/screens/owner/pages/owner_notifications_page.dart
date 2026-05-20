@@ -14,7 +14,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
 
   // Sample notification data
   final List<_NotificationData> _allNotifications = [
-    _NotificationData(
+    const _NotificationData(
       title: 'Pembayaran Baru',
       subtitle: 'Andi Saputra telah mengirimkan bukti transfer untuk Kamar A-12 sebesar Rp 1.500.000.',
       time: 'Baru saja',
@@ -23,7 +23,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       category: 'pembayaran',
       isRead: false,
     ),
-    _NotificationData(
+    const _NotificationData(
       title: 'Penghuni Baru',
       subtitle: 'Verifikasi identitas Rizky Pratama telah disetujui. Siap untuk check-in ke Kamar C-01.',
       time: '2 jam lalu',
@@ -31,7 +31,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       category: 'penghuni',
       isRead: false,
     ),
-    _NotificationData(
+    const _NotificationData(
       title: 'Pembayaran Berhasil',
       subtitle: 'Pembayaran bulanan dari Budi Santoso untuk Kamar A-01 sebesar Rp 1.500.000 telah dikonfirmasi.',
       time: '1 jam lalu',
@@ -39,7 +39,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       category: 'pembayaran',
       isRead: true,
     ),
-    _NotificationData(
+    const _NotificationData(
       title: 'Laporan Selesai',
       subtitle: 'Perbaikan keran air di Kamar D-04 telah diselesaikan oleh teknisi.',
       time: 'Kemarin 22:15',
@@ -48,7 +48,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       category: 'laporan',
       isRead: true,
     ),
-    _NotificationData(
+    const _NotificationData(
       title: 'Pembayaran Tertunda',
       subtitle: 'Pembayaran dari Siti Aminah untuk Kamar B-05 belum dikonfirmasi.',
       time: 'Kemarin 18:30',
@@ -56,7 +56,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       category: 'pembayaran',
       isRead: true,
     ),
-    _NotificationData(
+    const _NotificationData(
       title: 'Permintaan Check-out',
       subtitle: 'Dian Sastro mengajukan check-out untuk Kamar A-12.',
       time: 'Kemarin 14:00',

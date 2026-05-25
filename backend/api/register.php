@@ -48,7 +48,6 @@ $email         = trim(strtolower($body['email'] ?? ''));
 $password       = $body['password'] ?? '';
 $displayName    = trim($body['displayName'] ?? '');
 $role           = trim(strtolower($body['role'] ?? 'user'));
-$merchantType   = isset($body['merchantType']) ? trim(strtolower($body['merchantType'] ?? '')) : null;
 
 // Validasi
 $errors = [];
@@ -71,17 +70,9 @@ if (empty($displayName)) {
     $errors[] = 'Nama lengkap minimal 3 karakter';
 }
 
-$allowedRoles = ['user', 'owner', 'merchant'];
+$allowedRoles = ['user', 'owner'];
 if (!in_array($role, $allowedRoles)) {
     $role = 'user';
-}
-
-// Validasi merchant_type hanya untuk role merchant (bukan owner)
-if ($role === 'merchant') {
-    $allowedMerchantTypes = ['laundry', 'catering'];
-    if (empty($merchantType) || !in_array($merchantType, $allowedMerchantTypes)) {
-        $errors[] = 'Tipe merchant harus dipilih (laundry atau catering) untuk role merchant';
-    }
 }
 
 if (!empty($errors)) {
@@ -127,26 +118,6 @@ if (!$stmt->execute()) {
 
 $stmt->close();
 
-// Jika role adalah merchant, buat merchant record
-if ($role === 'merchant' && $merchantType) {
-    $merchantId = generateUUID();
-    $merchantStmt = $conn->prepare(
-        "INSERT INTO merchants (id, user_id, business_name, merchant_type, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NOW(), NOW())"
-    );
-    if (!$merchantStmt) {
-        sendResponse(false, 'Database error: ' . $conn->error, null, 500);
-    }
-    
-    $merchantStmt->bind_param('ssss', $merchantId, $userId, $displayName, $merchantType);
-    
-    if (!$merchantStmt->execute()) {
-        sendResponse(false, 'Gagal membuat merchant: ' . $merchantStmt->error, null, 500);
-    }
-    
-    $merchantStmt->close();
-}
-
 $conn->close();
 
 sendResponse(true, 'Akun berhasil dibuat', [
@@ -154,5 +125,4 @@ sendResponse(true, 'Akun berhasil dibuat', [
     'email'          => $email,
     'displayName'    => $displayName,
     'role'           => $role,
-    'merchantType'   => $merchantType,
 ], 201);

@@ -15,7 +15,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   String _selectedRole = 'user';
-  String? _selectedMerchantType;
   bool _obscure = true;
   bool _isLoading = false;
   String? _errorText;
@@ -23,12 +22,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final List<Map<String, dynamic>> _roles = [
     {'value': 'user', 'label': 'User'},
     {'value': 'owner', 'label': 'Owner'},
-    {'value': 'merchant', 'label': 'Merchant'},
-  ];
-
-  final List<Map<String, dynamic>> _merchantTypes = [
-    {'value': 'laundry', 'label': 'Laundry'},
-    {'value': 'catering', 'label': 'Catering'},
   ];
 
   @override
@@ -41,14 +34,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    
-    // Validasi merchant_type hanya untuk merchant (bukan owner)
-    if (_selectedRole == 'merchant' && _selectedMerchantType == null) {
-      setState(() {
-        _errorText = 'Tipe merchant harus dipilih untuk role merchant';
-      });
-      return;
-    }
     
     setState(() {
       _isLoading = true;
@@ -82,7 +67,6 @@ class _RegisterPageState extends State<RegisterPage> {
         password: _passCtrl.text,
         displayName: _nameCtrl.text.trim(),
         role: _selectedRole,
-        merchantType: _selectedMerchantType,
       );
 
       // Close loading dialog
@@ -275,10 +259,6 @@ class _RegisterPageState extends State<RegisterPage> {
                               if (selected) {
                                 setState(() {
                                   _selectedRole = role['value'];
-                                  // Reset merchant type jika bukan merchant
-                                  if (role['value'] != 'merchant') {
-                                    _selectedMerchantType = null;
-                                  }
                                 });
                               }
                             },
@@ -290,34 +270,6 @@ class _RegisterPageState extends State<RegisterPage> {
                           );
                         }).toList(),
                       ),
-                      // Tampilkan merchant type selection HANYA jika role adalah merchant
-                      if (_selectedRole == 'merchant') ...[
-                        const SizedBox(height: 24),
-                        Text(
-                          'Tipe Layanan',
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: _merchantTypes.map((type) {
-                            final isSelected = _selectedMerchantType == type['value'];
-                            return ChoiceChip(
-                              label: Text(type['label']),
-                              selected: isSelected,
-                              onSelected: (selected) {
-                                setState(() => _selectedMerchantType = selected ? type['value'] : null);
-                              },
-                              selectedColor: AppTheme.primaryGreen,
-                              backgroundColor: Colors.grey.shade200,
-                              labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : Colors.black87,
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _passCtrl,

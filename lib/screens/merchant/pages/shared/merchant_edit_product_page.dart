@@ -1,188 +1,312 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../../data/repositories/merchant_repository.dart';
+import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
 
-class MerchantEditProductPage extends StatelessWidget {
+class MerchantEditProductPage extends StatefulWidget {
   const MerchantEditProductPage({
     super.key,
     required this.isLaundry,
+    this.product,
   });
 
   final bool isLaundry;
+  final MerchantProduct? product;
 
   @override
-  Widget build(BuildContext context) {
-    return MerchantPage(
-      topBar: MerchantTopBar(
-        title: isLaundry ? 'Edit Layanan' : 'Edit Menu',
-        showAvatar: false,
-        showBack: true,
-        actionLabel: 'Simpan',
-        onAction: () {},
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 34),
-      children: isLaundry ? _laundryFields() : _cateringFields(),
+  State<MerchantEditProductPage> createState() =>
+      _MerchantEditProductPageState();
+}
+
+class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
+  final _nameCtrl = TextEditingController();
+  final _categoryCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
+  final _unitCtrl = TextEditingController();
+  final _descriptionCtrl = TextEditingController();
+  final _picker = ImagePicker();
+
+  String _imageUrl = '';
+  bool _isActive = true;
+  bool _saving = false;
+
+  bool get _isEdit => widget.product != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final product = widget.product;
+    _nameCtrl.text = product?.name ?? '';
+    _categoryCtrl.text = product?.category ??
+        (widget.isLaundry ? 'Laundry Kiloan' : 'Paket Bulanan');
+    _priceCtrl.text = product == null ? '' : product.price.toStringAsFixed(0);
+    _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '/bulan');
+    _descriptionCtrl.text = product?.description ?? '';
+    _imageUrl = product?.imageUrl ?? '';
+    _isActive = product?.isActive ?? true;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _categoryCtrl.dispose();
+    _priceCtrl.dispose();
+    _unitCtrl.dispose();
+    _descriptionCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 78,
+      maxWidth: 1200,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    final ext = file.name.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+    setState(() {
+      _imageUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    });
+  }
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    final description = _descriptionCtrl.text.trim();
+    final price = double.tryParse(
+          _priceCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
+        ) ??
+        0;
+
+    if (name.isEmpty || price <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama dan harga wajib diisi')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    final result = await MerchantRepository.saveProduct(
+      id: widget.product?.id,
+      name: name,
+      description: description,
+      price: price,
+      category: _categoryCtrl.text.trim(),
+      unit: _unitCtrl.text.trim(),
+      imageUrl: _imageUrl,
+      isActive: _isActive,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Produk berhasil disimpan')),
+      );
+      Navigator.pop(context, true);
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.error ?? 'Gagal menyimpan produk')),
     );
   }
 
-  List<Widget> _laundryFields() {
-    return const [
-      _EditableHeroImage(
-        imageUrl:
-            'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=900',
-        icon: Icons.local_laundry_service_outlined,
-      ),
-      SizedBox(height: 28),
-      _FieldLabel('Nama Layanan'),
-      SizedBox(height: 8),
-      _TextInput(initialValue: 'Cuci Kering'),
-      SizedBox(height: 22),
-      _FieldLabel('Kategori'),
-      SizedBox(height: 8),
-      _SelectInput(value: 'Premium'),
-      SizedBox(height: 22),
-      Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _FieldLabel('Harga (IDR)'),
-                SizedBox(height: 8),
-                _TextInput(initialValue: '15000'),
-              ],
-            ),
+  Future<void> _delete() async {
+    if (widget.product == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(widget.isLaundry ? 'Hapus layanan?' : 'Hapus paket?'),
+        content: const Text(
+          'Item akan disembunyikan dari katalog aktif user. Riwayat pesanan lama tetap aman.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
           ),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _FieldLabel('Per Satuan'),
-                SizedBox(height: 8),
-                _SelectInput(value: 'Per kg'),
-              ],
-            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
           ),
         ],
       ),
-      SizedBox(height: 22),
-      _FieldLabel('Deskripsi Layanan'),
-      SizedBox(height: 8),
-      _TextInput(
-        initialValue:
-            'Pencucian premium menggunakan deterjen ramah lingkungan, pelembut kain khusus, dan teknik penyetrikaan uap untuk menjaga kualitas serat pakaian tetap seperti baru.',
-        maxLines: 5,
-      ),
-      SizedBox(height: 34),
-      _ManagementCard(isLaundry: true),
-      SizedBox(height: 34),
-      _DeleteButton(label: 'Hapus Layanan'),
-    ];
+    );
+    if (confirmed != true) return;
+
+    setState(() => _saving = true);
+    final result = await MerchantRepository.deleteProduct(widget.product!.id);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (result.isSuccess) {
+      Navigator.pop(context, true);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.error ?? 'Gagal menghapus produk')),
+    );
   }
-
-  List<Widget> _cateringFields() {
-    return const [
-      _EditableHeroImage(
-        imageUrl:
-            'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=900',
-        icon: Icons.restaurant_rounded,
-      ),
-      SizedBox(height: 34),
-      MerchantCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Informasi Menu',
-              style: TextStyle(
-                color: MerchantPalette.text,
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: 24),
-            _FieldLabel('Nama Menu'),
-            SizedBox(height: 8),
-            _TextInput(initialValue: 'Salmon Quinoa Bowl'),
-            SizedBox(height: 22),
-            _FieldLabel('Kategori'),
-            SizedBox(height: 8),
-            _SelectInput(value: 'Healthy Bowl'),
-            SizedBox(height: 22),
-            _FieldLabel('Harga (IDR)'),
-            SizedBox(height: 8),
-            _TextInput(prefix: 'Rp', initialValue: '85000'),
-            SizedBox(height: 22),
-            _FieldLabel('Deskripsi'),
-            SizedBox(height: 8),
-            _TextInput(
-              initialValue:
-                  'Salmon panggang segar yang disajikan di atas quinoa organik, dilengkapi dengan edamame, kol ungu, dan dressing lemon zest yang menyegarkan.',
-              maxLines: 5,
-            ),
-          ],
-        ),
-      ),
-      SizedBox(height: 28),
-      _ManagementCard(isLaundry: false),
-      SizedBox(height: 34),
-      _DeleteButton(label: 'Hapus Menu'),
-      SizedBox(height: 12),
-      Center(
-        child: Text(
-          'Menu yang dihapus tidak dapat dikembalikan. Pastikan Anda sudah yakin.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: MerchantPalette.muted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    ];
-  }
-}
-
-class _EditableHeroImage extends StatelessWidget {
-  const _EditableHeroImage({
-    required this.imageUrl,
-    required this.icon,
-  });
-
-  final String imageUrl;
-  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    final title = _isEdit
+        ? (widget.isLaundry ? 'Edit Layanan' : 'Edit Paket')
+        : (widget.isLaundry ? 'Tambah Layanan' : 'Tambah Paket');
+
+    return MerchantPage(
+      topBar: MerchantTopBar(
+        title: title,
+        showAvatar: false,
+        showBack: true,
+        actionLabel: _saving ? 'Menyimpan...' : 'Simpan',
+        onAction: _saving ? null : _save,
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 34),
       children: [
-        MerchantImage(
-          url: imageUrl,
-          icon: icon,
-          width: double.infinity,
-          height: 190,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: MerchantPalette.primary,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [MerchantPalette.shadow(opacity: 0.16)],
-            ),
-            child: const Icon(
-              Icons.edit_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
+        GestureDetector(
+          onTap: _pickImage,
+          child: Stack(
+            children: [
+              MerchantImage(
+                url: _imageUrl,
+                icon: widget.isLaundry
+                    ? Icons.local_laundry_service_outlined
+                    : Icons.restaurant_rounded,
+                width: double.infinity,
+                height: 190,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: MerchantPalette.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [MerchantPalette.shadow(opacity: 0.16)],
+                  ),
+                  child: const Icon(
+                    Icons.add_a_photo_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
+        const SizedBox(height: 28),
+        _FieldLabel(widget.isLaundry ? 'Nama Layanan' : 'Nama Paket/Menu'),
+        const SizedBox(height: 8),
+        _Input(controller: _nameCtrl),
+        const SizedBox(height: 22),
+        _FieldLabel(widget.isLaundry ? 'Kategori Layanan' : 'Kategori Paket'),
+        const SizedBox(height: 8),
+        _Input(controller: _categoryCtrl),
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _FieldLabel('Harga (IDR)'),
+                  const SizedBox(height: 8),
+                  _Input(
+                    controller: _priceCtrl,
+                    keyboardType: TextInputType.number,
+                    prefix: 'Rp',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _FieldLabel('Satuan'),
+                  const SizedBox(height: 8),
+                  _Input(controller: _unitCtrl),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        _FieldLabel(
+            widget.isLaundry ? 'Deskripsi Layanan' : 'Deskripsi Menu dan Lauk'),
+        const SizedBox(height: 8),
+        _Input(controller: _descriptionCtrl, maxLines: 5),
+        const SizedBox(height: 26),
+        MerchantCard(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.isLaundry ? 'Layanan Aktif' : 'Paket Aktif',
+                      style: const TextStyle(
+                        color: MerchantPalette.text,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Aktifkan agar item tampil di aplikasi user.',
+                      style: TextStyle(
+                        color: MerchantPalette.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _isActive,
+                activeThumbColor: Colors.white,
+                activeTrackColor: MerchantPalette.primary,
+                onChanged: (value) => setState(() => _isActive = value),
+              ),
+            ],
+          ),
+        ),
+        if (_isEdit) ...[
+          const SizedBox(height: 28),
+          OutlinedButton.icon(
+            onPressed: _saving ? null : _delete,
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: Text(widget.isLaundry ? 'Hapus Layanan' : 'Hapus Paket'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              foregroundColor: MerchantPalette.danger,
+              side: BorderSide(
+                color: MerchantPalette.danger.withValues(alpha: 0.3),
+              ),
+              backgroundColor: MerchantPalette.danger.withValues(alpha: 0.08),
+              textStyle: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+        const MerchantBottomSpacer(),
       ],
     );
   }
@@ -206,22 +330,25 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-class _TextInput extends StatelessWidget {
-  const _TextInput({
-    required this.initialValue,
+class _Input extends StatelessWidget {
+  const _Input({
+    required this.controller,
     this.maxLines = 1,
     this.prefix,
+    this.keyboardType,
   });
 
-  final String initialValue;
+  final TextEditingController controller;
   final int maxLines;
   final String? prefix;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
-      initialValue: initialValue,
+      controller: controller,
       maxLines: maxLines,
+      keyboardType: keyboardType,
       style: const TextStyle(
         color: MerchantPalette.text,
         fontSize: 16,
@@ -250,253 +377,6 @@ class _TextInput extends StatelessWidget {
           borderSide:
               const BorderSide(color: MerchantPalette.primary, width: 1.4),
         ),
-      ),
-    );
-  }
-}
-
-class _SelectInput extends StatelessWidget {
-  const _SelectInput({required this.value});
-
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC9D3E1)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: MerchantPalette.text,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          const Icon(Icons.keyboard_arrow_down_rounded),
-        ],
-      ),
-    );
-  }
-}
-
-class _ManagementCard extends StatelessWidget {
-  const _ManagementCard({required this.isLaundry});
-
-  final bool isLaundry;
-
-  @override
-  Widget build(BuildContext context) {
-    return MerchantCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  isLaundry ? 'Status Layanan' : 'Manajemen Stok',
-                  style: const TextStyle(
-                    color: MerchantPalette.text,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Switch(
-                value: true,
-                activeThumbColor: Colors.white,
-                activeTrackColor: MerchantPalette.primary,
-                onChanged: (_) {},
-              ),
-            ],
-          ),
-          Text(
-            isLaundry
-                ? 'Tampilkan layanan di aplikasi pelanggan'
-                : 'Aktifkan untuk memunculkan menu di aplikasi pelanggan.',
-            style: const TextStyle(
-              color: MerchantPalette.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(height: 1),
-          const SizedBox(height: 24),
-          if (isLaundry) ...[
-            const Row(
-              children: [
-                Icon(
-                  Icons.inventory_2_rounded,
-                  color: MerchantPalette.primary,
-                  size: 26,
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Manajemen Kapasitas',
-                    style: TextStyle(
-                      color: MerchantPalette.primary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            const Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Maksimum pesanan per hari',
-                    style: TextStyle(
-                      color: MerchantPalette.muted,
-                      fontSize: 15,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-                _StepperControl(value: '20'),
-              ],
-            ),
-          ] else ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F3F7),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tersedia untuk Dipesan',
-                    style: TextStyle(
-                      color: MerchantPalette.text,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Aktifkan untuk memunculkan menu di aplikasi pelanggan.',
-                    style: TextStyle(
-                      color: MerchantPalette.muted,
-                      fontSize: 12,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            const _FieldLabel('Jumlah Porsi Tersedia'),
-            const SizedBox(height: 10),
-            const _StepperControl(value: '24'),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StepperControl extends StatelessWidget {
-  const _StepperControl({required this.value});
-
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _StepButton(icon: Icons.remove_rounded, muted: true),
-        const SizedBox(width: 12),
-        Container(
-          width: 88,
-          height: 52,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFC9D3E1)),
-          ),
-          child: Text(
-            value,
-            style: const TextStyle(
-              color: MerchantPalette.text,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        const _StepButton(icon: Icons.add_rounded),
-      ],
-    );
-  }
-}
-
-class _StepButton extends StatelessWidget {
-  const _StepButton({
-    required this.icon,
-    this.muted = false,
-  });
-
-  final IconData icon;
-  final bool muted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: muted ? const Color(0xFFE0E5EC) : const Color(0xFFCFE0FF),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Icon(
-        icon,
-        color: muted ? MerchantPalette.muted : MerchantPalette.primary,
-      ),
-    );
-  }
-}
-
-class _DeleteButton extends StatelessWidget {
-  const _DeleteButton({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: () {},
-      icon: const Icon(Icons.delete_outline_rounded),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(58),
-        foregroundColor: MerchantPalette.danger,
-        side: BorderSide(
-          color: MerchantPalette.danger.withValues(alpha: 0.3),
-        ),
-        backgroundColor: MerchantPalette.danger.withValues(alpha: 0.08),
-        textStyle: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w900,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

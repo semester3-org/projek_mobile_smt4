@@ -49,10 +49,18 @@ class UserRepository {
   }
 
   static Future<RepoResult<List<UserMerchant>>> getMerchants(
-      String type) async {
+    String type, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    final params = {'type': type};
+    if (latitude != null && longitude != null) {
+      params['lat'] = latitude.toString();
+      params['lng'] = longitude.toString();
+    }
     final res = await ApiService.get(
       'api/user_merchants',
-      queryParams: {'type': type},
+      queryParams: params,
     );
 
     if (!res.success) {
@@ -190,6 +198,83 @@ class UserRepository {
     }
   }
 
+  static Future<RepoResult<Order>> createOrder({
+    required UserMerchant merchant,
+    required List<MerchantMenuItem> items,
+    required String deliveryAddress,
+    required String estimatedTime,
+    required String paymentMethod,
+    Map<String, int>? quantities,
+    String? customerName,
+    String? customerPhone,
+    String? notes,
+  }) async {
+    final res = await ApiService.post('api/user_orders', {
+      'merchantId':
+          merchant.merchantId.isNotEmpty ? merchant.merchantId : merchant.id,
+      'service': merchant.type,
+      'deliveryAddress': deliveryAddress,
+      'estimatedTime': estimatedTime,
+      'paymentMethod': paymentMethod,
+      'customerName': customerName ?? '',
+      'customerPhone': customerPhone ?? '',
+      'notes': notes ?? '',
+      'items': items
+          .map((item) => {
+                'productId': item.id,
+                'name': item.name,
+                'quantity': quantities?[item.id] ?? 1,
+                'price': item.price,
+              })
+          .toList(),
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membuat pesanan');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca pesanan yang dibuat');
+    }
+  }
+
+  static Future<RepoResult<Order>> getOrderDetail(String id) async {
+    final result = await getOrders();
+    if (!result.isSuccess) {
+      return RepoResult.fail(result.error ?? 'Gagal memuat pesanan');
+    }
+
+    for (final order in result.data ?? <Order>[]) {
+      if (order.id == id || order.databaseId == id) {
+        return RepoResult.ok(order);
+      }
+    }
+    return const RepoResult.fail('Pesanan tidak ditemukan');
+  }
+
+  static Future<RepoResult<Order>> confirmMerchantPayment(String orderId) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'confirm_payment',
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal mengonfirmasi pembayaran');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status pesanan terbaru');
+    }
+  }
+
   static Future<RepoResult<List<AppNotification>>> getNotifications() async {
     final res = await ApiService.get('api/user_notifications');
 
@@ -205,6 +290,33 @@ class UserRepository {
     } catch (_) {
       return RepoResult.ok(_fallbackNotifications());
     }
+  }
+
+  static Future<RepoResult<bool>> markNotificationRead(String id) async {
+    final res = await ApiService.put('api/user_notifications', {
+      'id': id,
+      'action': 'mark_read',
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
+    }
+    return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<bool>> markAllNotificationsRead() async {
+    final res = await ApiService.put('api/user_notifications', {
+      'action': 'mark_all_read',
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membaca semua notifikasi');
+    }
+    return const RepoResult.ok(true);
+  }
+
+  static Future<bool> hasUnreadNotifications() async {
+    final result = await getNotifications();
+    return (result.data ?? const <AppNotification>[])
+        .any((notification) => notification.isUnread);
   }
 
   static Future<RepoResult<UserProfile>> getProfile({
@@ -345,7 +457,7 @@ class UserRepository {
     if (keys.isEmpty) return const RepoResult.ok([]);
 
     final items = <UserMerchant>[];
-    for (final type in {'laundry', 'catering', 'cafe'}) {
+    for (final type in {'laundry', 'catering'}) {
       final result = await getMerchants(type);
       final merchants = result.data ?? const <UserMerchant>[];
       items.addAll(
@@ -380,7 +492,8 @@ class UserRepository {
 
   static Future<void> _saveLocalProfile(UserProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_profileKeyFor(profile), jsonEncode(profile.toJson()));
+    await prefs.setString(
+        _profileKeyFor(profile), jsonEncode(profile.toJson()));
   }
 
   static String _profileKeyFor(UserProfile profile) {
@@ -616,86 +729,7 @@ class UserRepository {
           ),
         ];
       default:
-        return const [
-          UserMerchant(
-            id: 'c1',
-            type: 'cafe',
-            name: 'Kopi Senja',
-            subtitle: 'Coffee & workspace',
-            address: 'Sentra Ruang Ground Floor, Blok A1',
-            rating: 4.8,
-            reviewCount: 124,
-            distanceKm: 0.8,
-            imageUrl:
-                'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900',
-            status: 'Buka',
-            tags: ['WiFi Cepat', 'Stopkontak', 'Outdoor'],
-            minPrice: 18000,
-            priceUnit: '',
-            eta: '',
-            openHours: '08:00 - 22:00',
-            description:
-                'Ruang komunal yang menggabungkan kenikmatan kopi artisan dengan kenyamanan ruang kerja.',
-            phone: '+62 812-3456-7890',
-            email: 'halo@kopisenja.com',
-            menuItems: [
-              MerchantMenuItem(
-                id: 'c1-m1',
-                name: 'Signature Coffee',
-                description: 'Kopi susu gula aren',
-                price: 18000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400',
-              ),
-              MerchantMenuItem(
-                id: 'c1-m2',
-                name: 'Croissant Butter',
-                description: 'Fresh baked',
-                price: 22000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400',
-              ),
-            ],
-            reviews: [
-              MerchantReview(
-                reviewer: 'Andi Wijaya',
-                rating: 5,
-                comment:
-                    'Tempat paling nyaman buat WFC di area Sentra Ruang. Kopinya enak.',
-                timeLabel: '2 hari lalu',
-              ),
-              MerchantReview(
-                reviewer: 'Siti Rahma',
-                rating: 4,
-                comment: 'Suasananya tenang banget, cocok buat fokus kerja.',
-                timeLabel: '1 minggu lalu',
-              ),
-            ],
-          ),
-          UserMerchant(
-            id: 'c2',
-            type: 'cafe',
-            name: 'Ruang Kopi',
-            subtitle: 'Tenang dan parkir luas',
-            address: 'Jl. Cendana No. 21',
-            rating: 4.6,
-            reviewCount: 85,
-            distanceKm: 1.2,
-            imageUrl:
-                'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900',
-            status: 'Buka',
-            tags: ['AC', 'Tenang', 'Parkir Luas'],
-            minPrice: 20000,
-            priceUnit: '',
-            eta: '',
-            openHours: '09:00 - 22:00',
-            description: 'Kafe santai dengan area duduk luas dan Wi-Fi stabil.',
-            phone: '+62 811-2222-3344',
-            email: 'halo@ruangkopi.id',
-            menuItems: [],
-            reviews: [],
-          ),
-        ];
+        return const [];
     }
   }
 

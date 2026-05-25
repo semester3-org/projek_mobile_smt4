@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
+import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
+import '../user/order_detail_page.dart';
 
 /// Helper untuk format currency
 String formatCurrency(double amount) {
@@ -43,6 +45,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   List<Order> _orders = [];
   bool _isLoading = true;
   String _filterService = 'semua';
+  String? _error;
 
   @override
   void initState() {
@@ -51,91 +54,19 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   }
 
   Future<void> _loadOrders() async {
-    // TODO: Integrasikan dengan API backend untuk fetch orders
-    // Contoh dummy data:
-    try {
-      setState(() {
-        _orders = [
-          Order(
-            id: 'SR-CATER-88219',
-            merchantName: 'Dapur Nusantara',
-            service: 'catering',
-            orderDate: DateTime(2023, 10, 24, 14, 20),
-            deliveryDate: DateTime(2023, 10, 24, 18, 0),
-            totalAmount: 90000,
-            status: 'confirmed',
-            items: [
-              OrderItem(
-                name: 'Nasi Goreng Spesial Nusantara',
-                quantity: 2,
-                price: 35000,
-                subtotal: 70000,
-              ),
-              OrderItem(
-                name: 'Es Jeruk Peras Murni',
-                quantity: 1,
-                price: 15000,
-                subtotal: 15000,
-              ),
-            ],
-            paymentMethod: 'GOPAY',
-          ),
-          Order(
-            id: 'SR-LAUNDRY-001',
-            merchantName: 'Clean & Fresh Laundry Express',
-            service: 'laundry',
-            orderDate: DateTime(2023, 10, 20),
-            deliveryDate: DateTime(2023, 10, 22),
-            totalAmount: 70000,
-            status: 'completed',
-            items: [
-              OrderItem(
-                name: 'Cuci Lipat (Regular)',
-                quantity: 5,
-                price: 8000,
-                subtotal: 40000,
-              ),
-              OrderItem(
-                name: 'Cuci Setrika (Kg)',
-                quantity: 1,
-                price: 12000,
-                subtotal: 12000,
-              ),
-            ],
-            paymentMethod: 'GOPAY',
-          ),
-          Order(
-            id: 'SR-CAFE-456',
-            merchantName: 'Kopi Senja',
-            service: 'cafe',
-            orderDate: DateTime(2023, 10, 15),
-            totalAmount: 45000,
-            status: 'completed',
-            items: [
-              OrderItem(
-                name: 'Cappuccino',
-                quantity: 2,
-                price: 18000,
-                subtotal: 36000,
-              ),
-              OrderItem(
-                name: 'Croissant',
-                quantity: 1,
-                price: 9000,
-                subtotal: 9000,
-              ),
-            ],
-            paymentMethod: 'Kartu Kredit',
-          ),
-        ];
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading orders: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    final result = await UserRepository.getOrders();
+    if (!mounted) return;
+    setState(() {
+      _orders = (result.data ?? [])
+          .where((order) => order.service == 'laundry' || order.service == 'catering')
+          .toList();
+      _error = result.error;
+      _isLoading = false;
+    });
   }
 
   List<Order> get _filteredOrders {
@@ -179,17 +110,17 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                         onSelected: () =>
                             setState(() => _filterService = 'laundry'),
                       ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Kafe',
-                        selected: _filterService == 'cafe',
-                        onSelected: () =>
-                            setState(() => _filterService = 'cafe'),
-                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 // Daftar orders
                 if (_filteredOrders.isEmpty)
                   Center(
@@ -266,8 +197,6 @@ class _OrderCard extends StatelessWidget {
         return Icons.restaurant;
       case 'laundry':
         return Icons.local_laundry_service;
-      case 'cafe':
-        return Icons.coffee;
       case 'kos':
         return Icons.apartment;
       default:
@@ -385,114 +314,9 @@ class _OrderCard extends StatelessWidget {
   }
 
   void _showOrderDetail(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Detail Pesanan',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'ID Pesanan',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(order.id, style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 16),
-              Text(
-                'Waktu Pesanan',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                formatDateTime(order.orderDate),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Item Pesanan',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              ...order.items.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.name),
-                            Text(
-                              '${item.quantity}x @ ${formatCurrency(item.price)}',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        formatCurrency(item.subtotal),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Total'),
-                  Text(
-                    formatCurrency(order.totalAmount),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryGreen,
-                          fontSize: 16,
-                        ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserOrderDetailPage(order: order),
       ),
     );
   }

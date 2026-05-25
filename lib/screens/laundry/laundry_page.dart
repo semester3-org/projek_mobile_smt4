@@ -11,7 +11,8 @@ class LaundryPage extends StatelessWidget {
       type: 'laundry',
       title: 'Pilih Merchant',
       searchHint: 'Cari laundry terdekat...',
-      filters: ['Semua', 'Kiloan', 'Satuan', 'Express', 'Terdekat'],
+      filters: ['Semua', 'Terdekat', 'Terpopuler'],
+      showLocationPrompt: true,
     );
   }
 }

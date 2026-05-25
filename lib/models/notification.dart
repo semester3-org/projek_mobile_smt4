@@ -3,7 +3,7 @@ class AppNotification {
   final String id;
   final String title;
   final String message;
-  final String type; // 'payment', 'catering', 'laundry', 'room', 'promo', 'general'
+  final String type; // 'payment', 'order', 'catering', 'laundry', 'room', 'promo', 'general'
   final String status; // 'baru', 'dibaca'
   final DateTime createdAt;
   final String? actionUrl;
@@ -30,7 +30,7 @@ class AppNotification {
       type: json['type'] as String? ?? 'general',
       status: json['status'] as String? ?? 'baru',
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
-      actionUrl: json['actionUrl'] as String?,
+      actionUrl: json['actionUrl'] as String? ?? json['action_url'] as String?,
       hasAction: json['hasAction'] as bool? ?? false,
       actionButtonText: json['actionButtonText'] as String?,
     );
@@ -51,4 +51,23 @@ class AppNotification {
   }
 
   bool get isNew => status == 'baru';
+  bool get isUnread => status != 'dibaca';
+
+  AppNotification copyWith({
+    String? status,
+    bool? hasAction,
+    String? actionButtonText,
+  }) {
+    return AppNotification(
+      id: id,
+      title: title,
+      message: message,
+      type: type,
+      status: status ?? this.status,
+      createdAt: createdAt,
+      actionUrl: actionUrl,
+      hasAction: hasAction ?? this.hasAction,
+      actionButtonText: actionButtonText ?? this.actionButtonText,
+    );
+  }
 }

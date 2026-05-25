@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
+import '../../data/repositories/merchant_repository.dart';
 
 class MerchantPalette {
   MerchantPalette._();
@@ -98,13 +102,65 @@ class MerchantTopBar extends StatelessWidget {
               child: Text(actionLabel!),
             )
           else
-            IconButton(
+            _MerchantTopBarIconButton(
+              icon: actionIcon ?? Icons.notifications_none_rounded,
               onPressed: onAction,
-              color: MerchantPalette.primary,
-              icon: Icon(actionIcon ?? Icons.notifications_none_rounded),
             ),
         ],
       ),
+    );
+  }
+}
+
+class _MerchantTopBarIconButton extends StatelessWidget {
+  const _MerchantTopBarIconButton({
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isNotificationIcon = icon == Icons.notifications_none_rounded;
+    if (!isNotificationIcon) {
+      return IconButton(
+        onPressed: onPressed,
+        color: MerchantPalette.primary,
+        icon: Icon(icon),
+      );
+    }
+
+    return FutureBuilder<bool>(
+      future: MerchantRepository.hasUnreadNotifications(),
+      builder: (context, snapshot) {
+        final hasUnread = snapshot.data == true;
+        return IconButton(
+          onPressed: onPressed,
+          color: MerchantPalette.primary,
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon),
+              if (hasUnread)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: MerchantPalette.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -425,13 +481,19 @@ class MerchantSearchField extends StatelessWidget {
   const MerchantSearchField({
     super.key,
     required this.hint,
+    this.controller,
+    this.onChanged,
   });
 
   final String hint;
+  final TextEditingController? controller;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      controller: controller,
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         prefixIcon: const Icon(Icons.search_rounded),
@@ -462,10 +524,12 @@ class MerchantFilterChips extends StatelessWidget {
     super.key,
     required this.labels,
     this.selectedIndex = 0,
+    this.onSelected,
   });
 
   final List<String> labels;
   final int selectedIndex;
+  final ValueChanged<int>? onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -474,24 +538,31 @@ class MerchantFilterChips extends StatelessWidget {
       child: Row(
         children: [
           for (var i = 0; i < labels.length; i++) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color:
-                    i == selectedIndex ? MerchantPalette.primary : Colors.white,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
+            InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: onSelected == null ? null : () => onSelected!(i),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
                   color: i == selectedIndex
                       ? MerchantPalette.primary
-                      : const Color(0xFFC9D3E1),
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: i == selectedIndex
+                        ? MerchantPalette.primary
+                        : const Color(0xFFC9D3E1),
+                  ),
                 ),
-              ),
-              child: Text(
-                labels[i],
-                style: TextStyle(
-                  color:
-                      i == selectedIndex ? Colors.white : MerchantPalette.muted,
-                  fontWeight: FontWeight.w700,
+                child: Text(
+                  labels[i],
+                  style: TextStyle(
+                    color: i == selectedIndex
+                        ? Colors.white
+                        : MerchantPalette.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -523,6 +594,18 @@ class MerchantImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ImageProvider? memoryProvider;
+    if (url.startsWith('data:image')) {
+      final comma = url.indexOf(',');
+      if (comma > -1) {
+        try {
+          memoryProvider = MemoryImage(base64Decode(url.substring(comma + 1)));
+        } catch (_) {
+          memoryProvider = null;
+        }
+      }
+    }
+
     final fallback = Container(
       width: width,
       height: height,
@@ -534,17 +617,24 @@ class MerchantImage extends StatelessWidget {
       child: Icon(icon, color: MerchantPalette.primary, size: 42),
     );
 
-    final image = Image.network(
-      url,
-      width: width,
-      height: height,
-      fit: fit,
-      errorBuilder: (_, __, ___) => fallback,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return fallback;
-      },
-    );
+    final image = memoryProvider != null
+        ? Image(
+            image: memoryProvider,
+            width: width,
+            height: height,
+            fit: fit,
+          )
+        : Image.network(
+            url,
+            width: width,
+            height: height,
+            fit: fit,
+            errorBuilder: (_, __, ___) => fallback,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return fallback;
+            },
+          );
 
     if (borderRadius == null) return image;
     return ClipRRect(borderRadius: borderRadius!, child: image);

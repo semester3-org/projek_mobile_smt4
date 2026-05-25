@@ -59,11 +59,11 @@ class UserDashboard {
         ),
         MerchantMenuItem(
           id: 'rec-2',
-          name: 'Signature Coffee',
-          description: 'Kopi favorit',
-          price: 18000,
+          name: 'Cuci Lipat Regular',
+          description: 'Layanan laundry praktis',
+          price: 8000,
           imageUrl:
-              'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800',
+              'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=800',
         ),
       ],
     );

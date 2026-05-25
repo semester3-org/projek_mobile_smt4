@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
@@ -32,17 +33,13 @@ class _MerchantListPageState extends State<MerchantListPage> {
   List<UserMerchant> _merchants = [];
   bool _loading = true;
   String _selectedFilter = 'Semua';
-  bool _promptShown = false;
+  bool _locationUnavailable = false;
 
   @override
   void initState() {
     super.initState();
     _selectedFilter = widget.filters.first;
     _load();
-
-    if (widget.showLocationPrompt) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showLocationDialog());
-    }
   }
 
   @override
@@ -52,7 +49,17 @@ class _MerchantListPageState extends State<MerchantListPage> {
   }
 
   Future<void> _load() async {
-    final result = await UserRepository.getMerchants(widget.type);
+    setState(() {
+      _loading = true;
+      _locationUnavailable = false;
+    });
+
+    final position = widget.showLocationPrompt ? await _resolveLocation() : null;
+    final result = await UserRepository.getMerchants(
+      widget.type,
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+    );
     if (!mounted) return;
     setState(() {
       _merchants = result.data ?? [];
@@ -60,25 +67,69 @@ class _MerchantListPageState extends State<MerchantListPage> {
     });
   }
 
+  Future<Position?> _resolveLocation() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) setState(() => _locationUnavailable = true);
+        return null;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _locationUnavailable = true);
+        return null;
+      }
+
+      return Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(const Duration(seconds: 12));
+    } catch (_) {
+      if (mounted) setState(() => _locationUnavailable = true);
+      return null;
+    }
+  }
+
   List<UserMerchant> get _filteredMerchants {
     final keyword = _searchCtrl.text.trim().toLowerCase();
-    return _merchants.where((merchant) {
+    final items = _merchants.where((merchant) {
       final matchesSearch = keyword.isEmpty ||
           merchant.name.toLowerCase().contains(keyword) ||
           merchant.subtitle.toLowerCase().contains(keyword) ||
           merchant.tags.any((tag) => tag.toLowerCase().contains(keyword));
 
       if (!matchesSearch) return false;
-      if (_selectedFilter == 'Semua') return true;
-      if (_selectedFilter == 'Terdekat') return merchant.distanceKm <= 1.5;
-      if (_selectedFilter == 'Terpopuler' ||
-          _selectedFilter == 'Rating Tertinggi') {
-        return merchant.rating >= 4.7;
+      if (_selectedFilter == 'Semua' ||
+          _selectedFilter == 'Terdekat' ||
+          _selectedFilter == 'Terpopuler') {
+        return true;
       }
       return merchant.tags.any(
         (tag) => tag.toLowerCase().contains(_selectedFilter.toLowerCase()),
       );
     }).toList();
+
+    if (_selectedFilter == 'Terdekat') {
+      items.sort((a, b) {
+        if (a.hasDistanceEstimate != b.hasDistanceEstimate) {
+          return a.hasDistanceEstimate ? -1 : 1;
+        }
+        return a.distanceKm.compareTo(b.distanceKm);
+      });
+    } else if (_selectedFilter == 'Terpopuler') {
+      items.sort((a, b) {
+        final rating = b.rating.compareTo(a.rating);
+        if (rating != 0) return rating;
+        return a.distanceKm.compareTo(b.distanceKm);
+      });
+    }
+
+    return items;
   }
 
   void _openDetail(UserMerchant merchant) {
@@ -92,85 +143,6 @@ class _MerchantListPageState extends State<MerchantListPage> {
   void _openNotifications() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const NotificationListPage()),
-    );
-  }
-
-  void _showLocationDialog() {
-    if (_promptShown || !mounted) return;
-    _promptShown = true;
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD7E7FF),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: const Icon(
-                    Icons.location_on_outlined,
-                    color: UserTheme.primaryDark,
-                    size: 34,
-                  ),
-                ),
-                const SizedBox(height: 26),
-                Text(
-                  'Ambil Lokasi',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: UserTheme.text,
-                      ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Untuk menemukan kafe terbaik di sekitar Anda, izinkan Sentra Ruang mengakses lokasi perangkat Anda.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: UserTheme.muted,
-                    height: 1.45,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: UserTheme.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text('Izinkan Akses'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Nanti Saja',
-                    style: TextStyle(color: UserTheme.muted),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -190,12 +162,9 @@ class _MerchantListPageState extends State<MerchantListPage> {
           ),
         ),
         actions: [
-          IconButton(
+          UserNotificationIconButton(
             onPressed: _openNotifications,
-            icon: const Icon(
-              Icons.notifications_none_rounded,
-              color: UserTheme.muted,
-            ),
+            color: UserTheme.muted,
           ),
         ],
       ),
@@ -213,6 +182,10 @@ class _MerchantListPageState extends State<MerchantListPage> {
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 18),
+                  if (widget.showLocationPrompt && _locationUnavailable) ...[
+                    _LocationUnavailableBanner(onRetry: _load),
+                    const SizedBox(height: 18),
+                  ],
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -258,7 +231,6 @@ class _MerchantCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = _iconForType(merchant.type);
-    final isCafe = merchant.type == 'cafe';
 
     return Material(
       color: Colors.white,
@@ -288,15 +260,8 @@ class _MerchantCard extends StatelessWidget {
                     right: 14,
                     child: RatingBadge(
                       rating: merchant.rating,
-                      reviewCount: isCafe ? merchant.reviewCount : null,
                     ),
                   ),
-                  if (isCafe)
-                    Positioned(
-                      left: 16,
-                      bottom: 16,
-                      child: _StatusPill(status: merchant.status),
-                    ),
                 ],
               ),
               Padding(
@@ -321,22 +286,32 @@ class _MerchantCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Text(
-                          '${merchant.distanceKm.toStringAsFixed(1)} km',
-                          style: const TextStyle(
-                            color: UserTheme.primaryDark,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                        _DistanceSummary(merchant: merchant),
                       ],
                     ),
-                    if (!isCafe) ...[
+                    if (merchant.hasDistanceEstimate &&
+                        merchant.eta.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(
-                        merchant.subtitle,
-                        style: const TextStyle(color: UserTheme.muted),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.near_me_rounded,
+                            size: 16,
+                            color: UserTheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Perkiraan sampai ${merchant.eta}',
+                            style: const TextStyle(color: UserTheme.muted),
+                          ),
+                        ],
                       ),
                     ],
+                    const SizedBox(height: 6),
+                    Text(
+                      merchant.subtitle,
+                      style: const TextStyle(color: UserTheme.muted),
+                    ),
                     const SizedBox(height: 14),
                     Wrap(
                       children: merchant.tags
@@ -418,7 +393,7 @@ class _MerchantCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: Text(isCafe ? 'Lihat Detail' : 'Pesan'),
+                          child: const Text('Pesan'),
                         ),
                       ],
                     ),
@@ -439,32 +414,80 @@ class _MerchantCard extends StatelessWidget {
       case 'catering':
         return Icons.restaurant_rounded;
       default:
-        return Icons.local_cafe_rounded;
+        return Icons.storefront_rounded;
     }
   }
 }
 
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
+class _DistanceSummary extends StatelessWidget {
+  const _DistanceSummary({required this.merchant});
 
-  final String status;
+  final UserMerchant merchant;
 
   @override
   Widget build(BuildContext context) {
-    final isOpen = status.toLowerCase() != 'tutup';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: isOpen ? UserTheme.success : const Color(0xFFFF5B62),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w900,
-          fontSize: 11,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const Text(
+          'Estimasi jarak',
+          style: TextStyle(
+            color: UserTheme.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
         ),
+        Text(
+          merchant.hasDistanceEstimate
+              ? '${merchant.distanceKm.toStringAsFixed(1)} km'
+              : 'Aktifkan lokasi',
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            color: merchant.hasDistanceEstimate
+                ? UserTheme.primaryDark
+                : UserTheme.muted,
+            fontWeight: FontWeight.w800,
+            fontSize: merchant.hasDistanceEstimate ? 14 : 12,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocationUnavailableBanner extends StatelessWidget {
+  const _LocationUnavailableBanner({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFD8A8)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_off_outlined, color: Color(0xFFE66000)),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Estimasi jarak dan waktu hanya ditampilkan setelah lokasi diizinkan.',
+              style: TextStyle(
+                color: UserTheme.text,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Coba Lagi'),
+          ),
+        ],
       ),
     );
   }
@@ -499,7 +522,7 @@ class _EmptyMerchantState extends StatelessWidget {
       case 'catering':
         return Icons.restaurant_rounded;
       default:
-        return Icons.local_cafe_rounded;
+        return Icons.storefront_rounded;
     }
   }
 }

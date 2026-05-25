@@ -7,15 +7,33 @@ import '../owner/owner_shell.dart';
 import '../merchant/merchant_shell.dart';
 import 'login_page.dart';
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _restoring = true;
+  bool _didRestore = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didRestore) return;
+    _didRestore = true;
+    AuthScope.of(context).restoreSession().whenComplete(() {
+      if (mounted) setState(() => _restoring = false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.of(context);
     final session = auth.session;
 
-    if (auth.isRestoring) {
+    if (_restoring) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );

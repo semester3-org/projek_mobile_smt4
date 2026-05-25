@@ -18,6 +18,14 @@ class NotificationListPage extends StatefulWidget {
 class _NotificationListPageState extends State<NotificationListPage> {
   List<AppNotification> _notifications = [];
   bool _loading = true;
+  String _filter = 'semua';
+
+  static const _filters = [
+    ('semua', 'Semua'),
+    ('baru', 'Baru Masuk'),
+    ('belum_dibaca', 'Belum Dibaca'),
+    ('dibaca', 'Sudah Dibaca'),
+  ];
 
   @override
   void initState() {
@@ -34,18 +42,15 @@ class _NotificationListPageState extends State<NotificationListPage> {
     });
   }
 
-  void _markAllRead() {
+  Future<void> _markAllRead() async {
+    await UserRepository.markAllNotificationsRead();
+    if (!mounted) return;
     setState(() {
       _notifications = _notifications.map((notification) {
-        return AppNotification(
-          id: notification.id,
-          title: notification.title,
-          message: notification.message,
-          type: notification.type,
+        return notification.copyWith(
           status: 'dibaca',
-          createdAt: notification.createdAt,
-          actionUrl: notification.actionUrl,
-          hasAction: notification.hasAction || _hasImplicitAction(notification.type),
+          hasAction:
+              notification.hasAction || _hasImplicitAction(notification.type),
           actionButtonText:
               notification.actionButtonText ?? _actionText(notification.type),
         );
@@ -53,7 +58,17 @@ class _NotificationListPageState extends State<NotificationListPage> {
     });
   }
 
-  void _handleAction(AppNotification notification) {
+  Future<void> _handleAction(AppNotification notification) async {
+    await UserRepository.markNotificationRead(notification.id);
+    if (mounted) {
+      setState(() {
+        _notifications = _notifications
+            .map((item) =>
+                item.id == notification.id ? item.copyWith(status: 'dibaca') : item)
+            .toList();
+      });
+    }
+
     if (notification.type == 'room') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const BillingListPage()),
@@ -61,9 +76,15 @@ class _NotificationListPageState extends State<NotificationListPage> {
       return;
     }
 
+    final actionUrl = notification.actionUrl ?? '';
+    if (actionUrl.startsWith('order:')) {
+      _openOrderDetailById(actionUrl.substring('order:'.length));
+      return;
+    }
+
     final service = notification.type == 'payment' ? 'laundry' : notification.type;
-    if (service == 'laundry' || service == 'catering' || service == 'cafe') {
-      _openOrderDetail(service);
+    if (service == 'laundry' || service == 'catering' || service == 'order') {
+      _openOrderDetail(service == 'order' ? null : service);
       return;
     }
 
@@ -72,13 +93,13 @@ class _NotificationListPageState extends State<NotificationListPage> {
     );
   }
 
-  Future<void> _openOrderDetail(String service) async {
+  Future<void> _openOrderDetail(String? service) async {
     final result = await UserRepository.getOrders();
     if (!mounted) return;
 
     Order? selected;
     for (final order in result.data ?? <Order>[]) {
-      if (order.service == service) {
+      if (service == null || order.service == service) {
         selected = order;
         break;
       }
@@ -98,11 +119,30 @@ class _NotificationListPageState extends State<NotificationListPage> {
     );
   }
 
+  Future<void> _openOrderDetailById(String id) async {
+    final result = await UserRepository.getOrderDetail(id);
+    if (!mounted) return;
+
+    final order = result.data;
+    if (order == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Detail pesanan belum tersedia')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserOrderDetailPage(order: order),
+      ),
+    );
+  }
+
   bool _hasImplicitAction(String type) {
     return type == 'payment' ||
         type == 'laundry' ||
         type == 'catering' ||
-        type == 'cafe';
+        type == 'order';
   }
 
   String? _actionText(String type) {
@@ -112,6 +152,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleNotifications = _visibleNotifications;
     return Scaffold(
       backgroundColor: UserTheme.background,
       appBar: AppBar(
@@ -174,8 +215,21 @@ class _NotificationListPageState extends State<NotificationListPage> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _filters.map((filter) {
+                        return UserFilterChip(
+                          label: filter.$2,
+                          selected: _filter == filter.$1,
+                          onTap: () => setState(() => _filter = filter.$1),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                   const SizedBox(height: 20),
-                  if (_notifications.isEmpty)
+                  if (visibleNotifications.isEmpty)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
@@ -186,7 +240,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
                       ),
                     )
                   else
-                    ..._notifications.map(
+                    ...visibleNotifications.map(
                       (notification) => Padding(
                         padding: const EdgeInsets.only(bottom: 18),
                         child: _NotificationCard(
@@ -203,18 +257,27 @@ class _NotificationListPageState extends State<NotificationListPage> {
   }
 
   AppNotification _withAction(AppNotification notification) {
-    return AppNotification(
-      id: notification.id,
-      title: notification.title,
-      message: notification.message,
-      type: notification.type,
-      status: notification.status,
-      createdAt: notification.createdAt,
-      actionUrl: notification.actionUrl,
+    return notification.copyWith(
       hasAction: notification.hasAction || _hasImplicitAction(notification.type),
       actionButtonText:
           notification.actionButtonText ?? _actionText(notification.type),
     );
+  }
+
+  List<AppNotification> get _visibleNotifications {
+    final now = DateTime.now();
+    return _notifications.where((notification) {
+      switch (_filter) {
+        case 'baru':
+          return now.difference(notification.createdAt).inHours < 24;
+        case 'belum_dibaca':
+          return notification.isUnread;
+        case 'dibaca':
+          return !notification.isUnread;
+        default:
+          return true;
+      }
+    }).toList();
   }
 }
 
@@ -322,8 +385,8 @@ class _NotificationCard extends StatelessWidget {
         return const Color(0xFFFF3B30);
       case 'laundry':
         return const Color(0xFF8A3FFC);
-      case 'cafe':
-        return const Color(0xFF009B8F);
+      case 'order':
+        return UserTheme.primaryDark;
       case 'room':
         return UserTheme.primary;
       case 'promo':
@@ -341,8 +404,8 @@ class _NotificationCard extends StatelessWidget {
         return Icons.error_outline_rounded;
       case 'laundry':
         return Icons.local_laundry_service_outlined;
-      case 'cafe':
-        return Icons.local_cafe_outlined;
+      case 'order':
+        return Icons.receipt_long_outlined;
       case 'room':
         return Icons.info_outline_rounded;
       case 'promo':

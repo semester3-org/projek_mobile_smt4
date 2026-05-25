@@ -83,7 +83,7 @@ class _BillingListPageState extends State<BillingListPage> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           title: const Text(
-            'Tagihan Anda',
+            'Tagihan Kos',
             style: TextStyle(
               color: UserTheme.primaryDark,
               fontWeight: FontWeight.w800,

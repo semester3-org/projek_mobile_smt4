@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'cafe/cafe_page.dart';
 import 'catering/catering_page.dart';
 import 'laundry/laundry_page.dart';
-import 'profile/notification_list_page.dart';
 import 'profile/profile_page.dart';
 import 'user/user_home_page.dart';
 import 'user/user_theme.dart';
@@ -31,8 +29,6 @@ class _MainShellState extends State<MainShell> {
           UserHomePage(onSelectTab: _selectTab),
           const LaundryPage(),
           const CateringPage(),
-          const CafePage(),
-          const NotificationListPage(),
           const ProfilePage(),
         ],
       ),
@@ -69,16 +65,6 @@ class _MainShellState extends State<MainShell> {
                 icon: Icon(Icons.restaurant_outlined),
                 activeIcon: Icon(Icons.restaurant_rounded),
                 label: 'Catering',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.local_cafe_outlined),
-                activeIcon: Icon(Icons.local_cafe_rounded),
-                label: 'Kafe',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.notifications_none_rounded),
-                activeIcon: Icon(Icons.notifications_rounded),
-                label: 'Notifikasi',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.person_outline_rounded),

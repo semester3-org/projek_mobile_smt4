@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/user_repository.dart';
 import 'user_theme.dart';
 
 String formatUserCurrency(num amount) {
@@ -274,5 +275,49 @@ class UserBottomSpacer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox(height: 24);
+  }
+}
+
+class UserNotificationIconButton extends StatelessWidget {
+  const UserNotificationIconButton({
+    super.key,
+    required this.onPressed,
+    this.color,
+  });
+
+  final VoidCallback onPressed;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: UserRepository.hasUnreadNotifications(),
+      builder: (context, snapshot) {
+        final hasUnread = snapshot.data == true;
+        return IconButton(
+          onPressed: onPressed,
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(Icons.notifications_none_rounded, color: color),
+              if (hasUnread)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: UserTheme.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

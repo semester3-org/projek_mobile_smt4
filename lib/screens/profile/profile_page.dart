@@ -181,7 +181,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         actions: [
-          IconButton(
+          UserNotificationIconButton(
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -189,7 +189,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               );
             },
-            icon: const Icon(Icons.notifications_none_rounded),
           ),
         ],
       ),
@@ -265,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   _ActionTile(
                     icon: Icons.receipt_long_outlined,
-                    label: 'Tagihan & Pembayaran',
+                    label: 'Tagihan Kos & Pembayaran Kos',
                     onTap: () {
                       Navigator.of(context)
                           .push<bool>(
@@ -280,7 +279,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   _ActionTile(
                     icon: Icons.shopping_bag_outlined,
-                    label: 'Riwayat Pesanan',
+                    label: 'Riwayat Pesanan Merchant',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const OrderHistoryPage(),

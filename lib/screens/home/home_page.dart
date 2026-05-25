@@ -6,7 +6,6 @@ import '../../data/repositories/kos_repository.dart';
 import '../../models/kos_listing.dart';
 import '../../widgets/cards/kos_card.dart';
 import '../../widgets/home_search_section.dart';
-import '../cafe/cafe_page.dart';
 import '../kos/kos_detail_page.dart';
 import '../laundry/laundry_page.dart';
 
@@ -181,16 +180,6 @@ class _HomePageState extends State<HomePage> {
                     subtitle: 'Terdekat',
                     onTap: () => Navigator.of(context)
                         .push(fadeSlideRoute<void>(const LaundryPage())),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _CategoryTile(
-                    icon:     Icons.local_cafe_outlined,
-                    label:    'Kafe',
-                    subtitle: 'Di sekitar',
-                    onTap: () => Navigator.of(context)
-                        .push(fadeSlideRoute<void>(const CafePage())),
                   ),
                 ),
               ],

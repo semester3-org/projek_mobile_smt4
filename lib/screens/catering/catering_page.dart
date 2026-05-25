@@ -11,7 +11,8 @@ class CateringPage extends StatelessWidget {
       type: 'catering',
       title: 'Pilih Merchant',
       searchHint: 'Cari catering terdekat...',
-      filters: ['Semua', 'Terdekat', 'Terpopuler', 'Diet Sehat'],
+      filters: ['Semua', 'Terdekat', 'Terpopuler'],
+      showLocationPrompt: true,
     );
   }
 }

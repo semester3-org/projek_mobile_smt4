@@ -6,6 +6,7 @@ import '../../auth/auth_scope.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_dashboard.dart';
 import '../profile/billing_list_page.dart';
+import '../profile/notification_list_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
@@ -89,15 +90,20 @@ class _UserHomePageState extends State<UserHomePage> {
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: () => widget.onSelectTab(4),
-            icon: const Icon(Icons.notifications_none_rounded),
+          UserNotificationIconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const NotificationListPage(),
+                ),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: () => widget.onSelectTab(5),
+              onTap: () => widget.onSelectTab(3),
               child: CircleAvatar(
                 backgroundColor: UserTheme.softBlue,
                 child: Text(
@@ -323,14 +329,6 @@ class _ServiceGrid extends StatelessWidget {
           title: 'Laundry',
           subtitle: 'Cuci & Setrika',
           onTap: () => onSelectTab(1),
-        ),
-        _ServiceTile(
-          icon: Icons.local_cafe_rounded,
-          iconColor: const Color(0xFF009B8F),
-          iconBg: const Color(0xFFE7FAF6),
-          title: 'Kafe',
-          subtitle: 'Snack & Kopi',
-          onTap: () => onSelectTab(3),
         ),
       ],
     );

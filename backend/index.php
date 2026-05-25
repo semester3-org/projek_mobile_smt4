@@ -30,7 +30,6 @@ if ($path === 'api/reset-password')  { require_once __DIR__ . '/api/reset-passwo
 // ── Endpoint publik (tidak perlu login) ───────────────────────────────────────
 if ($path === 'api/kos_listings_public') { require_once __DIR__ . '/api/kos_listings_public.php'; exit; }
 if ($path === 'api/laundry_places')      { require_once __DIR__ . '/api/laundry_places.php';      exit; }
-if ($path === 'api/cafe_places')         { require_once __DIR__ . '/api/cafe_places.php';         exit; }
 if ($path === 'api/catering_places')     { require_once __DIR__ . '/api/catering_places.php';     exit; }
 
 // ── User app endpoints ───────────────────────────────────────────────────────
@@ -45,6 +44,14 @@ if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
 if ($path === 'api/midtrans')             { require_once __DIR__ . '/api/midtrans.php';            exit; }
 if ($path === 'api/midtrans_notification') { require_once __DIR__ . '/api/midtrans_notification.php'; exit; }
+
+// Merchant app endpoints
+if ($path === 'api/merchant_dashboard')     { require_once __DIR__ . '/api/merchant_dashboard.php';     exit; }
+if ($path === 'api/merchant_orders')        { require_once __DIR__ . '/api/merchant_orders.php';        exit; }
+if ($path === 'api/merchant_products')      { require_once __DIR__ . '/api/merchant_products.php';      exit; }
+if ($path === 'api/merchant_promos')        { require_once __DIR__ . '/api/merchant_promos.php';        exit; }
+if ($path === 'api/merchant_profile')       { require_once __DIR__ . '/api/merchant_profile.php';       exit; }
+if ($path === 'api/merchant_notifications') { require_once __DIR__ . '/api/merchant_notifications.php'; exit; }
 
 // ── Endpoint owner (butuh JWT) ────────────────────────────────────────────────
 if ($path === 'api/kos_listings')        { require_once __DIR__ . '/api/kos_listings.php';        exit; }
@@ -75,11 +82,9 @@ if (empty($path)) {
             'GET  /api/kos_listings_public?id={id}',
             'GET  /api/kos_listings_public?search=&max_price=&facilities=WiFi,AC',
             'GET  /api/laundry_places',
-            'GET  /api/cafe_places',
             'GET  /api/catering_places',
             'GET  /api/user_dashboard',
-            'GET  /api/user_merchants?type=laundry|catering|cafe',
-            'GET  /api/user_merchants?type=cafe&id=c1',
+            'GET  /api/user_merchants?type=laundry|catering',
             'GET  /api/user_billings',
             'POST /api/user_billings/pay',
             'GET  /api/user_orders',
@@ -89,6 +94,12 @@ if (empty($path)) {
             'POST /api/user_ratings',
             'POST /api/midtrans',
             'POST /api/midtrans_notification',
+            'GET /api/merchant_dashboard',
+            'GET|PUT /api/merchant_orders',
+            'GET|POST|PUT|DELETE /api/merchant_products',
+            'GET|POST|PUT|DELETE /api/merchant_promos',
+            'GET|PUT /api/merchant_profile',
+            'GET /api/merchant_notifications',
             // Owner (JWT required)
             'GET  /api/kos_listings',
             'GET|POST|PUT|DELETE /api/kos_rooms',

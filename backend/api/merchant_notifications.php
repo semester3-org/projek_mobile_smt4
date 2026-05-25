@@ -12,9 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    merchantEnsureSchema($conn);
-    $payload = merchantRequireAuth();
-    $userId = (string)($payload['sub'] ?? '');
+    $payload = merchantRequireMerchant();
+    $merchant = merchantCurrent($conn, $payload);
+    $merchantId = (string)$merchant['id'];
+    $userId = (string)$merchant['user_id'];
 
     if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         if (!merchantTableExists($conn, 'app_notifications')) {
@@ -62,19 +63,21 @@ try {
     }
 
     $items = [];
+    $seenOrderIds = [];
+
     if (merchantTableExists($conn, 'app_notifications')) {
         $hasType = merchantColumnExists($conn, 'app_notifications', 'type');
         $hasAction = merchantColumnExists($conn, 'app_notifications', 'action_text');
         $hasActionUrl = merchantColumnExists($conn, 'app_notifications', 'action_url');
         $stmt = $conn->prepare("
             SELECT id, title, message, read_at, created_at,
-                   " . ($hasType ? "type" : "NULL") . " AS type,
+                   " . ($hasType ? "type" : "'info'") . " AS type,
                    " . ($hasAction ? "action_text" : "NULL") . " AS action_text,
                    " . ($hasActionUrl ? "action_url" : "NULL") . " AS action_url
             FROM app_notifications
             WHERE user_id = ?
             ORDER BY created_at DESC, id DESC
-            LIMIT 50
+            LIMIT 20
         ");
         if ($stmt) {
             $stmt->bind_param('s', $userId);
@@ -82,24 +85,42 @@ try {
             $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
             foreach ($rows as $row) {
-                $title = (string)$row['title'];
-                $type = $row['type'] ?: (stripos($title, 'promo') !== false ? 'promo' : (stripos($title, 'bayar') !== false ? 'payment' : 'order'));
                 $items[] = [
                     'id' => 'notif-' . (string)$row['id'],
-                    'title' => $title,
+                    'title' => $row['title'],
                     'message' => $row['message'],
-                    'type' => $type,
+                    'type' => $row['type'] ?: 'info',
                     'status' => empty($row['read_at']) ? 'baru' : 'dibaca',
                     'createdAt' => date(DATE_ATOM, strtotime($row['created_at'] ?? 'now')),
-                    'hasAction' => !empty($row['action_text']),
                     'actionButtonText' => $row['action_text'],
                     'actionUrl' => $row['action_url'],
                 ];
+                if (!empty($row['action_url']) && str_starts_with((string)$row['action_url'], 'order:')) {
+                    $seenOrderIds[] = substr((string)$row['action_url'], 6);
+                }
             }
         }
     }
 
-    merchantSendJson(true, $items, 'Notifikasi user berhasil dimuat');
+    $orders = merchantOrderQuery($conn, $merchantId, null, null, null, 5);
+    foreach ($orders as $order) {
+        if (in_array((string)$order['id'], $seenOrderIds, true)) {
+            continue;
+        }
+        $items[] = [
+            'id' => 'order-' . $order['id'],
+            'title' => $order['status'] === 'pending' ? 'Pesanan baru menunggu diproses' : 'Update pesanan ' . $order['statusLabel'],
+            'message' => $order['code'] . ' dari ' . $order['customerName'] . ' senilai Rp ' . number_format($order['totalAmount'], 0, ',', '.'),
+            'type' => $order['status'] === 'pending' ? 'payment' : 'order',
+            'status' => $order['status'] === 'pending' ? 'baru' : 'dibaca',
+            'createdAt' => $order['createdAt'],
+            'actionButtonText' => 'Lihat Pesanan',
+            'actionUrl' => 'order:' . $order['id'],
+        ];
+    }
+
+    usort($items, fn($a, $b) => strtotime($b['createdAt']) <=> strtotime($a['createdAt']));
+    merchantSendJson(true, array_slice($items, 0, 30), 'Notifikasi merchant berhasil dimuat');
 } catch (Throwable $e) {
     merchantSendJson(false, null, $e->getMessage(), 500);
 }

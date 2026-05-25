@@ -4,36 +4,26 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
+require_once __DIR__ . '/merchant_helpers.php';
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
-require_once __DIR__ . '/../config/db.php';
-
-function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
-    http_response_code($code);
-    echo json_encode([
-        'success' => $success,
-        'message' => $message,
-        'data' => $data,
-    ], JSON_UNESCAPED_UNICODE);
-    exit();
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    merchantSendJson(false, null, 'Only GET method allowed', 405);
 }
 
-function tableExists(mysqli $conn, string $table): bool {
-    $stmt = $conn->prepare(
-        'SELECT COUNT(*) AS total FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
-    );
-    if (!$stmt) return false;
-    $stmt->bind_param('s', $table);
-    $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    return (int)($result['total'] ?? 0) > 0;
+function userMerchantDefaultImage(string $type): string {
+    return match ($type) {
+        'laundry' => 'https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=900',
+        'catering' => 'https://images.unsplash.com/photo-1543353071-873f17a7a088?w=900',
+        default => 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900',
+    };
 }
 
-function moneyMenu(string $type, string $merchantId): array {
+function userMerchantFallbackMenu(string $type, string $merchantId): array {
     if ($type === 'laundry') {
         return [
             [
@@ -42,6 +32,8 @@ function moneyMenu(string $type, string $merchantId): array {
                 'description' => 'Regular',
                 'price' => 8000,
                 'imageUrl' => 'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=400',
+                'category' => 'Laundry Kiloan',
+                'unit' => '/kg',
             ],
             [
                 'id' => $merchantId . '-wash-iron',
@@ -49,6 +41,8 @@ function moneyMenu(string $type, string $merchantId): array {
                 'description' => 'Rapi dan wangi',
                 'price' => 12000,
                 'imageUrl' => 'https://images.unsplash.com/photo-1521656693074-0ef32e80a5d5?w=400',
+                'category' => 'Laundry Kiloan',
+                'unit' => '/kg',
             ],
         ];
     }
@@ -56,248 +50,278 @@ function moneyMenu(string $type, string $merchantId): array {
     if ($type === 'catering') {
         return [
             [
-                'id' => $merchantId . '-box',
-                'name' => 'Paket Nasi Kotak Premium',
-                'description' => 'Lengkap dengan 5 lauk pauk',
-                'price' => 45000,
+                'id' => $merchantId . '-monthly',
+                'name' => 'Paket Catering Bulanan',
+                'description' => 'Menu berganti setiap hari selama satu bulan',
+                'price' => 900000,
                 'imageUrl' => 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400',
+                'category' => 'Paket Bulanan',
+                'unit' => '/bulan',
             ],
             [
                 'id' => $merchantId . '-diet',
-                'name' => 'Catering Diet Sehat',
-                'description' => 'Rendah kalori, tinggi protein',
-                'price' => 55000,
+                'name' => 'Paket Diet Sehat Bulanan',
+                'description' => 'Lauk tinggi protein, sayur, dan buah harian',
+                'price' => 1250000,
                 'imageUrl' => 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400',
+                'category' => 'Menu Sehat',
+                'unit' => '/bulan',
             ],
         ];
     }
 
-    return [
-        [
-            'id' => $merchantId . '-coffee',
-            'name' => 'Signature Coffee',
-            'description' => 'Kopi susu gula aren',
-            'price' => 18000,
-            'imageUrl' => 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400',
-        ],
-        [
-            'id' => $merchantId . '-croissant',
-            'name' => 'Croissant Butter',
-            'description' => 'Fresh baked',
-            'price' => 22000,
-            'imageUrl' => 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400',
-        ],
-    ];
+    return [];
 }
 
-function reviewsFor(string $type): array {
-    if ($type === 'laundry') {
-        return [
-            [
-                'reviewer' => 'Siska Amelia',
-                'rating' => 5,
-                'comment' => 'Hasil cucian sangat bersih dan wangi. Pengirimannya juga cepat, kurirnya ramah.',
-                'timeLabel' => '2 hari yang lalu',
-            ],
-            [
-                'reviewer' => 'Budi Santoso',
-                'rating' => 4,
-                'comment' => 'Layanan oke, lipatan rapi sekali. Secara keseluruhan puas dengan hasilnya.',
-                'timeLabel' => '1 minggu yang lalu',
-            ],
-        ];
+function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array {
+    if (!merchantTableExists($conn, 'products')) {
+        return userMerchantFallbackMenu($type, $merchantId);
+    }
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM products
+        WHERE merchant_id = ? AND is_active = 1
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 20
+    ");
+    if (!$stmt) return userMerchantFallbackMenu($type, $merchantId);
+    $stmt->bind_param('s', $merchantId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    if (empty($rows)) return [];
+    return array_map(fn($row) => [
+        'id' => (string)$row['id'],
+        'name' => $row['nama_produk'],
+        'description' => $row['deskripsi'] ?? '',
+        'price' => (float)$row['harga'],
+        'imageUrl' => $row['image_url'] ?? '',
+        'category' => $row['category'] ?? '',
+        'unit' => $row['unit'] ?? '',
+    ], $rows);
+}
+
+function userMerchantReviews(mysqli $conn, string $merchantId): array {
+    if (!merchantTableExists($conn, 'merchant_reviews')) return [];
+    $stmt = $conn->prepare("
+        SELECT mr.rating, mr.comment, mr.created_at, u.display_name
+        FROM merchant_reviews mr
+        INNER JOIN users u ON u.id = mr.user_id
+        WHERE mr.merchant_id = ?
+        ORDER BY mr.created_at DESC
+        LIMIT 10
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param('s', $merchantId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return array_map(fn($row) => [
+        'reviewer' => $row['display_name'] ?? 'User',
+        'rating' => (float)$row['rating'],
+        'comment' => $row['comment'] ?? '',
+        'timeLabel' => date('d M Y', strtotime($row['created_at'] ?? 'now')),
+    ], $rows);
+}
+
+function userMerchantDistance(?float $lat1, ?float $lon1, $lat2, $lon2, float $fallback): float {
+    if ($lat1 === null || $lon1 === null || $lat2 === null || $lon2 === null || $lat2 === '' || $lon2 === '') {
+        return $fallback;
+    }
+    $earth = 6371;
+    $dLat = deg2rad((float)$lat2 - $lat1);
+    $dLon = deg2rad((float)$lon2 - $lon1);
+    $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad((float)$lat2)) * sin($dLon / 2) ** 2;
+    return round($earth * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
+}
+
+function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng): array {
+    $merchantId = (string)($row['merchant_id'] ?? $row['id']);
+    $placeId = (string)($row['place_id'] ?? $merchantId);
+    $summary = $merchantId !== '' ? merchantRatingSummary($conn, $merchantId) : ['rating' => 0, 'reviewCount' => 0];
+    $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : (float)($row['place_rating'] ?? 0);
+    $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
+    $menu = $merchantId !== '' ? userMerchantMenu($conn, $type, $merchantId) : userMerchantFallbackMenu($type, $placeId);
+    $minPrice = 0;
+    foreach ($menu as $item) {
+        $price = (float)$item['price'];
+        if ($price > 0 && ($minPrice <= 0 || $price < $minPrice)) $minPrice = $price;
+    }
+
+    $categories = merchantCategories($row['service_categories'] ?? null, $type);
+    foreach ($menu as $item) {
+        $category = trim((string)($item['category'] ?? ''));
+        if ($category !== '' && !in_array($category, $categories, true)) {
+            $categories[] = $category;
+        }
+    }
+    $hasDistanceEstimate = $userLat !== null &&
+        $userLng !== null &&
+        ($row['latitude'] ?? null) !== null &&
+        ($row['longitude'] ?? null) !== null &&
+        ($row['latitude'] ?? '') !== '' &&
+        ($row['longitude'] ?? '') !== '';
+    $distance = userMerchantDistance(
+        $userLat,
+        $userLng,
+        $row['latitude'] ?? null,
+        $row['longitude'] ?? null,
+        (float)($row['distance_km'] ?? 0)
+    );
+    $openHours = trim((string)($row['open_hours'] ?? ''));
+    if ($openHours === '') {
+        $openHours = trim(($row['open_time'] ?? '08:00') . ' - ' . ($row['close_time'] ?? '21:00'));
     }
 
     return [
-        [
-            'reviewer' => 'Anita Wijaya',
-            'rating' => 5,
-            'comment' => 'Makanannya enak dan porsinya pas. Kemasan juga sangat rapi.',
-            'timeLabel' => '2 jam yang lalu',
-        ],
-        [
-            'reviewer' => 'Budi Santoso',
-            'rating' => 4,
-            'comment' => 'Layanannya tepat waktu dan kualitasnya konsisten.',
-            'timeLabel' => 'Kemarin',
-        ],
-    ];
-}
-
-function fallbackMerchants(string $type): array {
-    if ($type === 'laundry') {
-        return [
-            merchantPayload('l1', 'laundry', 'Clean & Fresh Laundry', 'Antar jemput dan express 6 jam', 'Jl. Sudirman No. 45, Jakarta Pusat', 4.8, 120, 0.8, 'https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=900', 'Tersedia', ['ANTAR JEMPUT', 'EXPRESS 6 JAM'], 8000, '/kg', '25-30 mnt', '08:00 - 21:00'),
-            merchantPayload('l2', 'laundry', 'Kiloan Express', 'Cuci sepatu dan kiloan cepat', 'Jl. Melati No. 18, Jakarta Selatan', 4.5, 80, 1.2, 'https://images.unsplash.com/photo-1626806819282-2c1dc01a5e0c?w=900', 'Tersedia', ['CUCI SEPATU', 'KILOAN'], 7500, '/kg', '35-45 mnt', '07:00 - 22:00'),
-        ];
-    }
-
-    if ($type === 'catering') {
-        return [
-            merchantPayload('cat1', 'catering', 'Green Garden Catering', 'Masakan sehat dan diet kalori', 'Jl. Kemang Raya No. 9, Jakarta Selatan', 4.8, 124, 1.2, 'https://images.unsplash.com/photo-1543353071-873f17a7a088?w=900', 'Tersedia', ['DIET SEHAT', 'HARIAN'], 25000, '', '25-30 mnt', '08:00 - 20:00'),
-            merchantPayload('cat2', 'catering', 'Dapur Nusantara', 'Masakan tradisional Indonesia', 'Jl. Panglima Polim No. 11, Jakarta Selatan', 4.9, 210, 2.5, 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=900', 'Tersedia', ['NASI BOX', 'PRASMANAN'], 35000, '', '35-45 mnt', '07:00 - 21:00'),
-        ];
-    }
-
-    return [
-        merchantPayload('c1', 'cafe', 'Kopi Senja', 'Coffee & workspace', 'Sentra Ruang Ground Floor, Blok A1', 4.8, 124, 0.8, 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900', 'Buka', ['WiFi Cepat', 'Stopkontak', 'Outdoor'], 18000, '', '', '08:00 - 22:00'),
-        merchantPayload('c2', 'cafe', 'Ruang Kopi', 'Tenang dan parkir luas', 'Jl. Cendana No. 21', 4.6, 85, 1.2, 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900', 'Buka', ['AC', 'Tenang', 'Parkir Luas'], 20000, '', '', '09:00 - 22:00'),
-        merchantPayload('c3', 'cafe', 'Brew & Chill', 'Artisan coffee', 'Jl. Purnama No. 8', 4.9, 210, 2.5, 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=900', 'Tutup', ['Artisan Coffee', 'Smoking Area'], 24000, '', '', '10:00 - 23:00'),
-    ];
-}
-
-function merchantPayload(
-    string $id,
-    string $type,
-    string $name,
-    string $subtitle,
-    string $address,
-    float $rating,
-    int $reviewCount,
-    float $distanceKm,
-    string $imageUrl,
-    string $status,
-    array $tags,
-    float $minPrice,
-    string $priceUnit,
-    string $eta,
-    string $openHours
-): array {
-    $description = match ($type) {
-        'laundry' => 'Laundry cepat dengan layanan cuci lipat, setrika, satuan, dan antar jemput area Sentra Ruang.',
-        'catering' => 'Menu harian bergizi untuk penghuni kos, cocok untuk makan siang dan makan malam.',
-        default => 'Ruang komunal yang menggabungkan kenikmatan kopi artisan dengan kenyamanan ruang kerja.',
-    };
-
-    return [
-        'id' => $id,
+        'id' => $merchantId !== '' ? $merchantId : $placeId,
+        'placeId' => $placeId,
+        'merchantId' => $merchantId,
         'type' => $type,
-        'name' => $name,
-        'subtitle' => $subtitle,
-        'address' => $address,
+        'name' => $row['business_name'] ?? $row['name'] ?? 'Merchant',
+        'subtitle' => $type === 'laundry' ? 'Layanan laundry sekitar kos' : 'Paket menu pilihan untuk penghuni kos',
+        'address' => $row['address'] ?? $row['place_address'] ?? '',
         'rating' => $rating,
         'reviewCount' => $reviewCount,
-        'distanceKm' => $distanceKm,
-        'imageUrl' => $imageUrl,
-        'status' => $status,
-        'tags' => $tags,
+        'distanceKm' => $distance,
+        'imageUrl' => $row['photo_url'] ?? $row['image_url'] ?? userMerchantDefaultImage($type),
+        'status' => ($row['status'] ?? 'active') === 'inactive' ? 'Tutup' : 'Tersedia',
+        'tags' => $categories,
         'minPrice' => $minPrice,
-        'priceUnit' => $priceUnit,
-        'eta' => $eta,
+        'priceUnit' => $type === 'laundry' ? '/kg' : '/bulan',
+        'eta' => $hasDistanceEstimate ? ($distance <= 1 ? '15-20 mnt' : ($distance <= 3 ? '25-35 mnt' : '40+ mnt')) : '',
+        'hasDistanceEstimate' => $hasDistanceEstimate,
         'openHours' => $openHours,
-        'description' => $description,
-        'phone' => '+62 812-3456-7890',
-        'email' => 'halo@sentraruang.id',
-        'menuItems' => moneyMenu($type, $id),
-        'reviews' => reviewsFor($type),
+        'description' => $row['description'] ?? ($type === 'laundry'
+            ? 'Laundry cepat dengan layanan cuci lipat, setrika, satuan, dan antar jemput.'
+            : 'Paket catering bulanan dengan menu yang dapat diperbarui merchant.'),
+        'phone' => $row['phone'] ?? '',
+        'email' => $row['email'] ?? '',
+        'menuItems' => $menu,
+        'reviews' => $merchantId !== '' ? userMerchantReviews($conn, $merchantId) : [],
     ];
 }
 
-function merchantsFromDb(mysqli $conn, string $type): array {
-    if ($type === 'laundry' && tableExists($conn, 'laundry_places')) {
-        $result = $conn->query('SELECT id, name, address, rating, distance_km, image_url, open_hours FROM laundry_places ORDER BY distance_km ASC');
-        if ($result && $result->num_rows > 0) {
-            $rows = [];
-            while ($r = $result->fetch_assoc()) {
-                $rows[] = merchantPayload(
-                    $r['id'],
-                    'laundry',
-                    $r['name'],
-                    'Antar jemput dan express 6 jam',
-                    $r['address'],
-                    (float)$r['rating'],
-                    120,
-                    (float)$r['distance_km'],
-                    $r['image_url'],
-                    'Tersedia',
-                    ['ANTAR JEMPUT', 'EXPRESS 6 JAM'],
-                    8000,
-                    '/kg',
-                    '25-30 mnt',
-                    $r['open_hours']
-                );
+function userMerchantFallback(string $type): array {
+    if ($type === 'laundry') {
+        return [
+            [
+                'id' => 'l1',
+                'merchantId' => 'l1',
+                'type' => 'laundry',
+                'name' => 'Clean & Fresh Laundry',
+                'subtitle' => 'Antar jemput dan express 6 jam',
+                'address' => 'Jl. Sudirman No. 45, Jakarta Pusat',
+                'rating' => 4.8,
+                'reviewCount' => 120,
+                'distanceKm' => 0.8,
+                'imageUrl' => userMerchantDefaultImage('laundry'),
+                'status' => 'Tersedia',
+                'tags' => ['Laundry Kiloan', 'Antar Jemput'],
+                'minPrice' => 8000,
+                'priceUnit' => '/kg',
+                'eta' => '25-30 mnt',
+                'hasDistanceEstimate' => false,
+                'openHours' => '08:00 - 21:00',
+                'description' => 'Laundry cepat dengan layanan cuci lipat, setrika, satuan, dan antar jemput area Sentra Ruang.',
+                'phone' => '+62 812-3456-7890',
+                'email' => 'halo@cleanfresh.id',
+                'menuItems' => userMerchantFallbackMenu('laundry', 'l1'),
+                'reviews' => [],
+            ],
+        ];
+    }
+
+    return [
+        [
+            'id' => 'cat1',
+            'merchantId' => 'cat1',
+            'type' => 'catering',
+            'name' => 'Green Garden Catering',
+            'subtitle' => 'Masakan sehat dan diet kalori',
+            'address' => 'Jl. Kemang Raya No. 9, Jakarta Selatan',
+            'rating' => 4.8,
+            'reviewCount' => 124,
+            'distanceKm' => 1.2,
+            'imageUrl' => userMerchantDefaultImage('catering'),
+            'status' => 'Tersedia',
+            'tags' => ['Paket Bulanan', 'Menu Sehat'],
+            'minPrice' => 900000,
+            'priceUnit' => '/bulan',
+            'eta' => '25-30 mnt',
+            'hasDistanceEstimate' => false,
+            'openHours' => '08:00 - 20:00',
+            'description' => 'Menu harian bergizi untuk penghuni kos selama satu bulan penuh.',
+            'phone' => '+62 812-4455-7788',
+            'email' => 'order@greengarden.id',
+            'menuItems' => userMerchantFallbackMenu('catering', 'cat1'),
+            'reviews' => [],
+        ],
+    ];
+}
+
+try {
+    merchantEnsureSchema($conn);
+
+    $type = strtolower(trim($_GET['type'] ?? 'laundry'));
+    if (!in_array($type, ['laundry', 'catering'], true)) {
+        merchantSendJson(false, null, 'Tipe merchant tidak tersedia', 400);
+    }
+    $id = trim($_GET['id'] ?? '');
+    $userLat = isset($_GET['lat']) && $_GET['lat'] !== '' ? (float)$_GET['lat'] : null;
+    $userLng = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
+
+    $rows = [];
+    if (merchantTableExists($conn, 'merchants')) {
+        $placeJoin = $type === 'laundry'
+            ? "LEFT JOIN laundry_places p ON p.merchant_id = m.id OR p.id = m.id"
+            : "LEFT JOIN catering_places p ON p.merchant_id = m.id OR p.id = m.id";
+        $specialtySelect = $type === 'catering' && merchantColumnExists($conn, 'catering_places', 'specialty')
+            ? "p.specialty"
+            : "NULL";
+        $stmt = $conn->prepare("
+            SELECT m.id AS merchant_id, m.business_name, m.merchant_type, m.phone, m.address,
+                   m.description, m.photo_url, m.latitude, m.longitude, m.open_time, m.close_time,
+                   m.service_categories, m.status, u.email,
+                   p.id AS place_id,
+                   COALESCE(p.address, m.address) AS place_address,
+                   p.rating AS place_rating,
+                   p.distance_km,
+                   p.image_url,
+                   " . ($type === 'laundry' ? "p.open_hours" : "NULL") . " AS open_hours,
+                   $specialtySelect AS specialty
+            FROM merchants m
+            INNER JOIN users u ON u.id = m.user_id
+            $placeJoin
+            WHERE m.merchant_type = ?
+            ORDER BY COALESCE(p.distance_km, 999), m.updated_at DESC
+        ");
+        if ($stmt) {
+            $stmt->bind_param('s', $type);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+        }
+    }
+
+    $data = array_map(fn($row) => userMerchantPayload($conn, $row, $type, $userLat, $userLng), $rows);
+    if (empty($data)) {
+        $data = userMerchantFallback($type);
+    }
+    usort($data, fn($a, $b) => $a['distanceKm'] <=> $b['distanceKm']);
+
+    if ($id !== '') {
+        foreach ($data as $merchant) {
+            if ($merchant['id'] === $id || ($merchant['placeId'] ?? '') === $id) {
+                merchantSendJson(true, $merchant, 'Detail merchant berhasil dimuat');
             }
-            return $rows;
         }
+        merchantSendJson(false, null, 'Merchant tidak ditemukan', 404);
     }
 
-    if ($type === 'cafe' && tableExists($conn, 'cafe_places')) {
-        $result = $conn->query('SELECT id, name, vibe, rating, distance_km, image_url FROM cafe_places ORDER BY distance_km ASC');
-        if ($result && $result->num_rows > 0) {
-            $rows = [];
-            while ($r = $result->fetch_assoc()) {
-                $rows[] = merchantPayload(
-                    $r['id'],
-                    'cafe',
-                    $r['name'],
-                    $r['vibe'],
-                    'Sentra Ruang Ground Floor, Blok A1',
-                    (float)$r['rating'],
-                    124,
-                    (float)$r['distance_km'],
-                    $r['image_url'],
-                    'Buka',
-                    ['WiFi Cepat', 'Stopkontak', 'Outdoor'],
-                    18000,
-                    '',
-                    '',
-                    '08:00 - 22:00'
-                );
-            }
-            return $rows;
-        }
-    }
-
-    if ($type === 'catering' && tableExists($conn, 'catering_places')) {
-        $result = $conn->query('SELECT id, name, address, specialty, rating, distance_km, image_url FROM catering_places ORDER BY distance_km ASC');
-        if ($result && $result->num_rows > 0) {
-            $rows = [];
-            while ($r = $result->fetch_assoc()) {
-                $rows[] = merchantPayload(
-                    $r['id'],
-                    'catering',
-                    $r['name'],
-                    $r['specialty'],
-                    $r['address'],
-                    (float)$r['rating'],
-                    124,
-                    (float)$r['distance_km'],
-                    $r['image_url'],
-                    'Tersedia',
-                    ['DIET SEHAT', 'HARIAN'],
-                    25000,
-                    '',
-                    '25-30 mnt',
-                    '08:00 - 20:00'
-                );
-            }
-            return $rows;
-        }
-    }
-
-    return fallbackMerchants($type);
+    merchantSendJson(true, $data, 'Daftar merchant berhasil dimuat');
+} catch (Throwable $e) {
+    merchantSendJson(false, null, $e->getMessage(), 500);
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    sendJson(false, null, 'Only GET method allowed', 405);
-}
-
-$type = strtolower(trim($_GET['type'] ?? 'cafe'));
-if (!in_array($type, ['laundry', 'catering', 'cafe'], true)) {
-    $type = 'cafe';
-}
-
-$id = trim($_GET['id'] ?? '');
-$data = merchantsFromDb($conn, $type);
-
-if ($id !== '') {
-    foreach ($data as $merchant) {
-        if ($merchant['id'] === $id) {
-            sendJson(true, $merchant, 'Detail merchant berhasil dimuat');
-        }
-    }
-    sendJson(false, null, 'Merchant tidak ditemukan', 404);
-}
-
-sendJson(true, $data, 'Daftar merchant berhasil dimuat');
 ?>

@@ -34,18 +34,26 @@ class OrderItem {
 /// Model untuk pesanan (order) user
 class Order {
   final String id;
+  final String? databaseId;
   final String merchantName;
-  final String service; // 'laundry', 'catering', 'kos', 'cafe'
+  final String service; // 'laundry', 'catering', 'kos'
   final DateTime orderDate;
   final DateTime? deliveryDate;
   final double totalAmount;
-  final String status; // 'pending', 'confirmed', 'in_progress', 'completed', 'cancelled'
+  final String
+      status; // 'pending', 'confirmed', 'in_progress', 'completed', 'cancelled'
   final List<OrderItem> items;
   final String? notes;
   final String? paymentMethod;
+  final String? paymentStatus;
+  final String? paymentStatusLabel;
+  final String? deliveryAddress;
+  final String? estimatedTime;
+  final bool canCancel;
 
   Order({
     required this.id,
+    this.databaseId,
     required this.merchantName,
     required this.service,
     required this.orderDate,
@@ -55,6 +63,11 @@ class Order {
     required this.items,
     this.notes,
     this.paymentMethod,
+    this.paymentStatus,
+    this.paymentStatusLabel,
+    this.deliveryAddress,
+    this.estimatedTime,
+    this.canCancel = true,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -65,21 +78,29 @@ class Order {
 
     return Order(
       id: json['id'] as String? ?? '',
+      databaseId: json['databaseId'] as String?,
       merchantName: json['merchantName'] as String? ?? '',
       service: json['service'] as String? ?? '',
-      orderDate: DateTime.tryParse(json['orderDate'] as String? ?? '') ?? DateTime.now(),
+      orderDate: DateTime.tryParse(json['orderDate'] as String? ?? '') ??
+          DateTime.now(),
       deliveryDate: DateTime.tryParse(json['deliveryDate'] as String? ?? ''),
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0.0,
       status: json['status'] as String? ?? 'pending',
       items: items,
       notes: json['notes'] as String?,
       paymentMethod: json['paymentMethod'] as String?,
+      paymentStatus: json['paymentStatus'] as String?,
+      paymentStatusLabel: json['paymentStatusLabel'] as String?,
+      deliveryAddress: json['deliveryAddress'] as String?,
+      estimatedTime: json['estimatedTime'] as String?,
+      canCancel: json['canCancel'] as bool? ?? true,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'databaseId': databaseId,
       'merchantName': merchantName,
       'service': service,
       'orderDate': orderDate.toIso8601String(),
@@ -89,6 +110,11 @@ class Order {
       'items': items.map((e) => e.toJson()).toList(),
       'notes': notes,
       'paymentMethod': paymentMethod,
+      'paymentStatus': paymentStatus,
+      'paymentStatusLabel': paymentStatusLabel,
+      'deliveryAddress': deliveryAddress,
+      'estimatedTime': estimatedTime,
+      'canCancel': canCancel,
     };
   }
 
@@ -107,5 +133,14 @@ class Order {
       default:
         return status;
     }
+  }
+
+  bool get needsPaymentConfirmation {
+    final method = (paymentMethod ?? '').toLowerCase();
+    final payment = (paymentStatus ?? '').toLowerCase();
+    final isCod = method.contains('cod') || method.contains('cash');
+    return !isCod &&
+        (status == 'pending' || status == 'confirmed') &&
+        (payment.isEmpty || payment == 'waiting_payment' || payment == 'unpaid');
   }
 }

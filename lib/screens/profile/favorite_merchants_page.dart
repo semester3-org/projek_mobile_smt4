@@ -16,6 +16,7 @@ class FavoriteMerchantsPage extends StatefulWidget {
 class _FavoriteMerchantsPageState extends State<FavoriteMerchantsPage> {
   List<UserMerchant> _items = [];
   bool _loading = true;
+  String _selectedType = 'laundry';
 
   @override
   void initState() {
@@ -39,6 +40,9 @@ class _FavoriteMerchantsPageState extends State<FavoriteMerchantsPage> {
         ))
         .then((_) => _load());
   }
+
+  List<UserMerchant> get _visibleItems =>
+      _items.where((item) => item.type == _selectedType).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -88,10 +92,40 @@ class _FavoriteMerchantsPageState extends State<FavoriteMerchantsPage> {
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-                    itemCount: _items.length,
+                    itemCount:
+                        _visibleItems.isEmpty ? 2 : _visibleItems.length + 1,
                     separatorBuilder: (_, __) => const SizedBox(height: 14),
                     itemBuilder: (context, index) {
-                      final merchant = _items[index];
+                      if (index == 0) {
+                        return Row(
+                          children: [
+                            UserFilterChip(
+                              label: 'Laundry',
+                              selected: _selectedType == 'laundry',
+                              onTap: () =>
+                                  setState(() => _selectedType = 'laundry'),
+                            ),
+                            UserFilterChip(
+                              label: 'Catering',
+                              selected: _selectedType == 'catering',
+                              onTap: () =>
+                                  setState(() => _selectedType = 'catering'),
+                            ),
+                          ],
+                        );
+                      }
+                      final visible = _visibleItems;
+                      if (visible.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Text(
+                            'Belum ada favorite untuk kategori ini.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: UserTheme.muted),
+                          ),
+                        );
+                      }
+                      final merchant = visible[index - 1];
                       return _FavoriteMerchantTile(
                         merchant: merchant,
                         onTap: () => _openDetail(merchant),
@@ -187,7 +221,7 @@ class _FavoriteMerchantTile extends StatelessWidget {
       case 'catering':
         return Icons.restaurant_rounded;
       default:
-        return Icons.local_cafe_rounded;
+        return Icons.storefront_rounded;
     }
   }
 }

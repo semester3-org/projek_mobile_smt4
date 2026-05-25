@@ -5,6 +5,8 @@ class MerchantMenuItem {
     required this.description,
     required this.price,
     required this.imageUrl,
+    this.category = '',
+    this.unit = '',
   });
 
   final String id;
@@ -12,6 +14,8 @@ class MerchantMenuItem {
   final String description;
   final double price;
   final String imageUrl;
+  final String category;
+  final String unit;
 
   factory MerchantMenuItem.fromJson(Map<String, dynamic> json) {
     return MerchantMenuItem(
@@ -20,6 +24,8 @@ class MerchantMenuItem {
       description: json['description'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0,
       imageUrl: json['imageUrl'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      unit: json['unit'] as String? ?? '',
     );
   }
 
@@ -30,6 +36,8 @@ class MerchantMenuItem {
       'description': description,
       'price': price,
       'imageUrl': imageUrl,
+      'category': category,
+      'unit': unit,
     };
   }
 }
@@ -60,6 +68,8 @@ class MerchantReview {
 class UserMerchant {
   const UserMerchant({
     required this.id,
+    this.placeId = '',
+    this.merchantId = '',
     required this.type,
     required this.name,
     required this.subtitle,
@@ -79,9 +89,12 @@ class UserMerchant {
     required this.email,
     required this.menuItems,
     required this.reviews,
+    this.hasDistanceEstimate = false,
   });
 
   final String id;
+  final String placeId;
+  final String merchantId;
   final String type;
   final String name;
   final String subtitle;
@@ -101,6 +114,7 @@ class UserMerchant {
   final String email;
   final List<MerchantMenuItem> menuItems;
   final List<MerchantReview> reviews;
+  final bool hasDistanceEstimate;
 
   bool get isAvailable {
     final normalized = status.toLowerCase();
@@ -116,7 +130,9 @@ class UserMerchant {
 
     return UserMerchant(
       id: json['id'] as String? ?? '',
-      type: json['type'] as String? ?? 'cafe',
+      placeId: json['placeId'] as String? ?? '',
+      merchantId: json['merchantId'] as String? ?? json['id'] as String? ?? '',
+      type: json['type'] as String? ?? 'laundry',
       name: json['name'] as String? ?? '',
       subtitle: json['subtitle'] as String? ?? '',
       address: json['address'] as String? ?? '',
@@ -139,6 +155,7 @@ class UserMerchant {
       reviews: reviewsRaw
           .map((e) => MerchantReview.fromJson(e as Map<String, dynamic>))
           .toList(),
+      hasDistanceEstimate: json['hasDistanceEstimate'] as bool? ?? false,
     );
   }
 
@@ -146,9 +163,12 @@ class UserMerchant {
     double? rating,
     int? reviewCount,
     List<MerchantReview>? reviews,
+    bool? hasDistanceEstimate,
   }) {
     return UserMerchant(
       id: id,
+      placeId: placeId,
+      merchantId: merchantId,
       type: type,
       name: name,
       subtitle: subtitle,
@@ -168,6 +188,7 @@ class UserMerchant {
       email: email,
       menuItems: menuItems,
       reviews: reviews ?? this.reviews,
+      hasDistanceEstimate: hasDistanceEstimate ?? this.hasDistanceEstimate,
     );
   }
 }

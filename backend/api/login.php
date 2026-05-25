@@ -22,6 +22,20 @@ function sendResponse(bool $success, string $message, $data = null, int $code = 
     exit();
 }
 
+function ensureSessionsTable(mysqli $conn): void {
+    $conn->query("CREATE TABLE IF NOT EXISTS sessions (
+        id varchar(255) NOT NULL,
+        user_id varchar(36) DEFAULT NULL,
+        ip_address varchar(45) DEFAULT NULL,
+        user_agent text,
+        payload longtext NOT NULL,
+        last_activity int NOT NULL,
+        PRIMARY KEY (id),
+        KEY sessions_user_id_index (user_id),
+        KEY sessions_last_activity_index (last_activity)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendResponse(false, 'Only POST method allowed', null, 405);
 }
@@ -127,10 +141,41 @@ $token = JWT::generate([
     'merchantType' => $merchantType,
 ]);
 
+$sessionId = hash('sha256', $token);
+ensureSessionsTable($conn);
+$sessionPayload = json_encode([
+    'email' => $user['email'],
+    'displayName' => $user['display_name'],
+    'role' => $role,
+    'merchantType' => $merchantType,
+], JSON_UNESCAPED_UNICODE);
+$ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+$userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+$lastActivity = time();
+
+$sessionStmt = $conn->prepare(
+    "REPLACE INTO sessions (id, user_id, ip_address, user_agent, payload, last_activity)
+     VALUES (?, ?, ?, ?, ?, ?)"
+);
+if ($sessionStmt) {
+    $sessionStmt->bind_param(
+        'sssssi',
+        $sessionId,
+        $user['id'],
+        $ipAddress,
+        $userAgent,
+        $sessionPayload,
+        $lastActivity
+    );
+    $sessionStmt->execute();
+    $sessionStmt->close();
+}
+
 $conn->close();
 
 $responseData = [
     'token'        => $token,
+    'sessionId'    => $sessionId,
     'id'           => $user['id'],
     'email'        => $user['email'],
     'displayName'  => $user['display_name'],

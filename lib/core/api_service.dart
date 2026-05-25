@@ -141,9 +141,12 @@ class ApiService {
         if (token.isNotEmpty) {
           await AuthStorage.saveAuth(
             token: token,
+            sessionId: userData['sessionId'] as String?,
             userId: userData['id'] as String? ?? '',
+            email: userData['email'] as String? ?? email.trim().toLowerCase(),
             displayName: userData['displayName'] as String? ?? '',
             role: userData['role'] as String? ?? 'user',
+            merchantType: userData['merchantType'] as String?,
           );
         }
       }
@@ -166,6 +169,65 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> restoreSession() async {
+    try {
+      final token = await AuthStorage.getToken();
+      if (token == null || token.isEmpty) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/session'),
+            headers: await _authHeaders(),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+      }
+
+      final data = jsonDecode(response.body);
+      if (data['success'] == true && data['data'] != null) {
+        final userData = data['data'] as Map<String, dynamic>;
+        await AuthStorage.saveAuth(
+          token: userData['token'] as String? ?? token,
+          sessionId: userData['sessionId'] as String?,
+          userId: userData['id'] as String? ?? '',
+          email: userData['email'] as String? ?? '',
+          displayName: userData['displayName'] as String? ?? '',
+          role: userData['role'] as String? ?? 'user',
+          merchantType: userData['merchantType'] as String?,
+        );
+      }
+
+      return {
+        'success': data['success'] == true,
+        'data': data['data'],
+        'message': data['message'] ??
+            (data['success'] == true ? 'Session masih aktif' : 'Session tidak valid'),
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  static Future<void> logoutSession() async {
+    try {
+      final token = await AuthStorage.getToken();
+      if (token == null || token.isEmpty) return;
+
+      await http
+          .delete(
+            Uri.parse('$baseUrl/api/session'),
+            headers: await _authHeaders(),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Local logout should still continue even if server logout fails.
+    }
+  }
+
   static Future<Map<String, dynamic>> forgotPassword({
     required String email,
   }) async {
@@ -184,7 +246,7 @@ class ApiService {
       final data = jsonDecode(response.body);
       return {
         'success': data['success'] == true,
-        'message': data['message'] ?? 'Gagal mengirim link reset password',
+        'message': data['message'] ?? 'Gagal mengirim token reset password',
         'data': data['data'],
       };
     } catch (e) {

@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../utils/mail_service.php';
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -23,10 +24,14 @@ try {
         throw new Exception('Email harus diisi', 400);
     }
     
-    $email = trim($data['email']);
+    $email = strtolower(trim($data['email']));
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        throw new Exception('Format email tidak valid', 400);
+    }
     
     // Cek email ada di database
-    $checkQuery = "SELECT id, email FROM users WHERE email = ?";
+    $checkQuery = "SELECT id, email, display_name FROM users WHERE email = ?";
     $checkStmt = $conn->prepare($checkQuery);
     $checkStmt->bind_param("s", $email);
     $checkStmt->execute();
@@ -44,10 +49,8 @@ try {
     $user = $result->fetch_assoc();
     $checkStmt->close();
     
-    // Generate token unik
-    $token = bin2hex(random_bytes(32));
-    $expiresAt = date('Y-m-d H:i:s', strtotime('+1 hour'));
-    
+    // Generate token angka 6 digit agar mudah diketik dari email
+    $token = (string) random_int(100000, 999999);
     // Buat tabel password_resets jika belum ada
     $createTable = "CREATE TABLE IF NOT EXISTS password_resets (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -66,44 +69,55 @@ try {
     
     // Simpan token ke database
     $insertQuery = "INSERT INTO password_resets (user_id, email, token, expires_at, created_at) 
-                    VALUES (?, ?, ?, ?, NOW()) 
+                    VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW()) 
                     ON DUPLICATE KEY UPDATE 
                     email = VALUES(email),
                     token = VALUES(token), 
-                    expires_at = VALUES(expires_at),
+                    expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR),
                     used_at = NULL,
                     created_at = NOW()";
     
     $insertStmt = $conn->prepare($insertQuery);
     if ($insertStmt) {
-        $insertStmt->bind_param("ssss", $user['id'], $email, $token, $expiresAt);
+        $insertStmt->bind_param("sss", $user['id'], $email, $token);
     } else {
         // Fallback untuk skema lama (tanpa user_id/used_at)
         $insertQuery = "INSERT INTO password_resets (email, token, expires_at, created_at) 
-                        VALUES (?, ?, ?, NOW()) 
+                        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW()) 
                         ON DUPLICATE KEY UPDATE 
                         token = VALUES(token), 
-                        expires_at = VALUES(expires_at),
+                        expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR),
                         created_at = NOW()";
         $insertStmt = $conn->prepare($insertQuery);
         if (!$insertStmt) {
             throw new Exception('Gagal menyiapkan query reset token');
         }
-        $insertStmt->bind_param("sss", $email, $token, $expiresAt);
+        $insertStmt->bind_param("ss", $email, $token);
     }
     
     if (!$insertStmt->execute()) {
         throw new Exception('Gagal menyimpan token reset');
     }
     $insertStmt->close();
+
+    $displayName = trim($user['display_name'] ?? '');
+    if ($displayName === '') {
+        $displayName = 'Pengguna';
+    }
+
+    $mailConfigError = getResetMailConfigError();
+    if ($mailConfigError !== null) {
+        throw new Exception($mailConfigError, 500);
+    }
+
+    if (!sendResetPasswordEmail($email, $displayName, $token)) {
+        throw new Exception('Gagal mengirim email reset password. Periksa konfigurasi SMTP Gmail dan koneksi internet server.', 500);
+    }
     
-    // Untuk development, kirim token via response
-    // Untuk production, kirim email sungguhan
     echo json_encode([
         'success' => true,
-        'message' => 'Token reset password telah dibuat. (Mode Development)',
+        'message' => 'Token reset password telah dikirim ke email Anda.',
         'data' => [
-            'token' => $token,
             'email' => $email
         ]
     ]);

@@ -24,11 +24,15 @@ try {
     }
     
     $token = trim($data['token']);
-    $email = trim($data['email']);
+    $email = strtolower(trim($data['email']));
     $newPassword = trim($data['newPassword']);
+
+    if (!preg_match('/^\d{6}$/', $token)) {
+        throw new Exception('Token harus 6 digit angka', 400);
+    }
     
-    if (strlen($newPassword) < 4) {
-        throw new Exception('Password minimal 4 karakter', 400);
+    if (strlen($newPassword) < 8) {
+        throw new Exception('Password minimal 8 karakter', 400);
     }
     
     $userQuery = "SELECT id FROM users WHERE email = ? LIMIT 1";

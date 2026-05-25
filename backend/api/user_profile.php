@@ -2,7 +2,7 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Session-Id');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -51,7 +51,7 @@ function ensureUserProfileColumns(mysqli $conn): void {
 
     $columns = [
         'phone' => "ALTER TABLE users ADD COLUMN phone varchar(25) DEFAULT NULL AFTER display_name",
-        'address' => "ALTER TABLE users ADD COLUMN address varchar(255) DEFAULT NULL AFTER phone",
+        'address' => "ALTER TABLE users ADD COLUMN address text DEFAULT NULL AFTER phone",
         'latitude' => "ALTER TABLE users ADD COLUMN latitude decimal(10,8) DEFAULT NULL AFTER address",
         'longitude' => "ALTER TABLE users ADD COLUMN longitude decimal(11,8) DEFAULT NULL AFTER latitude",
         'photo_url' => "ALTER TABLE users ADD COLUMN photo_url longtext DEFAULT NULL AFTER longitude",
@@ -64,6 +64,8 @@ function ensureUserProfileColumns(mysqli $conn): void {
             }
         }
     }
+
+    $conn->query('ALTER TABLE users MODIFY address text DEFAULT NULL');
 }
 
 function uuid(): string {
@@ -488,7 +490,11 @@ function cancelOpenBillsForRegistration(mysqli $conn, string $registrationId): v
         throw new Exception($conn->error);
     }
     $stmt->bind_param('s', $registrationId);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        $error = $stmt->error ?: 'Gagal memperbarui profil';
+        $stmt->close();
+        sendJson(false, null, 'Database error: ' . $error, 500);
+    }
     $stmt->close();
 }
 

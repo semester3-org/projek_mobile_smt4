@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../app/app_theme.dart';
 import '../../core/api_service.dart';
 
 class ResetPasswordPage extends StatefulWidget {
   final String email;
-  final String? token;
   
   const ResetPasswordPage({
     super.key, 
     required this.email,
-    this.token,
   });
 
   @override
@@ -18,29 +17,64 @@ class ResetPasswordPage extends StatefulWidget {
 
 class _ResetPasswordPageState extends State<ResetPasswordPage> {
   final _formKey = GlobalKey<FormState>();
-  final _tokenCtrl = TextEditingController();
+  final _tokenCtrls = List.generate(6, (_) => TextEditingController());
+  final _tokenFocusNodes = List.generate(6, (_) => FocusNode());
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   bool _obscureNew = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
+  bool _isResending = false;
   String? _message;
+  bool _isMessageError = false;
   bool _isSuccess = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.token != null && widget.token!.isNotEmpty) {
-      _tokenCtrl.text = widget.token!;
-    }
-  }
-
-  @override
   void dispose() {
-    _tokenCtrl.dispose();
+    for (final controller in _tokenCtrls) {
+      controller.dispose();
+    }
+    for (final focusNode in _tokenFocusNodes) {
+      focusNode.dispose();
+    }
     _newPassCtrl.dispose();
     _confirmPassCtrl.dispose();
     super.dispose();
+  }
+
+  String get _token => _tokenCtrls.map((controller) => controller.text).join();
+
+  void _handleTokenChanged(int index, String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+
+    if (digits.length > 1) {
+      for (var i = 0; i < _tokenCtrls.length; i++) {
+        _tokenCtrls[i].text = i < digits.length ? digits[i] : '';
+      }
+      final nextIndex = digits.length >= _tokenCtrls.length
+          ? _tokenCtrls.length - 1
+          : digits.length;
+      _tokenFocusNodes[nextIndex].requestFocus();
+      return;
+    }
+
+    _tokenCtrls[index].text = digits;
+    _tokenCtrls[index].selection = TextSelection.collapsed(offset: digits.length);
+
+    if (digits.isNotEmpty && index < _tokenFocusNodes.length - 1) {
+      _tokenFocusNodes[index + 1].requestFocus();
+    }
+  }
+
+  void _handleTokenBackspace(int index, KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.backspace) {
+      return;
+    }
+
+    if (_tokenCtrls[index].text.isEmpty && index > 0) {
+      _tokenFocusNodes[index - 1].requestFocus();
+      _tokenCtrls[index - 1].clear();
+    }
   }
 
   Future<void> _submitReset() async {
@@ -49,6 +83,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     setState(() { 
       _isLoading = true; 
       _message = null; 
+      _isMessageError = false;
     });
 
     try {
@@ -73,7 +108,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       );
 
       final result = await ApiService.resetPassword(
-        token: _tokenCtrl.text.trim(),
+        token: _token,
         email: widget.email,
         newPassword: _newPassCtrl.text,
       );
@@ -85,6 +120,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       setState(() {
         _isLoading = false;
         _isSuccess = result['success'] == true;
+        _isMessageError = !_isSuccess;
         _message = result['message'] ?? (_isSuccess
             ? 'Password berhasil diubah.'
             : 'Gagal mereset password.');
@@ -114,8 +150,30 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       setState(() { 
         _isLoading = false; 
         _message = 'Terjadi kesalahan: $e'; 
+        _isMessageError = true;
       });
     }
+  }
+
+  Future<void> _resendToken() async {
+    setState(() {
+      _isResending = true;
+      _message = null;
+      _isMessageError = false;
+    });
+
+    final result = await ApiService.forgotPassword(email: widget.email);
+
+    if (!mounted) return;
+
+    setState(() {
+      _isResending = false;
+      _isMessageError = result['success'] != true;
+      _message = result['message'] ??
+          (result['success'] == true
+              ? 'Token baru telah dikirim ke email Anda.'
+              : 'Gagal mengirim ulang token.');
+    });
   }
 
   @override
@@ -214,19 +272,97 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _tokenCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Token dari Email',
-                            prefixIcon: Icon(Icons.vpn_key_outlined),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(12)),
-                            ),
-                          ),
-                          validator: (v) {
-                            if ((v ?? '').trim().isEmpty) return 'Token wajib diisi';
+                        FormField<String>(
+                          validator: (_) {
+                            if (_token.isEmpty) return 'Token wajib diisi';
+                            if (!RegExp(r'^\d{6}$').hasMatch(_token)) {
+                              return 'Token harus 6 digit angka';
+                            }
                             return null;
                           },
+                          builder: (field) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Token dari Email',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: List.generate(
+                                  _tokenCtrls.length,
+                                  (index) => SizedBox(
+                                    width: 44,
+                                    height: 52,
+                                    child: Focus(
+                                      onKeyEvent: (_, event) {
+                                        _handleTokenBackspace(index, event);
+                                        return KeyEventResult.ignored;
+                                      },
+                                      child: TextFormField(
+                                        controller: _tokenCtrls[index],
+                                        focusNode: _tokenFocusNodes[index],
+                                        keyboardType: TextInputType.number,
+                                        textInputAction: index == _tokenCtrls.length - 1
+                                            ? TextInputAction.done
+                                            : TextInputAction.next,
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly,
+                                          LengthLimitingTextInputFormatter(6),
+                                        ],
+                                        decoration: InputDecoration(
+                                          counterText: '',
+                                          contentPadding: EdgeInsets.zero,
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            borderSide: BorderSide(
+                                              color: field.hasError
+                                                  ? Colors.red
+                                                  : Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            borderSide: const BorderSide(
+                                              color: AppTheme.primaryGreen,
+                                              width: 2,
+                                            ),
+                                          ),
+                                        ),
+                                        onChanged: (value) {
+                                          _handleTokenChanged(index, value);
+                                          field.didChange(_token);
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (field.hasError) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  field.errorText!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
@@ -245,7 +381,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                           ),
                           validator: (v) {
                             if ((v ?? '').isEmpty) return 'Password wajib diisi';
-                            if ((v ?? '').length < 4) return 'Minimal 4 karakter';
+                            if ((v ?? '').length < 8) return 'Minimal 8 karakter';
                             return null;
                           },
                         ),
@@ -272,7 +408,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         ),
                         if (_message != null && !_isSuccess) ...[
                           const SizedBox(height: 12),
-                          Text(_message!, style: const TextStyle(color: Colors.red)),
+                          Text(
+                            _message!,
+                            style: TextStyle(
+                              color: _isMessageError ? Colors.red : Colors.green,
+                            ),
+                          ),
                         ],
                         const SizedBox(height: 20),
                         FilledButton(
@@ -280,6 +421,17 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                           child: _isLoading
                               ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Text('Simpan Password Baru'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _isLoading || _isResending ? null : _resendToken,
+                          child: _isResending
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Kirim Ulang Token'),
                         ),
                       ],
                     ),

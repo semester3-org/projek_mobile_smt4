@@ -15,9 +15,37 @@ class KosFinderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = AuthState();
+    return const _KosFinderRoot();
+  }
+}
+
+class _KosFinderRoot extends StatefulWidget {
+  const _KosFinderRoot();
+
+  @override
+  State<_KosFinderRoot> createState() => _KosFinderRootState();
+}
+
+class _KosFinderRootState extends State<_KosFinderRoot> {
+  late final AuthState _auth;
+
+  @override
+  void initState() {
+    super.initState();
+    _auth = AuthState();
+    _auth.restoreSession();
+  }
+
+  @override
+  void dispose() {
+    _auth.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return AuthScope(
-      auth: auth,
+      auth: _auth,
       child: MaterialApp(
         title: 'KosFinder',
         debugShowCheckedModeBanner: false,

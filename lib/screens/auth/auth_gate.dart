@@ -15,6 +15,12 @@ class AuthGate extends StatelessWidget {
     final auth = AuthScope.of(context);
     final session = auth.session;
 
+    if (auth.isRestoring) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (session == null) {
       return const LoginPage();
     }

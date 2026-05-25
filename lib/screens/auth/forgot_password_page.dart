@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
 import '../../core/api_service.dart';
-import 'reset_password_page.dart'; // TAMBAHKAN IMPORT INI
+import 'reset_password_page.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -16,8 +16,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _isLoading = false;
   String? _message;
   bool _isSuccess = false;
-  String? _resetToken;
-  String? _resetEmail;
 
   @override
   void dispose() {
@@ -68,72 +66,19 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         _isLoading = false;
         if (result['success'] == true) {
           _isSuccess = true;
-          _message = result['message'] ?? 'Link reset password telah dikirim ke email Anda.';
-          
-          // Simpan token dan email untuk reset password
-          if (result['data'] != null) {
-            _resetToken = result['data']['token'];
-            _resetEmail = result['data']['email'];
-          }
+          _message = result['message'] ?? 'Token reset password telah dikirim ke email Anda.';
         } else {
           _isSuccess = false;
-          _message = result['message'] ?? 'Gagal mengirim link reset password.';
+          _message = result['message'] ?? 'Gagal mengirim token reset password.';
         }
       });
 
-      // If success, show token dialog (for development)
-      if (_isSuccess && _resetToken != null) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Token Reset Password'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Email:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(_resetEmail ?? ''),
-                const SizedBox(height: 12),
-                const Text('Token:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(top: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: SelectableText(
-                    _resetToken ?? '',
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Gunakan token di atas untuk mereset password Anda.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+      if (_isSuccess) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ResetPasswordPage(
+              email: _emailCtrl.text.trim().toLowerCase(),
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                  // Navigate to reset password page
-                  if (_resetEmail != null && _resetToken != null) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => ResetPasswordPage(
-                          email: _resetEmail!,
-                          token: _resetToken!,
-                        ),
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Lanjutkan Reset'),
-              ),
-            ],
           ),
         );
       }
@@ -163,7 +108,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           children: [
             const _Header(
               title: 'Reset Password',
-              subtitle: 'Masukkan email Anda untuk menerima link reset password.',
+              subtitle: 'Masukkan email Anda untuk menerima token reset password.',
             ),
             const SizedBox(height: 24),
             if (_isSuccess) ...[
@@ -247,7 +192,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                     valueColor: AlwaysStoppedAnimation(Colors.white),
                                   ),
                                 )
-                              : const Text('Kirim Link Reset'),
+                              : const Text('Kirim Token Reset'),
                         ),
                       ],
                     ),

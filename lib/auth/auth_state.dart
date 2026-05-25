@@ -20,9 +20,36 @@ class AuthSession {
 
 class AuthState extends ChangeNotifier {
   AuthSession? _session;
+  bool _isRestoring = false;
 
   AuthSession? get session => _session;
   bool get isLoggedIn => _session != null;
+  bool get isRestoring => _isRestoring;
+
+  Future<void> restoreSession() async {
+    _isRestoring = true;
+    notifyListeners();
+
+    try {
+      final result = await ApiService.restoreSession();
+
+      if (result['success'] == true && result['data'] != null) {
+        final userData = result['data'] as Map<String, dynamic>;
+        final merchantTypeStr = userData['merchantType'] as String?;
+        _session = AuthSession(
+          email: userData['email'] as String? ?? '',
+          role: UserRoleLabel.fromString(userData['role'] as String? ?? ''),
+          displayName: userData['displayName'] as String? ?? 'User',
+          merchantType: MerchantTypeLabel.fromString(merchantTypeStr),
+        );
+      } else {
+        await AuthStorage.clear();
+      }
+    } finally {
+      _isRestoring = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> updateDisplayName(String displayName) async {
     final current = _session;
@@ -66,9 +93,10 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
     _session = null;
-    AuthStorage.clear();
     notifyListeners();
+    await ApiService.logoutSession();
+    await AuthStorage.clear();
   }
 }

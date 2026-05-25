@@ -1,7 +1,7 @@
 <?php
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Session-Id');
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -22,6 +22,7 @@ error_log("DEBUG: URI=$uri | Path=$path | Method=" . $_SERVER['REQUEST_METHOD'])
 
 // ── Auth endpoints (tidak perlu login) ────────────────────────────────────────
 if ($path === 'api/login')           { require_once __DIR__ . '/api/login.php';          exit; }
+if ($path === 'api/session')         { require_once __DIR__ . '/api/session.php';        exit; }
 if ($path === 'api/register')        { require_once __DIR__ . '/api/register.php';       exit; }
 if ($path === 'api/forgot-password') { require_once __DIR__ . '/api/forgot-password.php'; exit; }
 if ($path === 'api/reset-password')  { require_once __DIR__ . '/api/reset-password.php'; exit; }
@@ -65,6 +66,7 @@ if (empty($path)) {
         'endpoints' => [
             // Auth
             'POST /api/login',
+            'GET|POST|DELETE /api/session',
             'POST /api/register',
             'POST /api/forgot-password',
             'POST /api/reset-password',

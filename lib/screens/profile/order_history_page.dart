@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
+import '../../core/payment_methods.dart';
 import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
@@ -62,11 +63,13 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
     super.dispose();
   }
 
-  Future<void> _loadOrders() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _loadOrders({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     final result = await UserRepository.getOrders();
     if (!mounted) return;
     setState(() {
@@ -184,6 +187,8 @@ class _OrderCard extends StatelessWidget {
   final Order order;
 
   Color _getStatusColor() {
+    if (order.readyToPay) return const Color(0xFF1475C8);
+    if (order.awaitingWeighing) return Colors.orange;
     switch (order.status) {
       case 'pending':
         return Colors.orange;
@@ -273,6 +278,34 @@ class _OrderCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (order.readyToPay) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F4FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Total ${formatCurrency(order.totalAmount)} siap dibayar — tap untuk bayar',
+                    style: const TextStyle(
+                      color: Color(0xFF00508F),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+              if (order.isLaundry &&
+                  (order.serviceEstimateLabel ?? order.estimatedTime ?? '')
+                      .isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Estimasi layanan: ${order.serviceEstimateLabel ?? order.estimatedTime}',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -299,15 +332,26 @@ class _OrderCard extends StatelessWidget {
               const SizedBox(height: 12),
               Divider(color: Colors.grey.shade300),
               const SizedBox(height: 12),
+              if ((order.paymentMethodLabel ?? order.paymentMethod ?? '')
+                  .isNotEmpty) ...[
+                Text(
+                  order.paymentMethodLabel ??
+                      PaymentMethodHelper.getDisplayName(order.paymentMethod),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Total',
+                    order.awaitingWeighing ? 'Total (ditimbang)' : 'Total',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   Text(
-                    formatCurrency(order.totalAmount),
+                    order.awaitingWeighing && order.totalAmount <= 0
+                        ? 'Menunggu'
+                        : formatCurrency(order.totalAmount),
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: AppTheme.primaryGreen,

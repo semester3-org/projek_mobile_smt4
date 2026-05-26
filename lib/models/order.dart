@@ -64,6 +64,10 @@ class Order {
   final bool canCancel;
   final String? merchantStatus;
   final bool awaitingWeighing;
+  final bool readyToPay;
+  final String? displayStatusLabel;
+  final String? paymentMethodLabel;
+  final String? serviceEstimateLabel;
 
   Order({
     required this.id,
@@ -92,6 +96,10 @@ class Order {
     this.canCancel = true,
     this.merchantStatus,
     this.awaitingWeighing = false,
+    this.readyToPay = false,
+    this.displayStatusLabel,
+    this.paymentMethodLabel,
+    this.serviceEstimateLabel,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -131,6 +139,10 @@ class Order {
       canCancel: json['canCancel'] as bool? ?? true,
       merchantStatus: json['merchantStatus'] as String?,
       awaitingWeighing: json['awaitingWeighing'] as bool? ?? false,
+      readyToPay: json['readyToPay'] as bool? ?? false,
+      displayStatusLabel: json['displayStatusLabel'] as String?,
+      paymentMethodLabel: json['paymentMethodLabel'] as String?,
+      serviceEstimateLabel: json['serviceEstimateLabel'] as String?,
     );
   }
 
@@ -164,9 +176,12 @@ class Order {
   }
 
   String get statusLabel {
+    if (displayStatusLabel != null && displayStatusLabel!.isNotEmpty) {
+      return displayStatusLabel!;
+    }
     switch (status) {
       case 'pending':
-        return 'Menunggu Konfirmasi';
+        return awaitingWeighing ? 'Menunggu penimbangan' : 'Menunggu konfirmasi';
       case 'confirmed':
         return 'Dikonfirmasi';
       case 'in_progress':

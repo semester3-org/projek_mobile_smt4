@@ -81,10 +81,17 @@ class UserRepository {
   static Future<RepoResult<UserMerchant>> getMerchantDetail({
     required String type,
     required String id,
+    double? latitude,
+    double? longitude,
   }) async {
+    final params = {'type': type, 'id': id};
+    if (latitude != null && longitude != null) {
+      params['lat'] = latitude.toString();
+      params['lng'] = longitude.toString();
+    }
     final res = await ApiService.get(
       'api/user_merchants',
-      queryParams: {'type': type, 'id': id},
+      queryParams: params,
     );
 
     if (!res.success) {

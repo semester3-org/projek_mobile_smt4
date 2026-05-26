@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/payment_methods.dart';
 import '../../../../core/realtime_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
@@ -31,32 +32,36 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
   String? _error;
   int _selectedFilter = 0;
 
-  static const _filters = ['Semua', 'Pending', 'Diproses', 'Selesai'];
+  List<String> get _filters => widget.isLaundry
+      ? const ['Semua', 'Pending', 'Diproses', 'Selesai']
+      : const ['Semua', 'Pending', 'Disetujui', 'Selesai'];
 
   @override
   void initState() {
     super.initState();
     _load();
     RealtimeService().startMerchantOrdersPolling();
-    RealtimeService().addEventListener('merchant_order_updated', _load);
-    RealtimeService().addEventListener('dashboard_updated', _load);
+    RealtimeService().addEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService().addEventListener('dashboard_updated', _silentRefresh);
   }
 
   @override
   void dispose() {
-    RealtimeService().removeEventListener('merchant_order_updated', _load);
-    RealtimeService().removeEventListener('dashboard_updated', _load);
+    RealtimeService().removeEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService().removeEventListener('dashboard_updated', _silentRefresh);
     RealtimeService().stopMerchantOrdersPolling();
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getOrders(
       status: _statusParam,
       search: _searchCtrl.text.trim(),
@@ -64,10 +69,12 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
     if (!mounted) return;
     setState(() {
       _orders = result.data ?? [];
-      _error = result.error;
+      if (!silent) _error = result.error;
       _loading = false;
     });
   }
+
+  void _silentRefresh() => _load(silent: true);
 
   String? get _statusParam {
     switch (_selectedFilter) {
@@ -100,7 +107,14 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
             : result.error ?? 'Gagal memproses pesanan'),
       ),
     );
-    if (result.isSuccess) _load();
+    if (result.isSuccess && result.data != null) {
+      setState(() {
+        final idx = _orders.indexWhere((o) => o.id == order.id);
+        if (idx >= 0) _orders[idx] = result.data!;
+      });
+    } else if (result.isSuccess) {
+      _load(silent: true);
+    }
   }
 
   Future<void> _openDetail(MerchantOrder order) async {
@@ -113,7 +127,7 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
         ),
       ),
     );
-    _load();
+    _load(silent: true);
   }
 
   @override
@@ -261,9 +275,7 @@ class _MerchantOrderCard extends StatelessWidget {
           const SizedBox(height: 10),
           _InfoLine(
             icon: Icons.schedule_rounded,
-            text: order.estimatedTime.isEmpty
-                ? 'Estimasi belum diatur'
-                : 'Estimasi: ${order.estimatedTime}',
+            text: _serviceEstimateText(order),
           ),
           if (order.isCateringSubscription) ...[
             const SizedBox(height: 10),
@@ -277,11 +289,11 @@ class _MerchantOrderCard extends StatelessWidget {
           _InfoLine(
             icon: Icons.payments_outlined,
             text: [
-              order.paymentMethod.isEmpty
-                  ? 'Metode belum dipilih'
-                  : order.paymentMethod,
+              order.paymentMethodLabel.isNotEmpty
+                  ? order.paymentMethodLabel
+                  : PaymentMethodHelper.getDisplayName(order.paymentMethod),
               if (order.paymentStatusLabel.isNotEmpty) order.paymentStatusLabel,
-            ].join(' - '),
+            ].join(' · '),
           ),
           const SizedBox(height: 16),
           const Divider(height: 1),
@@ -320,6 +332,26 @@ class _MerchantOrderCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _serviceEstimateText(MerchantOrder order) {
+  if (order.serviceType == 'laundry') {
+    final label = order.serviceEstimateLabel.isNotEmpty
+        ? order.serviceEstimateLabel
+        : order.estimatedTime;
+    if (label.isEmpty) {
+      return order.paymentStatus.toLowerCase() == 'awaiting_weighing'
+          ? 'Sedang ditimbang merchant'
+          : 'Estimasi layanan belum diatur';
+    }
+  if (RegExp(r'^\d+(-\d+)?\s*mnt', caseSensitive: false).hasMatch(label)) {
+      return 'Estimasi layanan: lihat kategori layanan';
+    }
+    return 'Estimasi layanan: $label';
+  }
+  return order.estimatedTime.isEmpty
+      ? 'Estimasi belum diatur'
+      : order.estimatedTime;
 }
 
 String _actionLabel(MerchantOrder order, VoidCallback? onProcess) {

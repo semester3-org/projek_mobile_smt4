@@ -4,12 +4,10 @@ class PaymentMethodHelper {
 
   // Formatted payment method names with clean presentation
   static const Map<String, String> displayNames = {
-    // Bank Transfer
-    'bank_transfer': 'Bank Transfer',
-    'bca': 'Bank BCA',
-    'mandiri': 'Bank Mandiri',
-    'bni': 'Bank BNI',
-    'cimb': 'Bank CIMB Niaga',
+    'bca': 'Transfer Bank BCA',
+    'mandiri': 'Transfer Bank Mandiri',
+    'bni': 'Transfer Bank BNI',
+    'cimb': 'Transfer Bank CIMB Niaga',
 
     // E-Wallet
     'gopay': 'GoPay',
@@ -32,12 +30,10 @@ class PaymentMethodHelper {
 
   // Category grouping
   static const Map<String, String> categories = {
-    // Bank Transfer Category
-    'bank_transfer': 'Bank',
-    'bca': 'Bank',
-    'mandiri': 'Bank',
-    'bni': 'Bank',
-    'cimb': 'Bank',
+    'bca': 'Transfer Bank',
+    'mandiri': 'Transfer Bank',
+    'bni': 'Transfer Bank',
+    'cimb': 'Transfer Bank',
 
     // E-Wallet Category
     'gopay': 'E-Wallet',
@@ -88,7 +84,7 @@ class PaymentMethodHelper {
 
   /// Opsi pembayaran untuk form checkout user.
   static List<String> checkoutOptionKeys({required bool isLaundry}) {
-    const bank = ['bca', 'mandiri', 'bni', 'bank_transfer'];
+    const bank = ['bca', 'mandiri', 'bni', 'cimb'];
     const wallet = ['gopay', 'dana', 'shopeepay', 'ovo'];
     const other = ['qris'];
     if (isLaundry) {

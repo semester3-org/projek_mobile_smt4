@@ -166,6 +166,59 @@ function userMerchantDistance(?float $lat1, ?float $lon1, $lat2, $lon2, float $f
     return round($earth * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
 }
 
+function userMerchantEtaFromKm(float $distanceKm): string {
+    if ($distanceKm <= 0) {
+        return '';
+    }
+    // Perkiraan tempuh motor/mobil perkotaan ~18 km/jam
+    $minutes = (int)ceil(($distanceKm / 18) * 60);
+    $low = max(5, $minutes - 3);
+    $high = min(120, $minutes + 8);
+    return $low >= $high ? "{$low} mnt" : "{$low}-{$high} mnt";
+}
+
+function userMerchantValidCoord($value): ?float {
+    if ($value === null || $value === '') {
+        return null;
+    }
+    $num = (float)$value;
+    if (abs($num) < 0.0001) {
+        return null;
+    }
+    return $num;
+}
+
+function userMerchantResolveUserCoords(mysqli $conn, ?float $userLat, ?float $userLng, string $userId): array {
+    if ($userLat !== null && $userLng !== null && userMerchantValidCoord($userLat) !== null) {
+        return [$userLat, $userLng];
+    }
+    if ($userId === '' || !merchantTableExists($conn, 'users')) {
+        return [null, null];
+    }
+    $hasLat = merchantColumnExists($conn, 'users', 'latitude');
+    if (!$hasLat) {
+        return [null, null];
+    }
+    $stmt = $conn->prepare('SELECT latitude, longitude FROM users WHERE id = ? LIMIT 1');
+    if (!$stmt) {
+        return [null, null];
+    }
+    $stmt->bind_param('s', $userId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return [
+        userMerchantValidCoord($row['latitude'] ?? null),
+        userMerchantValidCoord($row['longitude'] ?? null),
+    ];
+}
+
+function userMerchantRowCoords(array $row): array {
+    $lat = userMerchantValidCoord($row['latitude'] ?? null);
+    $lng = userMerchantValidCoord($row['longitude'] ?? null);
+    return [$lat, $lng];
+}
+
 function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng): array {
     $merchantId = (string)($row['merchant_id'] ?? $row['id']);
     $placeId = (string)($row['place_id'] ?? $merchantId);
@@ -186,19 +239,22 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
             $categories[] = $category;
         }
     }
+    [$merchantLat, $merchantLng] = userMerchantRowCoords($row);
     $hasDistanceEstimate = $userLat !== null &&
         $userLng !== null &&
-        ($row['latitude'] ?? null) !== null &&
-        ($row['longitude'] ?? null) !== null &&
-        ($row['latitude'] ?? '') !== '' &&
-        ($row['longitude'] ?? '') !== '';
+        $merchantLat !== null &&
+        $merchantLng !== null;
     $distance = userMerchantDistance(
         $userLat,
         $userLng,
-        $row['latitude'] ?? null,
-        $row['longitude'] ?? null,
+        $merchantLat,
+        $merchantLng,
         (float)($row['distance_km'] ?? 0)
     );
+    if ($hasDistanceEstimate && $distance < 0.05) {
+        $distance = 0.05;
+    }
+    $hasDistanceEstimate = $hasDistanceEstimate && $distance > 0;
     $openHours = trim((string)($row['open_hours'] ?? ''));
     $openTime = trim((string)($row['open_time'] ?? '08:00'));
     $closeTime = trim((string)($row['close_time'] ?? '21:00'));
@@ -214,7 +270,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         'merchantId' => $merchantId,
         'type' => $type,
         'name' => $row['business_name'] ?? $row['name'] ?? 'Merchant',
-        'subtitle' => $type === 'laundry' ? 'Layanan laundry sekitar kos' : 'Paket menu pilihan untuk penghuni kos',
+        'subtitle' => '',
         'address' => $row['address'] ?? $row['place_address'] ?? '',
         'rating' => $rating,
         'reviewCount' => $reviewCount,
@@ -227,7 +283,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         'tags' => $categories,
         'minPrice' => $minPrice,
         'priceUnit' => $type === 'laundry' ? '/kg' : '/bulan',
-        'eta' => $hasDistanceEstimate ? ($distance <= 1 ? '15-20 mnt' : ($distance <= 3 ? '25-35 mnt' : '40+ mnt')) : '',
+        'eta' => $hasDistanceEstimate ? userMerchantEtaFromKm($distance) : '',
         'hasDistanceEstimate' => $hasDistanceEstimate,
         'openHours' => $openHours,
         'description' => $row['description'] ?? ($type === 'laundry'
@@ -308,6 +364,9 @@ try {
     $id = trim($_GET['id'] ?? '');
     $userLat = isset($_GET['lat']) && $_GET['lat'] !== '' ? (float)$_GET['lat'] : null;
     $userLng = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
+    $payload = merchantRequireAuth();
+    $userId = (string)($payload['sub'] ?? '');
+    [$userLat, $userLng] = userMerchantResolveUserCoords($conn, $userLat, $userLng, $userId);
 
     $rows = [];
     if (merchantTableExists($conn, 'merchants')) {
@@ -317,10 +376,16 @@ try {
         $specialtySelect = $type === 'catering' && merchantColumnExists($conn, 'catering_places', 'specialty')
             ? "p.specialty"
             : "NULL";
+        $placeLat = merchantColumnExists($conn, $type === 'laundry' ? 'laundry_places' : 'catering_places', 'latitude')
+            ? 'p.latitude' : 'NULL';
+        $placeLng = merchantColumnExists($conn, $type === 'laundry' ? 'laundry_places' : 'catering_places', 'longitude')
+            ? 'p.longitude' : 'NULL';
         $stmt = $conn->prepare("
             SELECT m.id AS merchant_id, m.business_name, m.merchant_type, m.phone, m.address,
-                   m.description, m.photo_url, m.latitude, m.longitude, m.open_time, m.close_time,
+                   m.description, m.photo_url, m.open_time, m.close_time,
                    m.service_categories, m.status, u.email,
+                   COALESCE(NULLIF(m.latitude, 0), $placeLat) AS latitude,
+                   COALESCE(NULLIF(m.longitude, 0), $placeLng) AS longitude,
                    p.id AS place_id,
                    COALESCE(p.address, m.address) AS place_address,
                    p.rating AS place_rating,

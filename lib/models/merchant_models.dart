@@ -50,8 +50,10 @@ class MerchantOrder {
     required this.deliveryAddress,
     required this.totalAmount,
     required this.paymentMethod,
+    required this.paymentMethodLabel,
     required this.paymentStatus,
     required this.paymentStatusLabel,
+    required this.serviceEstimateLabel,
     required this.canApprove,
     required this.notes,
     required this.items,
@@ -80,8 +82,10 @@ class MerchantOrder {
   final String deliveryAddress;
   final double totalAmount;
   final String paymentMethod;
+  final String paymentMethodLabel;
   final String paymentStatus;
   final String paymentStatusLabel;
+  final String serviceEstimateLabel;
   final bool canApprove;
   final String notes;
   final List<MerchantOrderItem> items;
@@ -113,8 +117,10 @@ class MerchantOrder {
       deliveryAddress: json['deliveryAddress'] as String? ?? '',
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
       paymentMethod: json['paymentMethod'] as String? ?? '',
+      paymentMethodLabel: json['paymentMethodLabel'] as String? ?? '',
       paymentStatus: json['paymentStatus'] as String? ?? '',
       paymentStatusLabel: json['paymentStatusLabel'] as String? ?? '',
+      serviceEstimateLabel: json['serviceEstimateLabel'] as String? ?? '',
       canApprove: json['canApprove'] as bool? ?? true,
       notes: json['notes'] as String? ?? '',
       items: rawItems

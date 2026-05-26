@@ -43,7 +43,7 @@ class _UserHomePageState extends State<UserHomePage> {
     RealtimeService().startUserOrderPolling();
     RealtimeService().addEventListener('order_status_updated', _load);
     _homePollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) _load();
+      if (mounted) _load(silent: true);
     });
   }
 
@@ -63,13 +63,15 @@ class _UserHomePageState extends State<UserHomePage> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silent = false}) async {
     final session = AuthScope.of(context).session;
     final displayName = session?.displayName ?? 'User';
-    setState(() {
-      _dashboard ??= UserDashboard.fallback(displayName);
-      _loading = false;
-    });
+    if (!silent) {
+      setState(() {
+        _dashboard ??= UserDashboard.fallback(displayName);
+        _loading = _dashboard == null;
+      });
+    }
     final result = await UserRepository.getDashboard(displayName: displayName);
     if (!mounted) return;
 
@@ -160,8 +162,11 @@ class _UserHomePageState extends State<UserHomePage> {
                   const SizedBox(height: 14),
                   _ServiceGrid(onSelectTab: widget.onSelectTab),
                   const SizedBox(height: 22),
-                  _AnnouncementCard(dashboard: _dashboard!),
-                  const SizedBox(height: 28),
+                  if (_dashboard!.announcementTitle.trim().isNotEmpty)
+                    ...[
+                      _AnnouncementCard(dashboard: _dashboard!),
+                      const SizedBox(height: 28),
+                    ],
                   const _HomeCateringSubscriptions(),
                   const SizedBox(height: 28),
                   UserSectionHeader(

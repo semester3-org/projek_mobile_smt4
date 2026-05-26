@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/payment_methods.dart';
+import '../../core/user_location_service.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
@@ -44,16 +45,19 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silent = false}) async {
     final merchantId = widget.merchant.id.isNotEmpty
         ? widget.merchant.id
         : (widget.merchant.placeId.isNotEmpty
             ? widget.merchant.placeId
             : widget.merchant.merchantId);
 
+    final coords = await UserLocationService.current();
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
       id: merchantId,
+      latitude: coords?.latitude,
+      longitude: coords?.longitude,
     );
     if (!mounted) return;
     setState(() {
@@ -206,31 +210,51 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         ((_merchant.rating * _merchant.reviewCount) + _selectedRating) /
             newCount;
 
-    setState(() {
-      _merchant = _merchant.copyWith(
-        rating: newRating,
-        reviewCount: newCount,
-        reviews: [newReview, ..._merchant.reviews],
+    if (result.isSuccess) {
+      final coords = await UserLocationService.current();
+      final refreshed = await UserRepository.getMerchantDetail(
+        type: _merchant.type,
+        id: _merchant.merchantId.isNotEmpty ? _merchant.merchantId : _merchant.id,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
       );
-      _reviewCtrl.clear();
-      _submittingReview = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _merchant = refreshed.data ?? _merchant.copyWith(
+          rating: newRating,
+          reviewCount: newCount,
+          reviews: [newReview, ..._merchant.reviews],
+        );
+        _reviewCtrl.clear();
+        _submittingReview = false;
+      });
+    } else {
+      setState(() => _submittingReview = false);
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(result.isSuccess
             ? 'Ulasan berhasil dikirim'
-            : 'Ulasan tersimpan di perangkat. ${result.error ?? ''}'.trim()),
+            : result.error ?? 'Gagal mengirim ulasan'),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) return;
+      },
+      child: Scaffold(
       backgroundColor: UserTheme.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context, _merchant),
+        ),
         title: const Text(
           'Detail Merchant',
           style: TextStyle(
@@ -304,6 +328,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
               ),
       ),
       bottomNavigationBar: null,
+    ),
     );
   }
 }
@@ -626,6 +651,13 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     });
   }
 
+  String _laundryServiceEstimateFor(List<MerchantMenuItem> items) {
+    if (items.isEmpty) return 'Estimasi layanan ditentukan merchant';
+    final category = items.first.category.trim();
+    if (category.isEmpty) return 'Estimasi layanan ditentukan merchant';
+    return category;
+  }
+
   void _submit() {
     final selectedItems = _selectedItems;
     if (selectedItems.isEmpty) {
@@ -666,10 +698,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         deliveryLatitude: _deliveryLatitude,
         deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
-            ? (widget.merchant.hasDistanceEstimate &&
-                    widget.merchant.eta.isNotEmpty
-                ? widget.merchant.eta
-                : 'Estimasi ditentukan merchant')
+            ? _laundryServiceEstimateFor(selectedItems)
             : 'Paket $_cateringDays hari',
         paymentMethod: _paymentMethod,
         subscriptionDays: _isLaundry ? null : _cateringDays,
@@ -714,7 +743,25 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
             const SizedBox(height: 14),
-            if (_isLaundry) _laundryItemPicker() else _cateringItemPicker(),
+            if (widget.initialItem != null) ...[
+              _lockedItemSummary(widget.initialItem!),
+              if (!_isLaundry) ...[
+                const SizedBox(height: 12),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 20, label: Text('20 hari')),
+                    ButtonSegment(value: 30, label: Text('30 hari')),
+                  ],
+                  selected: {_cateringDays},
+                  onSelectionChanged: (value) {
+                    setState(() => _cateringDays = value.first);
+                  },
+                ),
+              ],
+            ] else if (_isLaundry)
+              _laundryItemPicker()
+            else
+              _cateringItemPicker(),
             const SizedBox(height: 18),
             _CheckoutField(
               controller: _nameCtrl,
@@ -862,6 +909,53 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _lockedItemSummary(MerchantMenuItem item) {
+    final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: UserTheme.softBlue,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UserTheme.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            item.name,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          if (item.category.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Estimasi: ${item.category}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+            ),
+          ],
+          if (!_isLaundry) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${formatUserCurrency(_adjustedCateringPrice(item))} / $_cateringDays hari',
+              style: const TextStyle(color: UserTheme.muted),
+            ),
+          ] else ...[
+            const SizedBox(height: 6),
+            Text(
+              'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
+              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1038,36 +1132,71 @@ class _CheckoutField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final multiline = maxLines > 1;
+    if (multiline) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: UserTheme.muted),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            maxLines: maxLines,
+            keyboardType: keyboardType,
+            textAlign: TextAlign.center,
+            textAlignVertical: TextAlignVertical.center,
+            decoration: _checkoutDecoration(multiline: true),
+          ),
+        ],
+      );
+    }
     return TextField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
-      textAlign: multiline ? TextAlign.center : TextAlign.start,
-      textAlignVertical:
-          multiline ? TextAlignVertical.center : TextAlignVertical.center,
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,
-        multiline: multiline,
       ),
     );
   }
 }
 
 InputDecoration _checkoutDecoration({
-  required String label,
-  required IconData icon,
+  String? label,
+  IconData? icon,
   bool multiline = false,
 }) {
   return InputDecoration(
-    labelText: label,
-    alignLabelWithHint: multiline,
-    prefixIcon: Icon(icon),
+    labelText: multiline ? null : label,
+    hintText: multiline ? label : null,
+    hintStyle: multiline
+        ? const TextStyle(
+            color: Color(0xFF9AA8BC),
+            fontSize: 14,
+            height: 1.45,
+          )
+        : null,
+    floatingLabelBehavior: FloatingLabelBehavior.never,
+    prefixIcon: multiline ? null : (icon != null ? Icon(icon) : null),
     filled: true,
     fillColor: const Color(0xFFF7F9FC),
     contentPadding: EdgeInsets.symmetric(
-      horizontal: 16,
-      vertical: multiline ? 22 : 16,
+      horizontal: multiline ? 20 : 16,
+      vertical: multiline ? 28 : 16,
     ),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),

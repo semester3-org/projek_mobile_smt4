@@ -11,6 +11,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
+function userOrderPaymentMethodLabel(?string $method): string {
+    $key = strtolower(trim((string)$method));
+  return match ($key) {
+        'bca' => 'Transfer Bank BCA',
+        'mandiri' => 'Transfer Bank Mandiri',
+        'bni' => 'Transfer Bank BNI',
+        'cimb' => 'Transfer Bank CIMB Niaga',
+        'gopay' => 'GoPay',
+        'ovo' => 'OVO',
+        'dana' => 'DANA',
+        'shopeepay' => 'ShopeePay',
+        'linkaja' => 'LinkAja',
+        'qris' => 'QRIS',
+        'cod', 'cash' => 'Bayar di Tempat (COD)',
+        default => $method !== '' ? ucwords(str_replace('_', ' ', $key)) : 'Metode pembayaran',
+    };
+}
+
+function userOrderLaundryServiceEstimate(mysqli $conn, int $productId, string $fallback = ''): string {
+    if ($productId <= 0) {
+        return $fallback;
+    }
+    $stmt = $conn->prepare('SELECT category, merchant_id FROM products WHERE id = ? LIMIT 1');
+    if (!$stmt) {
+        return $fallback;
+    }
+    $stmt->bind_param('i', $productId);
+    $stmt->execute();
+    $product = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$product) {
+        return $fallback;
+    }
+    $category = trim((string)($product['category'] ?? ''));
+    if ($category === '') {
+        return $fallback;
+    }
+    if (merchantTableExists($conn, 'laundry_service_estimates')) {
+        $merchantId = (string)($product['merchant_id'] ?? '');
+        $est = $conn->prepare("
+            SELECT min_hours, max_hours, estimate_label
+            FROM laundry_service_estimates
+            WHERE merchant_id = ? AND service_name = ? AND is_active = 1
+            LIMIT 1
+        ");
+        if ($est) {
+            $est->bind_param('ss', $merchantId, $category);
+            $est->execute();
+            $row = $est->get_result()->fetch_assoc();
+            $est->close();
+            if ($row) {
+                $label = trim((string)($row['estimate_label'] ?? ''));
+                if ($label !== '') {
+                    return $label;
+                }
+                $min = (int)($row['min_hours'] ?? 0);
+                $max = (int)($row['max_hours'] ?? 0);
+                if ($min > 0 && $max > 0) {
+                    return $category . ' (' . $min . '-' . $max . ' jam)';
+                }
+            }
+        }
+    }
+    return $category;
+}
+
+function userOrderLaundryDisplayStatus(array $order): string {
+    if (($order['serviceType'] ?? '') !== 'laundry') {
+        return '';
+    }
+    $payment = strtolower((string)($order['paymentStatus'] ?? ''));
+    $total = (float)($order['totalAmount'] ?? 0);
+    if ($payment === 'awaiting_weighing') {
+        return 'Menunggu penimbangan';
+    }
+    if (in_array($payment, ['waiting_payment', 'unpaid'], true) && $total > 0) {
+        return 'Siap dibayar';
+    }
+    if ($payment === 'payment_submitted') {
+        return 'Menunggu konfirmasi pembayaran';
+    }
+    if ($payment === 'paid' || $payment === 'cod') {
+        return match ($order['status'] ?? 'pending') {
+            'accepted' => 'Diterima merchant',
+            'processing', 'delivered' => 'Sedang diproses',
+            'done' => 'Selesai',
+            default => 'Menunggu konfirmasi merchant',
+        };
+    }
+    return 'Menunggu penimbangan';
+}
+
 function userOrderPayload(mysqli $conn, array $row): array {
     $order = merchantOrderPayload($conn, $row);
     $isCatering = ($order['serviceType'] ?? '') === 'catering';
@@ -74,6 +166,16 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'awaitingWeighing' => ($order['serviceType'] ?? '') === 'laundry' &&
             (float)($order['totalAmount'] ?? 0) <= 0 &&
             strtolower((string)($order['paymentStatus'] ?? '')) === 'awaiting_weighing',
+        'readyToPay' => ($order['serviceType'] ?? '') === 'laundry' &&
+            (float)($order['totalAmount'] ?? 0) > 0 &&
+            in_array(strtolower((string)($order['paymentStatus'] ?? '')), ['waiting_payment', 'unpaid'], true),
+        'displayStatusLabel' => ($order['serviceType'] ?? '') === 'laundry'
+            ? userOrderLaundryDisplayStatus($order)
+            : null,
+        'paymentMethodLabel' => userOrderPaymentMethodLabel($order['paymentMethod'] ?? ''),
+        'serviceEstimateLabel' => ($order['serviceType'] ?? '') === 'laundry'
+            ? (string)($order['estimatedTime'] ?? '')
+            : null,
     ];
 }
 
@@ -431,6 +533,8 @@ try {
     if ($isLaundryRequest) {
         $total = 0.0;
         $paymentStatus = 'awaiting_weighing';
+        $firstProductId = (int)($normalizedItems[0]['productId'] ?? 0);
+        $estimatedTime = userOrderLaundryServiceEstimate($conn, $firstProductId, $estimatedTime);
     }
 
     $conn->begin_transaction();

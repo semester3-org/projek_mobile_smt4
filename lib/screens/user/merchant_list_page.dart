@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-
+import '../../core/user_location_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
 import '../profile/notification_list_page.dart';
@@ -48,54 +47,30 @@ class _MerchantListPageState extends State<MerchantListPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _locationUnavailable = false;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _locationUnavailable = false;
+      });
+    }
 
-    final position =
-        widget.showLocationPrompt ? await _resolveLocation() : null;
+    final coords = widget.showLocationPrompt
+        ? await UserLocationService.current()
+        : await UserLocationService.current();
+    if (widget.showLocationPrompt && coords == null && mounted) {
+      setState(() => _locationUnavailable = true);
+    }
     final result = await UserRepository.getMerchants(
       widget.type,
-      latitude: position?.latitude,
-      longitude: position?.longitude,
+      latitude: coords?.latitude,
+      longitude: coords?.longitude,
     );
     if (!mounted) return;
     setState(() {
       _merchants = result.data ?? [];
       _loading = false;
     });
-  }
-
-  Future<Position?> _resolveLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (mounted) setState(() => _locationUnavailable = true);
-        return null;
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (mounted) setState(() => _locationUnavailable = true);
-        return null;
-      }
-
-      return Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      ).timeout(const Duration(seconds: 12));
-    } catch (_) {
-      if (mounted) setState(() => _locationUnavailable = true);
-      return null;
-    }
   }
 
   List<UserMerchant> get _filteredMerchants {
@@ -135,7 +110,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
     return items;
   }
 
-  void _openDetail(UserMerchant merchant) {
+  Future<void> _openDetail(UserMerchant merchant) async {
     if (!merchant.isAvailable) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -148,11 +123,20 @@ class _MerchantListPageState extends State<MerchantListPage> {
       );
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final updated = await Navigator.of(context).push<UserMerchant>(
+      MaterialPageRoute<UserMerchant>(
         builder: (_) => MerchantDetailPage(merchant: merchant),
       ),
     );
+    if (updated != null && mounted) {
+      setState(() {
+        _merchants = _merchants
+            .map((m) => m.id == updated.id ? updated : m)
+            .toList();
+      });
+    } else {
+      _load(silent: true);
+    }
   }
 
   void _openNotifications() {
@@ -350,11 +334,13 @@ class _MerchantCard extends StatelessWidget {
                         ],
                       ),
                     ],
-                    const SizedBox(height: 6),
-                    Text(
-                      merchant.subtitle,
-                      style: const TextStyle(color: UserTheme.muted),
-                    ),
+                    if (merchant.subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        merchant.subtitle,
+                        style: const TextStyle(color: UserTheme.muted),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Wrap(
                       spacing: 8,
@@ -478,31 +464,48 @@ class _DistanceSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        const Text(
-          'Estimasi jarak',
-          style: TextStyle(
-            color: UserTheme.muted,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
+    final hasEta = merchant.hasDistanceEstimate && merchant.eta.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          const Text(
+            'Estimasi jarak',
+            style: TextStyle(
+              color: UserTheme.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        Text(
-          merchant.hasDistanceEstimate
-              ? '${merchant.distanceKm.toStringAsFixed(1)} km'
-              : 'Aktifkan lokasi',
-          textAlign: TextAlign.right,
-          style: TextStyle(
-            color: merchant.hasDistanceEstimate
-                ? UserTheme.primaryDark
-                : UserTheme.muted,
-            fontWeight: FontWeight.w800,
-            fontSize: merchant.hasDistanceEstimate ? 14 : 12,
+          const SizedBox(height: 2),
+          Text(
+            merchant.hasDistanceEstimate
+                ? '${merchant.distanceKm.toStringAsFixed(1)} km'
+                : 'Atur lokasi profil',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: merchant.hasDistanceEstimate
+                  ? UserTheme.primaryDark
+                  : UserTheme.muted,
+              fontWeight: FontWeight.w800,
+              fontSize: merchant.hasDistanceEstimate ? 14 : 12,
+            ),
           ),
-        ),
-      ],
+          if (hasEta) ...[
+            const SizedBox(height: 2),
+            Text(
+              merchant.eta,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: UserTheme.primary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

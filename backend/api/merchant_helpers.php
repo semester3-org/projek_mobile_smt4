@@ -654,11 +654,35 @@ function merchantStatusLabel(string $status): string {
     };
 }
 
-function merchantPaymentStatusLabel(?string $status, ?string $method = null): string {
+function merchantPaymentMethodLabel(?string $method): string {
+    $key = strtolower(trim((string)$method));
+    return match ($key) {
+        'bca' => 'Transfer Bank BCA',
+        'mandiri' => 'Transfer Bank Mandiri',
+        'bni' => 'Transfer Bank BNI',
+        'cimb' => 'Transfer Bank CIMB Niaga',
+        'gopay' => 'GoPay',
+        'ovo' => 'OVO',
+        'dana' => 'DANA',
+        'shopeepay' => 'ShopeePay',
+        'linkaja' => 'LinkAja',
+        'qris' => 'QRIS',
+        'cod', 'cash' => 'Bayar di Tempat (COD)',
+        default => $method !== '' ? ucwords(str_replace('_', ' ', $key)) : 'Belum dipilih',
+    };
+}
+
+function merchantPaymentStatusLabel(?string $status, ?string $method = null, ?float $totalAmount = null, ?string $serviceType = null): string {
     $normalized = strtolower(trim((string)$status));
     $methodNormalized = strtolower(trim((string)$method));
     if (str_contains($methodNormalized, 'cod') || str_contains($methodNormalized, 'cash')) {
         return 'COD';
+    }
+    if (($serviceType ?? '') === 'laundry' &&
+        in_array($normalized, ['waiting_payment', 'unpaid'], true) &&
+        $totalAmount !== null &&
+        $totalAmount > 0) {
+        return 'Siap dibayar user';
     }
     return match ($normalized) {
         'paid', 'payment_submitted' => 'Pembayaran masuk',
@@ -753,6 +777,32 @@ function merchantFinalizeLaundryOrder(
         $updateOrder->execute();
         $updateOrder->close();
 
+        $userId = (string)merchantQueryValue(
+            $conn,
+            'SELECT user_id FROM orders WHERE id = ?',
+            'i',
+            [$orderId]
+        );
+        $orderCode = (string)merchantQueryValue(
+            $conn,
+            'SELECT order_code FROM orders WHERE id = ?',
+            'i',
+            [$orderId]
+        );
+        if ($userId !== '') {
+            $amountText = number_format($totalAmount, 0, ',', '.');
+            merchantCreateNotification(
+                $conn,
+                $userId,
+                'Total laundry sudah ditetapkan',
+                'Pesanan ' . ($orderCode !== '' ? $orderCode : ('#' . $orderId)) .
+                    ' sebesar Rp ' . $amountText . ' siap dibayar. Silakan buka detail pesanan.',
+                'payment',
+                'Bayar sekarang',
+                'order:' . $orderId
+            );
+        }
+
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
@@ -775,7 +825,14 @@ function merchantOrderCanApprove(array $row): bool {
     return in_array($paymentStatus, ['paid', 'payment_submitted'], true);
 }
 
-function merchantNextStatus(string $status): string {
+function merchantNextStatus(string $status, bool $catering = false): string {
+    if ($catering) {
+        return match ($status) {
+            'pending' => 'accepted',
+            'accepted' => 'done',
+            default => 'done',
+        };
+    }
     return match ($status) {
         'pending' => 'accepted',
         'accepted' => 'processing',
@@ -865,7 +922,16 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
         'totalAmount' => (float)($row['total_harga'] ?? 0),
         'paymentMethod' => $row['payment_method'] ?? '',
         'paymentStatus' => $row['payment_status'] ?? '',
-        'paymentStatusLabel' => merchantPaymentStatusLabel($row['payment_status'] ?? null, $row['payment_method'] ?? null),
+        'paymentMethodLabel' => merchantPaymentMethodLabel($row['payment_method'] ?? null),
+        'paymentStatusLabel' => merchantPaymentStatusLabel(
+            $row['payment_status'] ?? null,
+            $row['payment_method'] ?? null,
+            (float)($row['total_harga'] ?? 0),
+            $serviceType
+        ),
+        'serviceEstimateLabel' => $serviceType === 'laundry'
+            ? (string)($row['estimated_time'] ?? '')
+            : '',
         'midtransOrderId' => $row['midtrans_order_id'] ?? null,
         'subscriptionDays' => isset($row['subscription_days']) ? (int)$row['subscription_days'] : null,
         'subscriptionStartDate' => !empty($row['subscription_start_date']) ? date(DATE_ATOM, strtotime($row['subscription_start_date'])) : null,

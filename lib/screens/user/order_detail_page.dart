@@ -224,6 +224,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
         children: [
+          if (order.readyToPay) _ReadyToPayBanner(order: order),
+          if (order.readyToPay) const SizedBox(height: 14),
           if (order.isCateringSubscription)
             _CateringActiveCard(order: order)
           else if (order.isLaundry)
@@ -282,10 +284,12 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                     'Kos Sentra Ruang, Kamar S302\nJl. Melati No. 45, Jakarta Selatan',
                 style: const TextStyle(color: UserTheme.muted, height: 1.35),
               ),
-              if ((order.estimatedTime ?? '').isNotEmpty) ...[
+              if (order.isLaundry &&
+                  (order.serviceEstimateLabel ?? order.estimatedTime ?? '')
+                      .isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
-                  'Estimasi: ${order.estimatedTime}',
+                  'Estimasi layanan: ${order.serviceEstimateLabel ?? order.estimatedTime}',
                   style: const TextStyle(
                     color: UserTheme.primaryDark,
                     fontWeight: FontWeight.w800,
@@ -323,7 +327,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      PaymentMethodHelper.getDisplayName(order.paymentMethod),
+                      order.paymentMethodLabel ??
+                          PaymentMethodHelper.getDisplayName(order.paymentMethod),
                       style: const TextStyle(
                         color: UserTheme.primaryDark,
                         fontWeight: FontWeight.w900,
@@ -348,7 +353,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
             _SubscriptionInfoCard(order: order),
           ],
           const SizedBox(height: 28),
-          if (order.needsOnlinePayment) ...[
+          if (order.readyToPay || order.needsOnlinePayment) ...[
             FilledButton.icon(
               onPressed: _openingPayment ? null : _payWithMidtrans,
               style: FilledButton.styleFrom(
@@ -471,6 +476,48 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       default:
         return 'Pesanan';
     }
+  }
+}
+
+class _ReadyToPayBanner extends StatelessWidget {
+  const _ReadyToPayBanner({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1475C8), Color(0xFF00508F)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Total laundry sudah ditetapkan',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Merchant selesai menimbang. Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran sekarang.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.92),
+              height: 1.4,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -666,7 +713,7 @@ class _OrderProgressBar extends StatelessWidget {
   final String? merchantStatus;
 
   static const _steps = [
-    ('pending', 'Menunggu'),
+    ('pending', 'Penimbangan'),
     ('accepted', 'Diterima'),
     ('processing', 'Diproses'),
     ('delivered', 'Antar'),

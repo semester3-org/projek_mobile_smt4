@@ -31,7 +31,7 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
   String? _error;
   String _status = 'pending';
 
-  static const _statuses = [
+  static const _laundryStatuses = [
     ('pending', 'Pending'),
     ('accepted', 'Diterima'),
     ('processing', 'Diproses'),
@@ -39,28 +39,39 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
     ('done', 'Selesai'),
   ];
 
+  static const _cateringStatuses = [
+    ('pending', 'Pending'),
+    ('accepted', 'Disetujui'),
+    ('done', 'Selesai'),
+  ];
+
+  List<(String, String)> get _statuses =>
+      widget.isLaundry ? _laundryStatuses : _cateringStatuses;
+
   @override
   void initState() {
     super.initState();
     _load();
-    RealtimeService().addEventListener('merchant_order_updated', _load);
+    RealtimeService().addEventListener('merchant_order_updated', _silentRefresh);
     RealtimeService().startMerchantOrdersPolling();
   }
 
   @override
   void dispose() {
-    RealtimeService().removeEventListener('merchant_order_updated', _load);
+    RealtimeService().removeEventListener('merchant_order_updated', _silentRefresh);
     _estimateCtrl.dispose();
     _weightCtrl.dispose();
     _laundryTotalCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getOrderDetail(widget.orderId);
     if (!mounted) return;
     final order = result.data;
@@ -68,10 +79,12 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
       _order = order;
       _status = order?.status ?? 'pending';
       _estimateCtrl.text = order?.estimatedTime ?? '';
-      _error = result.error;
+      if (!silent) _error = result.error;
       _loading = false;
     });
   }
+
+  void _silentRefresh() => _load(silent: true);
 
   Future<void> _saveLaundryTotal() async {
     final order = _order;
@@ -113,12 +126,14 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
     final result = await MerchantRepository.updateOrder(
       id: order.id,
       status: _status,
-      estimatedTime: _estimateCtrl.text.trim(),
     );
     if (!mounted) return;
     setState(() {
       _saving = false;
-      if (result.data != null) _order = result.data;
+      if (result.data != null) {
+        _order = result.data;
+        _status = result.data!.status;
+      }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -186,17 +201,10 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
                   },
                   decoration: _inputDecoration(),
                 ),
-                const SizedBox(height: 18),
-                const _TinyLabel(label: 'ESTIMASI WAKTU'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _estimateCtrl,
-                  decoration: _inputDecoration(
-                    hint: widget.isLaundry
-                        ? 'Contoh: Hari ini 18:00'
-                        : 'Contoh: Langganan 1 bulan',
-                  ),
-                ),
+                if (widget.isLaundry) ...[
+                  const SizedBox(height: 18),
+                  _MerchantLaundryProgressBar(status: _status),
+                ],
               ],
             ),
           ),
@@ -760,6 +768,84 @@ String _formatDate(DateTime? date) {
   if (date == null) return '-';
   String two(int value) => value.toString().padLeft(2, '0');
   return '${two(date.day)}/${two(date.month)}/${date.year}';
+}
+
+class _MerchantLaundryProgressBar extends StatelessWidget {
+  const _MerchantLaundryProgressBar({required this.status});
+
+  final String status;
+
+  static const _steps = [
+    ('pending', 'Menunggu'),
+    ('accepted', 'Diterima'),
+    ('processing', 'Diproses'),
+    ('delivered', 'Antar'),
+    ('done', 'Selesai'),
+  ];
+
+  int get _index {
+    switch (status) {
+      case 'accepted':
+        return 1;
+      case 'processing':
+        return 2;
+      case 'delivered':
+        return 3;
+      case 'done':
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _index;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _TinyLabel(label: 'PROGRES PESANAN'),
+        const SizedBox(height: 10),
+        Row(
+          children: List.generate(_steps.length, (index) {
+            final active = current >= index;
+            return Expanded(
+              child: Container(
+                height: 5,
+                margin: EdgeInsets.only(right: index == _steps.length - 1 ? 0 : 6),
+                decoration: BoxDecoration(
+                  color: active
+                      ? MerchantPalette.primary
+                      : const Color(0xFFE3E9F3),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: _steps
+              .map(
+                (step) => Expanded(
+                  child: Text(
+                    step.$2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: current >= _steps.indexOf(step)
+                          ? MerchantPalette.primary
+                          : MerchantPalette.muted,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
 }
 
 String _subscriptionStatusLabel(String status) {

@@ -294,8 +294,8 @@ sendDashboard([
     'activeBillLabel' => $activeBillLabel,
     'dueDateText' => $dueDateText,
     'billProgress' => $billProgress,
-    'announcementTitle' => 'Pembersihan AC Terjadwal',
-    'announcementSubtitle' => 'Besok, pukul 10:00 WIB',
+    'announcementTitle' => '',
+    'announcementSubtitle' => '',
     'recommendations' => $recommendations,
 ]);
 ?>

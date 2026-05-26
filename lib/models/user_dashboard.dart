@@ -46,8 +46,8 @@ class UserDashboard {
       activeBillLabel: 'Belum ada tagihan aktif',
       dueDateText: '-',
       billProgress: 0,
-      announcementTitle: 'Pembersihan AC Terjadwal',
-      announcementSubtitle: 'Besok, pukul 10:00 WIB',
+      announcementTitle: '',
+      announcementSubtitle: '',
       recommendations: const [
         MerchantMenuItem(
           id: 'rec-1',

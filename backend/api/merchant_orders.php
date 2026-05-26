@@ -58,7 +58,8 @@ try {
         }
 
         if ($action === 'next') {
-            $status = merchantNextStatus($current[0]['status']);
+            $isCatering = strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering';
+            $status = merchantNextStatus($current[0]['status'], $isCatering);
         }
 
         if ($action === 'set_laundry_total') {
@@ -82,7 +83,10 @@ try {
             merchantSendJson(false, null, 'Pembayaran belum masuk. Pesanan non-COD baru bisa di-approve setelah user mengonfirmasi pembayaran.', 400);
         }
 
-        $allowed = ['pending', 'accepted', 'processing', 'delivered', 'done'];
+        $isCateringOrder = strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering';
+        $allowed = $isCateringOrder
+            ? ['pending', 'accepted', 'done']
+            : ['pending', 'accepted', 'processing', 'delivered', 'done'];
         if ($status !== '' && !in_array($status, $allowed, true)) {
             merchantSendJson(false, null, 'Status pesanan tidak valid', 400);
         }

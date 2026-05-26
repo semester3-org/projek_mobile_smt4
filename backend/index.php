@@ -44,6 +44,10 @@ if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
 if ($path === 'api/midtrans')             { require_once __DIR__ . '/api/midtrans.php';            exit; }
 if ($path === 'api/midtrans_notification') { require_once __DIR__ . '/api/midtrans_notification.php'; exit; }
+if ($path === 'api/catering_subscribers') { require_once __DIR__ . '/api/catering_subscribers.php'; exit; }
+if ($path === 'api/transaction_receipts') { require_once __DIR__ . '/api/transaction_receipts.php'; exit; }
+if ($path === 'api/catering_package_categories') { require_once __DIR__ . '/api/catering_package_categories.php'; exit; }
+if ($path === 'api/laundry_service_estimates') { require_once __DIR__ . '/api/laundry_service_estimates.php'; exit; }
 
 // Merchant app endpoints
 if ($path === 'api/merchant_dashboard')     { require_once __DIR__ . '/api/merchant_dashboard.php';     exit; }

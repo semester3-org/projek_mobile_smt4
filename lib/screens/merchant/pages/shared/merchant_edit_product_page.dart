@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../data/repositories/merchant_repository.dart';
+import '../../../../models/laundry_service_estimate.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
 
@@ -34,6 +35,8 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   String _imageUrl = '';
   bool _isActive = true;
   bool _saving = false;
+  List<LaundryServiceEstimate> _estimates = [];
+  String? _selectedEstimate;
 
   bool get _isEdit => widget.product != null;
 
@@ -42,8 +45,15 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     super.initState();
     final product = widget.product;
     _nameCtrl.text = product?.name ?? '';
-    _categoryCtrl.text = product?.category ??
-        (widget.isLaundry ? 'Laundry Kiloan' : 'Paket Bulanan');
+    _categoryCtrl.text = product?.category ?? '';
+    _selectedEstimate = product?.category.isNotEmpty == true
+        ? product!.category
+        : null;
+    if (widget.isLaundry) {
+      _loadEstimates();
+    } else if (_categoryCtrl.text.isEmpty) {
+      _categoryCtrl.text = 'Paket Bulanan';
+    }
     _priceCtrl.text = product == null ? '' : product.price.toStringAsFixed(0);
     _price20Ctrl.text = product?.price20Days != null && product!.price20Days! > 0
         ? product.price20Days!.toStringAsFixed(0)
@@ -52,6 +62,19 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _descriptionCtrl.text = product?.description ?? '';
     _imageUrl = product?.imageUrl ?? '';
     _isActive = product?.isActive ?? true;
+  }
+
+  Future<void> _loadEstimates() async {
+    final result = await MerchantRepository.getLaundryEstimates();
+    if (!mounted) return;
+    final items = (result.data ?? []).where((e) => e.isActive).toList();
+    setState(() {
+      _estimates = items;
+      if (_selectedEstimate == null && items.isNotEmpty) {
+        _selectedEstimate = items.first.serviceName;
+        _categoryCtrl.text = _selectedEstimate!;
+      }
+    });
   }
 
   @override
@@ -97,6 +120,15 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       );
       return;
     }
+    if (widget.isLaundry &&
+        (_selectedEstimate == null || _selectedEstimate!.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pilih estimasi waktu layanan terlebih dahulu'),
+        ),
+      );
+      return;
+    }
     if (!widget.isLaundry && price20 <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -113,7 +145,9 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       description: description,
       price: price,
       price20Days: widget.isLaundry ? null : price20,
-      category: _categoryCtrl.text.trim(),
+      category: widget.isLaundry
+          ? (_selectedEstimate ?? _categoryCtrl.text.trim())
+          : _categoryCtrl.text.trim(),
       unit: widget.isLaundry ? _unitCtrl.text.trim() : '',
       imageUrl: _imageUrl,
       isActive: _isActive,
@@ -226,9 +260,51 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
         const SizedBox(height: 8),
         _Input(controller: _nameCtrl),
         const SizedBox(height: 22),
-        _FieldLabel(widget.isLaundry ? 'Kategori Layanan' : 'Kategori Paket'),
-        const SizedBox(height: 8),
-        _Input(controller: _categoryCtrl),
+        if (widget.isLaundry) ...[
+          const _FieldLabel('Estimasi Waktu Layanan'),
+          const SizedBox(height: 8),
+          if (_estimates.isEmpty)
+            const Text(
+              'Tambahkan estimasi di halaman Kelola Layanan terlebih dahulu.',
+              style: TextStyle(color: MerchantPalette.muted, fontSize: 13),
+            )
+          else
+            DropdownButtonFormField<String>(
+              value: _selectedEstimate != null &&
+                      _estimates.any((e) => e.serviceName == _selectedEstimate)
+                  ? _selectedEstimate
+                  : _estimates.first.serviceName,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFFF7F9FC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              items: _estimates
+                  .map(
+                    (e) => DropdownMenuItem(
+                      value: e.serviceName,
+                      child: Text(
+                        '${e.serviceName} (${e.estimateLabel.isNotEmpty ? e.estimateLabel : '${e.minHours}-${e.maxHours} jam'})',
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _selectedEstimate = value;
+                  _categoryCtrl.text = value;
+                });
+              },
+            ),
+        ] else ...[
+          const _FieldLabel('Kategori Paket'),
+          const SizedBox(height: 8),
+          _Input(controller: _categoryCtrl),
+        ],
         const SizedBox(height: 22),
         if (widget.isLaundry) ...[
           Row(

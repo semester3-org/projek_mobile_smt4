@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/user_repository.dart';
@@ -19,6 +21,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
   List<AppNotification> _notifications = [];
   bool _loading = true;
   String _filter = 'semua';
+  Timer? _clockTimer;
 
   static const _filters = [
     ('semua', 'Semua'),
@@ -31,9 +34,19 @@ class _NotificationListPageState extends State<NotificationListPage> {
   void initState() {
     super.initState();
     _load();
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
     final result = await UserRepository.getNotifications();
     if (!mounted) return;
     setState(() {
@@ -425,6 +438,6 @@ class _NotificationCard extends StatelessWidget {
     if (diff.inDays >= 1) return '${diff.inDays} hari lalu';
     if (diff.inHours >= 1) return '${diff.inHours} jam lalu';
     if (diff.inMinutes >= 1) return '${diff.inMinutes} menit lalu';
-    return 'Baru saja';
+    return '${diff.inSeconds.clamp(1, 59)} detik lalu';
   }
 }

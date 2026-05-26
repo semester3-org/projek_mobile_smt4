@@ -300,7 +300,7 @@ class _NotificationTile extends StatelessWidget {
   String _timeLabel(DateTime time) {
     final local = time.isUtc ? time.toLocal() : time;
     final diff = DateTime.now().difference(local);
-    if (diff.inMinutes < 1) return 'Baru saja';
+    if (diff.inMinutes < 1) return '${diff.inSeconds.clamp(1, 59)} detik lalu';
     if (diff.inHours < 1) return '${diff.inMinutes} menit lalu';
     if (diff.inDays < 1) return '${diff.inHours} jam lalu';
     return '${diff.inDays} hari lalu';

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
+import '../../widgets/merchant_laundry_estimates_panel.dart';
+import '../../widgets/merchant_package_categories_panel.dart';
 import 'merchant_edit_product_page.dart';
 import 'merchant_notifications_page.dart';
 
@@ -94,6 +96,16 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           ),
         ),
         const SizedBox(height: 24),
+        if (widget.isLaundry)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: MerchantLaundryEstimatesPanel(),
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: MerchantPackageCategoriesPanel(),
+          ),
         MerchantCard(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           child: Row(

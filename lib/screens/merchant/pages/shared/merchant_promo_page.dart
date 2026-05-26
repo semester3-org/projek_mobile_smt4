@@ -71,10 +71,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     final usage = _promos.fold<int>(0, (sum, promo) => sum + promo.usedCount);
 
     return MerchantPage(
-      topBar: MerchantTopBar(
+      topBar: const MerchantTopBar(
         title: 'Promo Merchant',
-        actionIcon: Icons.add_circle_outline_rounded,
-        onAction: () => _openForm(),
       ),
       children: [
         Row(

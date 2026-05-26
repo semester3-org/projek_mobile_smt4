@@ -15,7 +15,10 @@ class RealtimeService extends ChangeNotifier {
   // ── Polling State ──────────────────────────────────────────────────────────
   Timer? _orderStatusPolling;
   Timer? _dashboardPolling;
-  bool _isPolling = false;
+  Timer? _merchantOrdersPolling;
+  int _userPollingClients = 0;
+  int _dashboardPollingClients = 0;
+  int _merchantOrdersPollingClients = 0;
 
   // Callback untuk notifikasi update
   final Map<String, List<VoidCallback>> _listeners = {
@@ -53,23 +56,11 @@ class RealtimeService extends ChangeNotifier {
   /// Start polling untuk user order status
   void startUserOrderPolling({
     Duration interval = const Duration(seconds: 5),
-    Duration maxDuration = const Duration(minutes: 10),
   }) {
-    if (_isPolling) return;
-    _isPolling = true;
+    _userPollingClients++;
+    if (_orderStatusPolling != null) return;
 
-    DateTime? startTime;
-
-    _orderStatusPolling?.cancel();
     _orderStatusPolling = Timer.periodic(interval, (timer) async {
-      startTime ??= DateTime.now();
-      
-      // Stop polling setelah max duration
-      if (DateTime.now().difference(startTime!).inSeconds > maxDuration.inSeconds) {
-        stopUserOrderPolling();
-        return;
-      }
-
       try {
         await _pollUserOrders();
       } catch (e) {
@@ -80,9 +71,10 @@ class RealtimeService extends ChangeNotifier {
 
   /// Stop polling untuk user orders
   void stopUserOrderPolling() {
+    if (_userPollingClients > 0) _userPollingClients--;
+    if (_userPollingClients > 0) return;
     _orderStatusPolling?.cancel();
     _orderStatusPolling = null;
-    _isPolling = false;
   }
 
   /// Poll user orders status
@@ -99,9 +91,11 @@ class RealtimeService extends ChangeNotifier {
 
   /// Start polling untuk merchant dashboard
   void startMerchantDashboardPolling({
-    Duration interval = const Duration(seconds: 8),
+    Duration interval = const Duration(seconds: 6),
   }) {
-    _dashboardPolling?.cancel();
+    _dashboardPollingClients++;
+    if (_dashboardPolling != null) return;
+
     _dashboardPolling = Timer.periodic(interval, (timer) async {
       try {
         await _pollMerchantDashboard();
@@ -113,8 +107,36 @@ class RealtimeService extends ChangeNotifier {
 
   /// Stop polling untuk merchant dashboard
   void stopMerchantDashboardPolling() {
+    if (_dashboardPollingClients > 0) _dashboardPollingClients--;
+    if (_dashboardPollingClients > 0) return;
     _dashboardPolling?.cancel();
     _dashboardPolling = null;
+  }
+
+  /// Polling daftar pesanan merchant (tab pesanan & lihat semua).
+  void startMerchantOrdersPolling({
+    Duration interval = const Duration(seconds: 6),
+  }) {
+    _merchantOrdersPollingClients++;
+    if (_merchantOrdersPolling != null) return;
+
+    _merchantOrdersPolling = Timer.periodic(interval, (timer) async {
+      try {
+        final res = await ApiService.get('api/merchant_orders');
+        if (res.success && res.data != null) {
+          _notifyListeners('merchant_order_updated');
+        }
+      } catch (e) {
+        debugPrint('Error polling merchant orders: $e');
+      }
+    });
+  }
+
+  void stopMerchantOrdersPolling() {
+    if (_merchantOrdersPollingClients > 0) _merchantOrdersPollingClients--;
+    if (_merchantOrdersPollingClients > 0) return;
+    _merchantOrdersPolling?.cancel();
+    _merchantOrdersPolling = null;
   }
 
   /// Poll merchant dashboard
@@ -157,6 +179,10 @@ class RealtimeService extends ChangeNotifier {
   void dispose() {
     _orderStatusPolling?.cancel();
     _dashboardPolling?.cancel();
+    _merchantOrdersPolling?.cancel();
+    _userPollingClients = 0;
+    _dashboardPollingClients = 0;
+    _merchantOrdersPollingClients = 0;
     _listeners.clear();
     super.dispose();
   }

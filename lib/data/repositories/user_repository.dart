@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/api_service.dart';
 import '../../models/billing_record.dart';
 import '../../models/notification.dart';
+import '../../models/catering_subscriber.dart';
 import '../../models/order.dart';
 import '../../models/user_dashboard.dart';
 import '../../models/user_merchant.dart';
@@ -292,17 +293,81 @@ class UserRepository {
   }
 
   static Future<RepoResult<Order>> getOrderDetail(String id) async {
+    final res = await ApiService.get(
+      'api/user_orders',
+      queryParams: {'id': id},
+    );
+    if (res.success && res.data != null) {
+      try {
+        return RepoResult.ok(
+          Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+        );
+      } catch (_) {}
+    }
+
     final result = await getOrders();
     if (!result.isSuccess) {
       return RepoResult.fail(result.error ?? 'Gagal memuat pesanan');
     }
-
     for (final order in result.data ?? <Order>[]) {
       if (order.id == id || order.databaseId == id) {
         return RepoResult.ok(order);
       }
     }
     return const RepoResult.fail('Pesanan tidak ditemukan');
+  }
+
+  static Future<RepoResult<Order>> cancelOrder(String orderId) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'cancel_order',
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membatalkan pesanan');
+    }
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status pesanan');
+    }
+  }
+
+  static Future<RepoResult<List<CateringSubscriber>>> getCateringSubscriptions({
+    String status = 'all',
+  }) async {
+    final res = await ApiService.get(
+      'api/catering_subscribers',
+      queryParams: {'status': status},
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat langganan');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((e) => CateringSubscriber.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca langganan: $e');
+    }
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> getTransactionReceipt(
+    String orderId,
+  ) async {
+    final res = await ApiService.post('api/transaction_receipts', {
+      'orderId': orderId,
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat struk');
+    }
+    try {
+      return RepoResult.ok(res.data!['data'] as Map<String, dynamic>);
+    } catch (e) {
+      return RepoResult.fail('Format struk tidak valid: $e');
+    }
   }
 
   static Future<RepoResult<Order>> confirmMerchantPayment(

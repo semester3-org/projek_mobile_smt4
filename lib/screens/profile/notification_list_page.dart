@@ -335,11 +335,15 @@ class _NotificationCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      isNew ? 'Baru\nsaja' : _relativeTime(notification.createdAt),
+                      _relativeTime(notification.createdAt),
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: Color(0xFF91A1BD),
+                      style: TextStyle(
+                        color: isNew
+                            ? UserTheme.primary
+                            : const Color(0xFF91A1BD),
                         fontSize: 12,
+                        fontWeight:
+                            isNew ? FontWeight.w800 : FontWeight.w600,
                       ),
                     ),
                   ],
@@ -416,9 +420,11 @@ class _NotificationCard extends StatelessWidget {
   }
 
   String _relativeTime(DateTime date) {
-    final diff = DateTime.now().difference(date);
-    if (diff.inDays >= 1) return '${diff.inDays} hari\nyang lalu';
-    if (diff.inHours >= 1) return '${diff.inHours} jam\nyang lalu';
-    return 'Baru\nsaja';
+    final local = date.isUtc ? date.toLocal() : date;
+    final diff = DateTime.now().difference(local);
+    if (diff.inDays >= 1) return '${diff.inDays} hari lalu';
+    if (diff.inHours >= 1) return '${diff.inHours} jam lalu';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes} menit lalu';
+    return 'Baru saja';
   }
 }

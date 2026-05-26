@@ -13,6 +13,7 @@ import 'billing_list_page.dart';
 import 'favorite_merchants_page.dart';
 import 'notification_list_page.dart';
 import 'order_history_page.dart';
+import '../user/user_catering_subscriptions_page.dart';
 import 'user_profile_detail_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -283,6 +284,15 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const OrderHistoryPage(),
+                      ),
+                    ),
+                  ),
+                  _ActionTile(
+                    icon: Icons.restaurant_rounded,
+                    label: 'Langganan Catering Saya',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const UserCateringSubscriptionsPage(),
                       ),
                     ),
                   ),

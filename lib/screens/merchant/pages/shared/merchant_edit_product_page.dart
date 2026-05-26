@@ -26,6 +26,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   final _nameCtrl = TextEditingController();
   final _categoryCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
+  final _price20Ctrl = TextEditingController();
   final _unitCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
   final _picker = ImagePicker();
@@ -44,7 +45,10 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _categoryCtrl.text = product?.category ??
         (widget.isLaundry ? 'Laundry Kiloan' : 'Paket Bulanan');
     _priceCtrl.text = product == null ? '' : product.price.toStringAsFixed(0);
-    _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '/bulan');
+    _price20Ctrl.text = product?.price20Days != null && product!.price20Days! > 0
+        ? product.price20Days!.toStringAsFixed(0)
+        : '';
+    _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '');
     _descriptionCtrl.text = product?.description ?? '';
     _imageUrl = product?.imageUrl ?? '';
     _isActive = product?.isActive ?? true;
@@ -55,6 +59,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _nameCtrl.dispose();
     _categoryCtrl.dispose();
     _priceCtrl.dispose();
+    _price20Ctrl.dispose();
     _unitCtrl.dispose();
     _descriptionCtrl.dispose();
     super.dispose();
@@ -81,10 +86,22 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
           _priceCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
         ) ??
         0;
+    final price20 = double.tryParse(
+          _price20Ctrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
+        ) ??
+        0;
 
     if (name.isEmpty || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nama dan harga wajib diisi')),
+      );
+      return;
+    }
+    if (!widget.isLaundry && price20 <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Harga paket 20 hari wajib diisi terpisah dari 30 hari'),
+        ),
       );
       return;
     }
@@ -95,8 +112,9 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       name: name,
       description: description,
       price: price,
+      price20Days: widget.isLaundry ? null : price20,
       category: _categoryCtrl.text.trim(),
-      unit: _unitCtrl.text.trim(),
+      unit: widget.isLaundry ? _unitCtrl.text.trim() : '',
       imageUrl: _imageUrl,
       isActive: _isActive,
     );
@@ -212,38 +230,57 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
         const SizedBox(height: 8),
         _Input(controller: _categoryCtrl),
         const SizedBox(height: 22),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _FieldLabel('Harga (IDR)'),
-                  const SizedBox(height: 8),
-                  _Input(
-                    controller: _priceCtrl,
-                    keyboardType: TextInputType.number,
-                    prefix: 'Rp',
-                  ),
-                ],
+        if (widget.isLaundry) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Harga (IDR)'),
+                    const SizedBox(height: 8),
+                    _Input(
+                      controller: _priceCtrl,
+                      keyboardType: TextInputType.number,
+                      prefix: 'Rp',
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _FieldLabel('Satuan'),
-                  const SizedBox(height: 8),
-                  _Input(controller: _unitCtrl),
-                ],
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Satuan'),
+                    const SizedBox(height: 8),
+                    _Input(controller: _unitCtrl),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ] else ...[
+          const _FieldLabel('Harga Paket 30 Hari (IDR)'),
+          const SizedBox(height: 8),
+          _Input(
+            controller: _priceCtrl,
+            keyboardType: TextInputType.number,
+            prefix: 'Rp',
+          ),
+          const SizedBox(height: 16),
+          const _FieldLabel('Harga Paket 20 Hari (IDR)'),
+          const SizedBox(height: 8),
+          _Input(
+            controller: _price20Ctrl,
+            keyboardType: TextInputType.number,
+            prefix: 'Rp',
+          ),
+        ],
         const SizedBox(height: 22),
-        _FieldLabel(
-            widget.isLaundry ? 'Deskripsi Layanan' : 'Deskripsi Menu dan Lauk'),
+        _FieldLabel(widget.isLaundry
+            ? 'Deskripsi Layanan'
+            : 'Menu, Lauk Pauk & Jadwal Antar'),
         const SizedBox(height: 8),
         _Input(controller: _descriptionCtrl, maxLines: 5),
         const SizedBox(height: 26),

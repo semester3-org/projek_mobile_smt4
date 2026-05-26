@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
+import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
 import '../user/order_detail_page.dart';
@@ -51,6 +52,14 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   void initState() {
     super.initState();
     _loadOrders();
+    RealtimeService().startUserOrderPolling();
+    RealtimeService().addEventListener('order_status_updated', _loadOrders);
+  }
+
+  @override
+  void dispose() {
+    RealtimeService().removeEventListener('order_status_updated', _loadOrders);
+    super.dispose();
   }
 
   Future<void> _loadOrders() async {

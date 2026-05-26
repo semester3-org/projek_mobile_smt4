@@ -18,6 +18,7 @@ class MerchantProfilePage extends StatefulWidget {
 }
 
 class _MerchantProfilePageState extends State<MerchantProfilePage> {
+  final _scrollCtrl = ScrollController();
   final _nameCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -43,6 +44,7 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
 
   @override
   void dispose() {
+    _scrollCtrl.dispose();
     _nameCtrl.dispose();
     _descriptionCtrl.dispose();
     _phoneCtrl.dispose();
@@ -199,6 +201,13 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       await auth.updateDisplayName(result.data!.businessName);
       if (!mounted) return;
       setState(() => _profile = result.data);
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profil merchant berhasil disimpan')),
       );
@@ -215,6 +224,7 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     final profile = _profile;
 
     return MerchantPage(
+      scrollController: _scrollCtrl,
       topBar: MerchantTopBar(
         title: 'Edit Profil Merchant',
         showAvatar: false,

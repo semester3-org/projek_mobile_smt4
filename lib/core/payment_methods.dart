@@ -86,6 +86,17 @@ class PaymentMethodHelper {
         !isCashOnDelivery(method);
   }
 
+  /// Opsi pembayaran untuk form checkout user.
+  static List<String> checkoutOptionKeys({required bool isLaundry}) {
+    const bank = ['bca', 'mandiri', 'bni', 'bank_transfer'];
+    const wallet = ['gopay', 'dana', 'shopeepay', 'ovo'];
+    const other = ['qris'];
+    if (isLaundry) {
+      return ['cod', ...bank, ...wallet, ...other];
+    }
+    return [...bank, ...wallet, ...other];
+  }
+
   /// Get all payment methods grouped by category
   static Map<String, List<String>> getGroupedMethods() {
     final Map<String, List<String>> grouped = {

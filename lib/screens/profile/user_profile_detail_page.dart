@@ -21,9 +21,16 @@ class UserProfileDetailPage extends StatefulWidget {
 }
 
 class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
+  final _scrollCtrl = ScrollController();
   UserProfile? _profile;
   bool _loading = true;
   bool _didLoad = false;
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -62,6 +69,13 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
 
     if (updatedProfile == null || !mounted) return;
     setState(() => _profile = updatedProfile);
+    if (_scrollCtrl.hasClients) {
+      _scrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   Future<void> _openChangePassword() async {
@@ -121,6 +135,7 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
       onRefresh: _loadUserProfile,
       color: UserTheme.primary,
       child: ListView(
+        controller: _scrollCtrl,
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
         children: [
           Container(

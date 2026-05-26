@@ -116,7 +116,7 @@ class OwnerDashboardPage extends StatelessWidget {
             ],
           ),
           const _ActivityTile(
-            color: Color(0xFF2E7D32),
+            color: AppTheme.primaryGreen,
             title: 'Pembayaran Berhasil',
             subtitle: 'Kamar A-12 • Rp 1.500.000',
             time: '1 jam lalu',
@@ -253,7 +253,7 @@ class _MiniStatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            chip('Terisi', '38', const Color(0xFFE8F5E9), AppTheme.primaryGreen),
+            chip('Terisi', '38', const Color(0xFFEAF3FF), AppTheme.primaryGreen),
             const SizedBox(height: 10),
             chip('Kosong', '3', const Color(0xFFE3F2FD), const Color(0xFF1565C0)),
             const SizedBox(height: 10),

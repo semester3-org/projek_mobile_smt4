@@ -61,6 +61,21 @@ try {
             $status = merchantNextStatus($current[0]['status']);
         }
 
+        if ($action === 'set_laundry_total') {
+            $weightKg = (float)($body['weightKg'] ?? 0);
+            $totalAmount = (float)($body['totalAmount'] ?? 0);
+            $orderIdInt = (int)($current[0]['id'] ?? 0);
+            merchantFinalizeLaundryOrder(
+                $conn,
+                $orderIdInt,
+                $merchantId,
+                $weightKg,
+                $totalAmount
+            );
+            $updated = merchantOrderQuery($conn, $merchantId, $id);
+            merchantSendJson(true, $updated[0] ?? $current[0], 'Total laundry berhasil disimpan');
+        }
+
         if ($current[0]['status'] === 'pending' &&
             in_array($status, ['accepted', 'processing', 'delivered', 'done'], true) &&
             empty($current[0]['canApprove'])) {
@@ -108,6 +123,13 @@ try {
         $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $stmt->close();
+
+        $orderIdInt = (int)($current[0]['id'] ?? 0);
+        if ($orderIdInt > 0 &&
+            in_array($status, ['accepted', 'processing', 'delivered', 'done'], true) &&
+            strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering') {
+            merchantActivateCateringSubscription($conn, $orderIdInt);
+        }
 
         $updated = merchantOrderQuery($conn, $merchantId, $id);
         $data = $updated[0] ?? $current[0];

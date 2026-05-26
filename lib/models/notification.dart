@@ -1,3 +1,13 @@
+DateTime _parseNotificationDate(dynamic raw) {
+  if (raw == null) return DateTime.now();
+  if (raw is DateTime) return raw.toLocal();
+  final text = raw.toString().trim();
+  if (text.isEmpty) return DateTime.now();
+  final parsed = DateTime.tryParse(text);
+  if (parsed == null) return DateTime.now();
+  return parsed.isUtc ? parsed.toLocal() : parsed;
+}
+
 /// Model untuk notifikasi user
 class AppNotification {
   final String id;
@@ -29,7 +39,7 @@ class AppNotification {
       message: json['message'] as String? ?? '',
       type: json['type'] as String? ?? 'general',
       status: json['status'] as String? ?? 'baru',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      createdAt: _parseNotificationDate(json['createdAt']),
       actionUrl: json['actionUrl'] as String? ?? json['action_url'] as String?,
       hasAction: json['hasAction'] as bool? ?? false,
       actionButtonText: json['actionButtonText'] as String?,

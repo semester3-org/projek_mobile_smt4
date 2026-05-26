@@ -11,10 +11,12 @@ class MerchantDashboardView extends StatefulWidget {
     super.key,
     required this.isLaundry,
     required this.onViewAllOrders,
+    this.headerExtra,
   });
 
   final bool isLaundry;
   final VoidCallback onViewAllOrders;
+  final Widget? headerExtra;
 
   @override
   State<MerchantDashboardView> createState() => _MerchantDashboardViewState();
@@ -124,6 +126,10 @@ class _MerchantDashboardViewState extends State<MerchantDashboardView> {
             ),
           ),
           const SizedBox(height: 18),
+          if (widget.headerExtra != null) ...[
+            widget.headerExtra!,
+            const SizedBox(height: 18),
+          ],
           Row(
             children: [
               Expanded(

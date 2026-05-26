@@ -7,25 +7,49 @@ class MerchantMenuItem {
     required this.imageUrl,
     this.category = '',
     this.unit = '',
+    this.price20Days,
+    this.price30Days,
   });
 
   final String id;
   final String name;
   final String description;
+  /// Harga paket 30 hari (catering) atau harga layanan (laundry).
   final double price;
   final String imageUrl;
   final String category;
   final String unit;
+  final double? price20Days;
+  final double? price30Days;
+
+  double cateringPriceForDays(int days) {
+    if (days == 20 && price20Days != null && price20Days! > 0) {
+      return price20Days!;
+    }
+    if (days == 30 && price30Days != null && price30Days! > 0) {
+      return price30Days!;
+    }
+    if (days == 30) return price;
+    if (days == 20 && price20Days != null && price20Days! > 0) {
+      return price20Days!;
+    }
+    return price;
+  }
 
   factory MerchantMenuItem.fromJson(Map<String, dynamic> json) {
+    final price30 = (json['price30Days'] as num?)?.toDouble() ??
+        (json['price'] as num?)?.toDouble() ??
+        0;
     return MerchantMenuItem(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      price: (json['price'] as num?)?.toDouble() ?? 0,
+      price: price30,
       imageUrl: json['imageUrl'] as String? ?? '',
       category: json['category'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
+      price20Days: (json['price20Days'] as num?)?.toDouble(),
+      price30Days: price30 > 0 ? price30 : null,
     );
   }
 
@@ -38,6 +62,8 @@ class MerchantMenuItem {
       'imageUrl': imageUrl,
       'category': category,
       'unit': unit,
+      'price20Days': price20Days,
+      'price30Days': price30Days ?? price,
     };
   }
 }
@@ -84,6 +110,9 @@ class UserMerchant {
     required this.priceUnit,
     required this.eta,
     required this.openHours,
+    this.openTime = '',
+    this.closeTime = '',
+    this.isOpenNow = true,
     required this.description,
     required this.phone,
     required this.email,
@@ -109,6 +138,9 @@ class UserMerchant {
   final String priceUnit;
   final String eta;
   final String openHours;
+  final String openTime;
+  final String closeTime;
+  final bool isOpenNow;
   final String description;
   final String phone;
   final String email;
@@ -118,9 +150,9 @@ class UserMerchant {
 
   bool get isAvailable {
     final normalized = status.toLowerCase();
-    return normalized != 'tutup' &&
-        normalized != 'sibuk' &&
-        normalized != 'closed';
+    if (normalized == 'sibuk') return false;
+    if (!isOpenNow) return false;
+    return normalized != 'tutup' && normalized != 'closed';
   }
 
   factory UserMerchant.fromJson(Map<String, dynamic> json) {
@@ -146,6 +178,9 @@ class UserMerchant {
       priceUnit: json['priceUnit'] as String? ?? '',
       eta: json['eta'] as String? ?? '',
       openHours: json['openHours'] as String? ?? '',
+      openTime: json['openTime'] as String? ?? '',
+      closeTime: json['closeTime'] as String? ?? '',
+      isOpenNow: json['isOpenNow'] as bool? ?? true,
       description: json['description'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       email: json['email'] as String? ?? '',
@@ -183,6 +218,9 @@ class UserMerchant {
       priceUnit: priceUnit,
       eta: eta,
       openHours: openHours,
+      openTime: openTime,
+      closeTime: closeTime,
+      isOpenNow: isOpenNow,
       description: description,
       phone: phone,
       email: email,

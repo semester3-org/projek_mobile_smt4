@@ -183,6 +183,7 @@ class MerchantProduct {
     required this.name,
     required this.description,
     required this.price,
+    this.price20Days,
     required this.category,
     required this.unit,
     required this.imageUrl,
@@ -194,6 +195,7 @@ class MerchantProduct {
   final String name;
   final String description;
   final double price;
+  final double? price20Days;
   final String category;
   final String unit;
   final String imageUrl;
@@ -206,6 +208,7 @@ class MerchantProduct {
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0,
+      price20Days: (json['price20Days'] as num?)?.toDouble(),
       category: json['category'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
       imageUrl: json['imageUrl'] as String? ?? '',
@@ -334,6 +337,15 @@ class MerchantProfile {
   }
 }
 
+DateTime _parseMerchantDate(dynamic raw) {
+  if (raw == null) return DateTime.now();
+  final text = raw.toString().trim();
+  if (text.isEmpty) return DateTime.now();
+  final parsed = DateTime.tryParse(text);
+  if (parsed == null) return DateTime.now();
+  return parsed.isUtc ? parsed.toLocal() : parsed;
+}
+
 class MerchantNotification {
   const MerchantNotification({
     required this.id,
@@ -362,12 +374,19 @@ class MerchantNotification {
       message: json['message'] as String? ?? '',
       type: json['type'] as String? ?? 'info',
       status: json['status'] as String? ?? 'dibaca',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-          DateTime.now(),
+      createdAt: _parseMerchantDate(json['createdAt']),
       actionUrl: json['actionUrl'] as String?,
       actionButtonText: json['actionButtonText'] as String?,
     );
   }
 
   bool get isUnread => status != 'dibaca';
+
+  String? get orderIdFromAction {
+    final action = actionUrl ?? '';
+    if (action.startsWith('order:')) {
+      return action.substring('order:'.length);
+    }
+    return null;
+  }
 }

@@ -23,6 +23,26 @@ function userMerchantDefaultImage(string $type): string {
     };
 }
 
+function userMerchantIsOpenNow(?string $openTime, ?string $closeTime): bool {
+    $open = trim((string)$openTime);
+    $close = trim((string)$closeTime);
+    if ($open === '' || $close === '') {
+        return true;
+    }
+    $now = (int)date('G') * 60 + (int)date('i');
+    $openParts = explode(':', $open);
+    $closeParts = explode(':', $close);
+    $openMin = ((int)($openParts[0] ?? 8)) * 60 + (int)($openParts[1] ?? 0);
+    $closeMin = ((int)($closeParts[0] ?? 21)) * 60 + (int)($closeParts[1] ?? 0);
+    if ($openMin === $closeMin) {
+        return true;
+    }
+    if ($closeMin > $openMin) {
+        return $now >= $openMin && $now < $closeMin;
+    }
+    return $now >= $openMin || $now < $closeMin;
+}
+
 function userMerchantFallbackMenu(string $type, string $merchantId): array {
     if ($type === 'laundry') {
         return [
@@ -90,15 +110,26 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     if (empty($rows)) return [];
-    return array_map(fn($row) => [
-        'id' => (string)$row['id'],
-        'name' => $row['nama_produk'],
-        'description' => $row['deskripsi'] ?? '',
-        'price' => (float)$row['harga'],
-        'imageUrl' => $row['image_url'] ?? '',
-        'category' => $row['category'] ?? '',
-        'unit' => $row['unit'] ?? '',
-    ], $rows);
+    return array_map(function ($row) use ($type) {
+        $price30 = (float)($row['harga'] ?? 0);
+        $price20 = isset($row['price_20_days']) ? (float)$row['price_20_days'] : 0;
+        $payload = [
+            'id' => (string)$row['id'],
+            'name' => $row['nama_produk'],
+            'description' => $row['deskripsi'] ?? '',
+            'price' => $price30,
+            'imageUrl' => $row['image_url'] ?? '',
+            'category' => $row['category'] ?? '',
+            'unit' => $row['unit'] ?? '',
+        ];
+        if ($type === 'catering') {
+            $payload['price30Days'] = $price30;
+            if ($price20 > 0) {
+                $payload['price20Days'] = $price20;
+            }
+        }
+        return $payload;
+    }, $rows);
 }
 
 function userMerchantReviews(mysqli $conn, string $merchantId): array {
@@ -169,9 +200,13 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         (float)($row['distance_km'] ?? 0)
     );
     $openHours = trim((string)($row['open_hours'] ?? ''));
+    $openTime = trim((string)($row['open_time'] ?? '08:00'));
+    $closeTime = trim((string)($row['close_time'] ?? '21:00'));
     if ($openHours === '') {
-        $openHours = trim(($row['open_time'] ?? '08:00') . ' - ' . ($row['close_time'] ?? '21:00'));
+        $openHours = trim($openTime . ' - ' . $closeTime);
     }
+    $isInactive = ($row['status'] ?? 'active') === 'inactive';
+    $isOpenNow = !$isInactive && userMerchantIsOpenNow($openTime, $closeTime);
 
     return [
         'id' => $merchantId !== '' ? $merchantId : $placeId,
@@ -185,7 +220,10 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         'reviewCount' => $reviewCount,
         'distanceKm' => $distance,
         'imageUrl' => $row['photo_url'] ?? $row['image_url'] ?? userMerchantDefaultImage($type),
-        'status' => ($row['status'] ?? 'active') === 'inactive' ? 'Tutup' : 'Tersedia',
+        'status' => $isOpenNow ? 'Tersedia' : 'Tutup',
+        'openTime' => $openTime,
+        'closeTime' => $closeTime,
+        'isOpenNow' => $isOpenNow,
         'tags' => $categories,
         'minPrice' => $minPrice,
         'priceUnit' => $type === 'laundry' ? '/kg' : '/bulan',

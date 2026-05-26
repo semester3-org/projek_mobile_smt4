@@ -7,6 +7,7 @@ import '../../core/payment_methods.dart';
 import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
+import '../shared/transaction_receipt_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
@@ -25,6 +26,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   bool _openingPayment = false;
   bool _syncingPayment = false;
   bool _cancellingSubscription = false;
+  bool _cancellingOrder = false;
+  bool _loadingReceipt = false;
 
   @override
   void initState() {
@@ -97,7 +100,13 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       return;
     }
 
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.inAppBrowserView,
+      webViewConfiguration: const WebViewConfiguration(
+        enableJavaScript: true,
+      ),
+    );
     if (!mounted) return;
     if (!launched) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -126,6 +135,45 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
               ? 'Status pembayaran diperbarui'
               : result.error ?? 'Gagal mengecek status pembayaran',
         ),
+      ),
+    );
+  }
+
+  Future<void> _cancelOrder() async {
+    final id = _order.databaseId ?? _order.id;
+    setState(() => _cancellingOrder = true);
+    final result = await UserRepository.cancelOrder(id);
+    if (!mounted) return;
+    setState(() {
+      _cancellingOrder = false;
+      if (result.data != null) _order = result.data!;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? 'Pesanan dibatalkan'
+              : result.error ?? 'Gagal membatalkan pesanan',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReceipt() async {
+    final id = _order.databaseId ?? _order.id;
+    setState(() => _loadingReceipt = true);
+    final result = await UserRepository.getTransactionReceipt(id);
+    if (!mounted) return;
+    setState(() => _loadingReceipt = false);
+    if (!result.isSuccess || result.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Gagal memuat struk')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TransactionReceiptPage(receipt: result.data!),
       ),
     );
   }
@@ -176,7 +224,10 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
         children: [
-          _OrderStatusCard(order: order),
+          if (order.isCateringSubscription)
+            _CateringActiveCard(order: order)
+          else if (order.isLaundry)
+            _OrderStatusCard(order: order),
           const SizedBox(height: 18),
           Row(
             children: [
@@ -346,29 +397,38 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           else
             _PaymentStatusNotice(order: order),
           const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () {},
+          OutlinedButton.icon(
+            onPressed: _loadingReceipt ? null : _openReceipt,
             style: OutlinedButton.styleFrom(
-              foregroundColor: UserTheme.text,
-              side: BorderSide(color: Colors.blueGrey.shade300),
+              foregroundColor: UserTheme.primaryDark,
               padding: const EdgeInsets.symmetric(vertical: 17),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(13),
               ),
             ),
-            child: const Text('Hubungi Admin'),
+            icon: _loadingReceipt
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.receipt_long_outlined),
+            label: Text(_loadingReceipt ? 'Menyiapkan...' : 'Unduh Struk'),
           ),
+          const SizedBox(height: 12),
           if (order.canCancel)
             TextButton(
               onPressed: order.isCateringSubscription
                   ? (_cancellingSubscription ? null : _cancelSubscription)
-                  : () {},
+                  : (_cancellingOrder ? null : _cancelOrder),
               child: Text(
                 order.isCateringSubscription
                     ? (_cancellingSubscription
                         ? 'Membatalkan...'
                         : 'Batalkan Langganan')
-                    : 'Batalkan Pesanan',
+                    : (_cancellingOrder
+                        ? 'Membatalkan...'
+                        : 'Batalkan Pesanan (5 detik)'),
                 style: const TextStyle(
                   color: UserTheme.danger,
                   fontWeight: FontWeight.w800,
@@ -411,6 +471,83 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       default:
         return 'Pesanan';
     }
+  }
+}
+
+class _CateringActiveCard extends StatelessWidget {
+  const _CateringActiveCard({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = order.isCateringSubscription &&
+        !order.isSubscriptionCancellationRequested &&
+        order.status != 'cancelled';
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1475C8), Color(0xFF00508F)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [UserTheme.softShadow(opacity: 0.12)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.verified_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  active ? 'Paket Catering Aktif' : 'Paket Catering',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            order.items.isNotEmpty ? order.items.first.name : 'Langganan catering',
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            order.merchantName,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Periode: ${order.subscriptionStartDate != null ? formatShortDate(order.subscriptionStartDate!) : '-'} — ${order.subscriptionEndDate != null ? formatShortDate(order.subscriptionEndDate!) : '-'}',
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            formatUserCurrency(order.totalAmount),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Pengantaran dimulai sehari setelah pembayaran disetujui merchant.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -488,8 +625,31 @@ class _OrderStatusCard extends StatelessWidget {
               ),
             ],
           ),
+          if (order.awaitingWeighing) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F4FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Total bayar akan ditetapkan merchant setelah cucian selesai ditimbang.',
+                style: TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontSize: 13,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 22),
-          _OrderProgressBar(status: order.status),
+          _OrderProgressBar(
+            status: order.status,
+            merchantStatus: order.merchantStatus,
+          ),
         ],
       ),
     );
@@ -497,27 +657,39 @@ class _OrderStatusCard extends StatelessWidget {
 }
 
 class _OrderProgressBar extends StatelessWidget {
-  const _OrderProgressBar({required this.status});
+  const _OrderProgressBar({
+    required this.status,
+    this.merchantStatus,
+  });
 
   final String status;
+  final String? merchantStatus;
 
   static const _steps = [
     ('pending', 'Menunggu'),
-    ('confirmed', 'Diterima'),
-    ('in_progress', 'Diproses'),
-    ('completed', 'Selesai'),
+    ('accepted', 'Diterima'),
+    ('processing', 'Diproses'),
+    ('delivered', 'Antar'),
+    ('done', 'Selesai'),
   ];
 
   int get _currentIndex {
-    switch (status) {
+    if (status == 'cancelled') return -1;
+    switch ((merchantStatus ?? status).toLowerCase()) {
+      case 'accepted':
+        return 1;
+      case 'processing':
+        return 2;
+      case 'delivered':
+        return 3;
+      case 'done':
+        return 4;
       case 'confirmed':
         return 1;
       case 'in_progress':
         return 2;
       case 'completed':
-        return 3;
-      case 'cancelled':
-        return -1;
+        return 4;
       default:
         return 0;
     }

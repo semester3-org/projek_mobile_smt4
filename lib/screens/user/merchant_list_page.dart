@@ -136,6 +136,18 @@ class _MerchantListPageState extends State<MerchantListPage> {
   }
 
   void _openDetail(UserMerchant merchant) {
+    if (!merchant.isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            merchant.openHours.isNotEmpty
+                ? 'Merchant tutup. Jam operasional: ${merchant.openHours}'
+                : 'Merchant sedang tutup',
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MerchantDetailPage(merchant: merchant),
@@ -235,13 +247,17 @@ class _MerchantCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = _iconForType(merchant.type);
 
+    final closed = !merchant.isAvailable;
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        onTap: onTap,
+        onTap: closed ? null : onTap,
         borderRadius: BorderRadius.circular(24),
-        child: Container(
+        child: Opacity(
+          opacity: closed ? 0.55 : 1,
+          child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
@@ -258,13 +274,37 @@ class _MerchantCard extends StatelessWidget {
                     height: 192,
                     width: double.infinity,
                   ),
-                  Positioned(
-                    top: 14,
-                    right: 14,
-                    child: RatingBadge(
-                      rating: merchant.rating,
+                  if (closed)
+                    Positioned(
+                      top: 14,
+                      right: 14,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC62828),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'TUTUP',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned(
+                      top: 14,
+                      right: 14,
+                      child: RatingBadge(
+                        rating: merchant.rating,
+                      ),
                     ),
-                  ),
                 ],
               ),
               Padding(
@@ -391,7 +431,7 @@ class _MerchantCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 12),
                         FilledButton(
-                          onPressed: onTap,
+                          onPressed: closed ? null : onTap,
                           style: FilledButton.styleFrom(
                             backgroundColor: merchant.isAvailable
                                 ? UserTheme.primaryDark
@@ -413,6 +453,7 @@ class _MerchantCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

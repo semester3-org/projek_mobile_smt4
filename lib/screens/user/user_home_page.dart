@@ -3,10 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
+import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
+import '../../models/catering_subscriber.dart';
 import '../../models/user_dashboard.dart';
+import '../../widgets/catering_subscription_card.dart';
 import '../profile/billing_list_page.dart';
 import '../profile/notification_list_page.dart';
+import 'user_catering_subscriptions_page.dart';
+import 'user_recommendations_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
@@ -27,6 +32,7 @@ class _UserHomePageState extends State<UserHomePage> {
   bool _loading = true;
   bool _didLoad = false;
   StreamSubscription<void>? _dashboardRefreshSub;
+  Timer? _homePollTimer;
 
   @override
   void initState() {
@@ -34,11 +40,18 @@ class _UserHomePageState extends State<UserHomePage> {
     _dashboardRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
       if (mounted) _load();
     });
+    RealtimeService().startUserOrderPolling();
+    RealtimeService().addEventListener('order_status_updated', _load);
+    _homePollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (mounted) _load();
+    });
   }
 
   @override
   void dispose() {
     _dashboardRefreshSub?.cancel();
+    _homePollTimer?.cancel();
+    RealtimeService().removeEventListener('order_status_updated', _load);
     super.dispose();
   }
 
@@ -149,10 +162,18 @@ class _UserHomePageState extends State<UserHomePage> {
                   const SizedBox(height: 22),
                   _AnnouncementCard(dashboard: _dashboard!),
                   const SizedBox(height: 28),
+                  const _HomeCateringSubscriptions(),
+                  const SizedBox(height: 28),
                   UserSectionHeader(
                     title: 'Rekomendasi Menu',
                     actionLabel: 'Lihat Semua',
-                    onAction: () => widget.onSelectTab(2),
+                    onAction: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const UserRecommendationsPage(),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   _RecommendationList(dashboard: _dashboard!),
@@ -515,6 +536,65 @@ class _RecommendationList extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _HomeCateringSubscriptions extends StatefulWidget {
+  const _HomeCateringSubscriptions();
+
+  @override
+  State<_HomeCateringSubscriptions> createState() =>
+      _HomeCateringSubscriptionsState();
+}
+
+class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> {
+  List<CateringSubscriber> _active = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final result =
+        await UserRepository.getCateringSubscriptions(status: 'all');
+    if (!mounted) return;
+    final items = (result.data ?? [])
+        .where((s) =>
+            s.isActive ||
+            s.subscriptionStatus == 'pending' ||
+            s.subscriptionStatus == 'pending_payment')
+        .toList();
+    setState(() => _active = items.take(2).toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_active.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        UserSectionHeader(
+          title: 'Paket Catering Aktif',
+          actionLabel: 'Lihat Semua',
+          onAction: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const UserCateringSubscriptionsPage(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        ..._active.map(
+          (s) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: CateringSubscriptionCard(subscription: s, compact: true),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -87,19 +87,23 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
           .toList();
     });
 
-    final actionUrl = item.actionUrl ?? '';
-    if (!actionUrl.startsWith('order:')) return;
+    final orderId = item.orderIdFromAction;
+    if (orderId == null || orderId.isEmpty) return;
 
+    await _openOrderDetail(orderId);
+    _load();
+  }
+
+  Future<void> _openOrderDetail(String orderId) async {
     final merchantType = AuthScope.of(context).session?.merchantType;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MerchantOrderDetailPage(
           isLaundry: merchantType != MerchantType.catering,
-          orderId: actionUrl.substring('order:'.length),
+          orderId: orderId,
         ),
       ),
     );
-    _load();
   }
 
   List<MerchantNotification> get _visibleItems {
@@ -179,6 +183,9 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
               child: _NotificationTile(
                 item: item,
                 onTap: () => _openNotification(item),
+                onOpenOrder: item.orderIdFromAction == null
+                    ? null
+                    : () => _openOrderDetail(item.orderIdFromAction!),
               ),
             ),
           ),
@@ -193,10 +200,12 @@ class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.item,
     required this.onTap,
+    this.onOpenOrder,
   });
 
   final MerchantNotification item;
   final VoidCallback onTap;
+  final VoidCallback? onOpenOrder;
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +256,17 @@ class _NotificationTile extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (onOpenOrder != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: onOpenOrder,
+                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                      label: const Text('Lihat Detail Pesanan'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -278,7 +298,8 @@ class _NotificationTile extends StatelessWidget {
   }
 
   String _timeLabel(DateTime time) {
-    final diff = DateTime.now().difference(time);
+    final local = time.isUtc ? time.toLocal() : time;
+    final diff = DateTime.now().difference(local);
     if (diff.inMinutes < 1) return 'Baru saja';
     if (diff.inHours < 1) return '${diff.inMinutes} menit lalu';
     if (diff.inDays < 1) return '${diff.inHours} jam lalu';

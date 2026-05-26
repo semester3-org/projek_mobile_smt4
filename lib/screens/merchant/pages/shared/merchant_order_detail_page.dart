@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/payment_methods.dart';
+import '../../../../core/realtime_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
@@ -22,6 +23,8 @@ class MerchantOrderDetailPage extends StatefulWidget {
 
 class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
   final _estimateCtrl = TextEditingController();
+  final _weightCtrl = TextEditingController();
+  final _laundryTotalCtrl = TextEditingController();
   MerchantOrder? _order;
   bool _loading = true;
   bool _saving = false;
@@ -40,11 +43,16 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
   void initState() {
     super.initState();
     _load();
+    RealtimeService().addEventListener('merchant_order_updated', _load);
+    RealtimeService().startMerchantOrdersPolling();
   }
 
   @override
   void dispose() {
+    RealtimeService().removeEventListener('merchant_order_updated', _load);
     _estimateCtrl.dispose();
+    _weightCtrl.dispose();
+    _laundryTotalCtrl.dispose();
     super.dispose();
   }
 
@@ -63,6 +71,39 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
       _error = result.error;
       _loading = false;
     });
+  }
+
+  Future<void> _saveLaundryTotal() async {
+    final order = _order;
+    if (order == null) return;
+    final weight = double.tryParse(_weightCtrl.text.replaceAll(',', '.'));
+    final total = double.tryParse(_laundryTotalCtrl.text.replaceAll(',', '.'));
+    if (weight == null || weight <= 0 || total == null || total <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Isi berat (kg) dan total bayar dengan benar')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    final result = await MerchantRepository.updateOrder(
+      id: order.id,
+      laundryWeightKg: weight,
+      laundryTotalAmount: total,
+    );
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (result.data != null) _order = result.data;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? 'Total laundry disimpan. User dapat melanjutkan pembayaran.'
+              : result.error ?? 'Gagal menyimpan total',
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -193,6 +234,57 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
           ),
           const SizedBox(height: 20),
           _ItemsCard(order: order, isLaundry: widget.isLaundry),
+          if (widget.isLaundry &&
+              (order.paymentStatus.toLowerCase() == 'awaiting_weighing' ||
+                  order.totalAmount <= 0)) ...[
+            const SizedBox(height: 20),
+            MerchantCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _CardTitle(
+                    icon: Icons.scale_rounded,
+                    title: 'Timbang & Total Bayar',
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Setelah cucian selesai, masukkan berat aktual (kg) dan total yang harus dibayar user.',
+                    style: TextStyle(
+                      color: MerchantPalette.muted,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const _TinyLabel(label: 'BERAT (KG)'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _weightCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _inputDecoration(hint: 'Contoh: 3.5'),
+                  ),
+                  const SizedBox(height: 14),
+                  const _TinyLabel(label: 'TOTAL BAYAR (RP)'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _laundryTotalCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _inputDecoration(hint: 'Contoh: 52500'),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _saveLaundryTotal,
+                      child: Text(_saving ? 'Menyimpan...' : 'Simpan Total'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (order.isCateringSubscription) ...[
             const SizedBox(height: 20),
             _SubscriptionCard(order: order),

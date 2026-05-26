@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/realtime_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
@@ -36,10 +37,16 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
   void initState() {
     super.initState();
     _load();
+    RealtimeService().startMerchantOrdersPolling();
+    RealtimeService().addEventListener('merchant_order_updated', _load);
+    RealtimeService().addEventListener('dashboard_updated', _load);
   }
 
   @override
   void dispose() {
+    RealtimeService().removeEventListener('merchant_order_updated', _load);
+    RealtimeService().removeEventListener('dashboard_updated', _load);
+    RealtimeService().stopMerchantOrdersPolling();
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();

@@ -62,6 +62,8 @@ class Order {
   final String? subscriptionStatus;
   final DateTime? cancellationRequestedAt;
   final bool canCancel;
+  final String? merchantStatus;
+  final bool awaitingWeighing;
 
   Order({
     required this.id,
@@ -88,6 +90,8 @@ class Order {
     this.subscriptionStatus,
     this.cancellationRequestedAt,
     this.canCancel = true,
+    this.merchantStatus,
+    this.awaitingWeighing = false,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -125,6 +129,8 @@ class Order {
       cancellationRequestedAt:
           DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
       canCancel: json['canCancel'] as bool? ?? true,
+      merchantStatus: json['merchantStatus'] as String?,
+      awaitingWeighing: json['awaitingWeighing'] as bool? ?? false,
     );
   }
 
@@ -192,12 +198,15 @@ class Order {
 
   bool get needsOnlinePayment {
     final payment = (paymentStatus ?? '').toLowerCase();
-    return !isCashOnDelivery &&
+    return !awaitingWeighing &&
+        !isCashOnDelivery &&
         payment != 'paid' &&
         payment != 'payment_submitted' &&
         payment != 'cod' &&
         payment != 'cancelled';
   }
+
+  bool get isLaundry => service == 'laundry';
 
   bool get isPaid {
     final payment = (paymentStatus ?? '').toLowerCase();

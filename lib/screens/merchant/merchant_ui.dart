@@ -173,6 +173,7 @@ class MerchantPage extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(24, 20, 24, 24),
     this.floatingActionButton,
     this.bottomBar,
+    this.scrollController,
   });
 
   final Widget? topBar;
@@ -180,6 +181,7 @@ class MerchantPage extends StatelessWidget {
   final EdgeInsets padding;
   final Widget? floatingActionButton;
   final Widget? bottomBar;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +195,7 @@ class MerchantPage extends StatelessWidget {
             if (topBar != null) topBar!,
             Expanded(
               child: SingleChildScrollView(
+                controller: scrollController,
                 padding: padding,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

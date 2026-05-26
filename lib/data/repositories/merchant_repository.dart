@@ -1,4 +1,7 @@
 import '../../core/api_service.dart';
+import '../../models/catering_package_category.dart';
+import '../../models/catering_subscriber.dart';
+import '../../models/laundry_service_estimate.dart';
 import '../../models/merchant_models.dart';
 import 'kos_repository.dart' show RepoResult;
 
@@ -66,12 +69,18 @@ class MerchantRepository {
     String? status,
     String? estimatedTime,
     bool nextStatus = false,
+    double? laundryWeightKg,
+    double? laundryTotalAmount,
   }) async {
     final res = await ApiService.put('api/merchant_orders', {
       'id': id,
       if (status != null) 'status': status,
       if (estimatedTime != null) 'estimatedTime': estimatedTime,
       if (nextStatus) 'action': 'next',
+      if (laundryWeightKg != null && laundryTotalAmount != null)
+        'action': 'set_laundry_total',
+      if (laundryWeightKg != null) 'weightKg': laundryWeightKg,
+      if (laundryTotalAmount != null) 'totalAmount': laundryTotalAmount,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui pesanan');
@@ -105,6 +114,7 @@ class MerchantRepository {
     required String name,
     required String description,
     required double price,
+    double? price20Days,
     required String category,
     required String unit,
     required String imageUrl,
@@ -115,6 +125,7 @@ class MerchantRepository {
       'name': name,
       'description': description,
       'price': price,
+      if (price20Days != null && price20Days > 0) 'price20Days': price20Days,
       'category': category,
       'unit': unit,
       'imageUrl': imageUrl,
@@ -307,5 +318,141 @@ class MerchantRepository {
     final result = await getNotifications();
     return (result.data ?? const <MerchantNotification>[])
         .any((item) => item.isUnread);
+  }
+
+  static Future<RepoResult<List<CateringSubscriber>>> getCateringSubscribers({
+    String status = 'all',
+  }) async {
+    final res = await ApiService.get(
+      'api/catering_subscribers',
+      queryParams: {'status': status},
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat pelanggan');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((e) => CateringSubscriber.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pelanggan: $e');
+    }
+  }
+
+  static Future<RepoResult<List<CateringPackageCategory>>>
+      getPackageCategories() async {
+    final res = await ApiService.get('api/catering_package_categories');
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat kategori');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((e) =>
+              CateringPackageCategory.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca kategori: $e');
+    }
+  }
+
+  static Future<RepoResult<CateringPackageCategory>> savePackageCategory({
+    String? id,
+    required String categoryName,
+    required String description,
+    bool isActive = true,
+  }) async {
+    final payload = {
+      if (id != null && id.isNotEmpty) 'id': id,
+      'categoryName': categoryName,
+      'description': description,
+      'isActive': isActive,
+    };
+    final res = id == null || id.isEmpty
+        ? await ApiService.post('api/catering_package_categories', payload)
+        : await ApiService.put('api/catering_package_categories', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menyimpan kategori');
+    }
+    return RepoResult.ok(
+      CateringPackageCategory(
+        id: res.data!['data']['id'] as String? ?? id ?? '',
+        categoryName: categoryName,
+        description: description,
+        isActive: isActive,
+      ),
+    );
+  }
+
+  static Future<RepoResult<bool>> deletePackageCategory(String id) async {
+    final res = await ApiService.delete(
+      'api/catering_package_categories',
+      queryParams: {'id': id},
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menghapus kategori');
+    }
+    return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<List<LaundryServiceEstimate>>>
+      getLaundryEstimates() async {
+    final res = await ApiService.get('api/laundry_service_estimates');
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat estimasi');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((e) =>
+              LaundryServiceEstimate.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca estimasi: $e');
+    }
+  }
+
+  static Future<RepoResult<LaundryServiceEstimate>> saveLaundryEstimate({
+    String? id,
+    required String serviceName,
+    required int minHours,
+    required int maxHours,
+    bool isActive = true,
+  }) async {
+    final payload = {
+      if (id != null && id.isNotEmpty) 'id': id,
+      'serviceName': serviceName,
+      'minHours': minHours,
+      'maxHours': maxHours,
+      'isActive': isActive,
+    };
+    final res = id == null || id.isEmpty
+        ? await ApiService.post('api/laundry_service_estimates', payload)
+        : await ApiService.put('api/laundry_service_estimates', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menyimpan estimasi');
+    }
+    return RepoResult.ok(
+      LaundryServiceEstimate(
+        id: res.data!['data']['id'] as String? ?? id ?? '',
+        serviceName: serviceName,
+        minHours: minHours,
+        maxHours: maxHours,
+        estimateLabel: '',
+        isActive: isActive,
+      ),
+    );
+  }
+
+  static Future<RepoResult<bool>> deleteLaundryEstimate(String id) async {
+    final res = await ApiService.delete(
+      'api/laundry_service_estimates',
+      queryParams: {'id': id},
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menghapus estimasi');
+    }
+    return const RepoResult.ok(true);
   }
 }

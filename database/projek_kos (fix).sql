@@ -74,6 +74,33 @@ CREATE TABLE `catering_places` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `catering_package_categories`
+--
+
+CREATE TABLE `catering_package_categories` (
+  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `scope` enum('global','merchant') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'merchant',
+  `category_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `is_active` tinyint(1) DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `catering_package_categories`
+--
+
+INSERT INTO `catering_package_categories` (`id`, `merchant_id`, `created_by`, `scope`, `category_name`, `description`, `is_active`, `created_at`, `updated_at`) VALUES
+('catpkg-hemat', NULL, NULL, 'global', 'Paket Hemat', 'Kategori paket standar dengan menu harian terjangkau.', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('catpkg-premium', NULL, NULL, 'global', 'Paket Premium', 'Kategori paket dengan variasi lauk lebih lengkap.', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('catpkg-diet', NULL, NULL, 'global', 'Paket Diet Sehat', 'Kategori paket rendah kalori dan tinggi protein.', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `facilities`
 --
 
@@ -237,6 +264,21 @@ CREATE TABLE `merchants` (
 INSERT INTO `merchants` (`id`, `user_id`, `business_name`, `merchant_type`, `phone`, `address`, `created_at`, `updated_at`) VALUES
 ('5adcab75-c594-4ad0-bd0d-9ae9b1b9f345', '7d8955c0-ef78-47f8-83c7-0e172804d5b0', 'catering1', 'catering', NULL, NULL, '2026-05-18 14:20:15', '2026-05-18 14:20:15'),
 ('c85dc179-0049-4159-a9b1-cf9bdd2bf5de', 'c5c022ca-34a9-4d16-a3ce-cc7c0f3e2e25', 'laundry1', 'laundry', NULL, NULL, '2026-05-18 14:06:42', '2026-05-18 14:06:42');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_favorite_merchants`
+--
+
+CREATE TABLE `user_favorite_merchants` (
+  `id` bigint UNSIGNED NOT NULL,
+  `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `merchant_type` enum('laundry','catering') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -533,6 +575,24 @@ CREATE TABLE `order_items` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `merchant_reviews`
+--
+
+CREATE TABLE `merchant_reviews` (
+  `id` bigint UNSIGNED NOT NULL,
+  `merchant_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `product_id` bigint UNSIGNED DEFAULT NULL,
+  `rating` tinyint UNSIGNED NOT NULL,
+  `comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `password_reset_tokens`
 --
 
@@ -554,6 +614,7 @@ CREATE TABLE `products` (
   `nama_produk` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `harga` decimal(14,2) NOT NULL,
   `deskripsi` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `package_delivery_type` enum('full_day','weekday') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -870,6 +931,16 @@ ALTER TABLE `catering_places`
   ADD KEY `idx_catering_merchant_id` (`merchant_id`);
 
 --
+-- Indexes for table `catering_package_categories`
+--
+ALTER TABLE `catering_package_categories`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_scope_category` (`scope`,`merchant_id`,`category_name`),
+  ADD KEY `idx_catering_package_categories_merchant` (`merchant_id`),
+  ADD KEY `idx_catering_package_categories_created_by` (`created_by`),
+  ADD KEY `idx_catering_package_categories_scope` (`scope`);
+
+--
 -- Indexes for table `facilities`
 --
 ALTER TABLE `facilities`
@@ -927,6 +998,16 @@ ALTER TABLE `laundry_places`
 ALTER TABLE `merchants`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_merchants_user_id` (`user_id`);
+
+--
+-- Indexes for table `user_favorite_merchants`
+--
+ALTER TABLE `user_favorite_merchants`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_user_favorite_merchant` (`user_id`,`merchant_id`,`merchant_type`),
+  ADD KEY `idx_user_favorite_merchants_user` (`user_id`),
+  ADD KEY `idx_user_favorite_merchants_merchant` (`merchant_id`),
+  ADD KEY `idx_user_favorite_merchants_type` (`merchant_type`);
 
 --
 -- Indexes for table `password_resets`
@@ -1044,6 +1125,16 @@ ALTER TABLE `order_items`
   ADD KEY `order_items_product_id_foreign` (`product_id`);
 
 --
+-- Indexes for table `merchant_reviews`
+--
+ALTER TABLE `merchant_reviews`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_merchant_reviews_merchant` (`merchant_id`),
+  ADD KEY `idx_merchant_reviews_user` (`user_id`),
+  ADD KEY `idx_merchant_reviews_product` (`product_id`),
+  ADD KEY `idx_merchant_reviews_deleted` (`deleted_at`);
+
+--
 -- Indexes for table `password_reset_tokens`
 --
 ALTER TABLE `password_reset_tokens`
@@ -1085,6 +1176,12 @@ ALTER TABLE `kos_facilities`
 --
 ALTER TABLE `kos_images`
   MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+
+--
+-- AUTO_INCREMENT for table `user_favorite_merchants`
+--
+ALTER TABLE `user_favorite_merchants`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `password_resets`
@@ -1142,6 +1239,12 @@ ALTER TABLE `order_items`
   MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `merchant_reviews`
+--
+ALTER TABLE `merchant_reviews`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `products`
 --
 ALTER TABLE `products`
@@ -1162,6 +1265,13 @@ ALTER TABLE `cafe_places`
 --
 ALTER TABLE `catering_places`
   ADD CONSTRAINT `fk_catering_places_merchant` FOREIGN KEY (`merchant_id`) REFERENCES `merchants` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `catering_package_categories`
+--
+ALTER TABLE `catering_package_categories`
+  ADD CONSTRAINT `fk_catering_package_categories_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_catering_package_categories_merchant` FOREIGN KEY (`merchant_id`) REFERENCES `merchants` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `facilities`
@@ -1205,6 +1315,21 @@ ALTER TABLE `laundry_places`
 --
 ALTER TABLE `merchants`
   ADD CONSTRAINT `fk_merchants_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `merchant_reviews`
+--
+ALTER TABLE `merchant_reviews`
+  ADD CONSTRAINT `fk_merchant_reviews_merchant` FOREIGN KEY (`merchant_id`) REFERENCES `merchants` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_merchant_reviews_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_merchant_reviews_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `user_favorite_merchants`
+--
+ALTER TABLE `user_favorite_merchants`
+  ADD CONSTRAINT `fk_user_favorite_merchants_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_user_favorite_merchants_merchant` FOREIGN KEY (`merchant_id`) REFERENCES `merchants` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `password_resets`

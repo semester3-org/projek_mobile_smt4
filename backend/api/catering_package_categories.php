@@ -24,8 +24,8 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $conn->prepare("
             SELECT * FROM catering_package_categories
-            WHERE merchant_id = ?
-            ORDER BY is_active DESC, category_name ASC
+            WHERE merchant_id = ? OR scope = 'global' OR merchant_id IS NULL
+            ORDER BY is_active DESC, scope ASC, category_name ASC
         ");
         $stmt->bind_param('s', $merchantId);
         $stmt->execute();
@@ -36,6 +36,8 @@ try {
             'categoryName' => $r['category_name'],
             'description' => $r['description'] ?? '',
             'isActive' => (int)($r['is_active'] ?? 1) === 1,
+            'scope' => $r['scope'] ?? 'merchant',
+            'createdBy' => $r['created_by'] ?? '',
         ], $rows);
         merchantSendJson(true, $data, 'Kategori paket berhasil dimuat');
     }
@@ -52,10 +54,11 @@ try {
         }
         $id = merchantUuid();
         $stmt = $conn->prepare("
-            INSERT INTO catering_package_categories (id, merchant_id, category_name, description, is_active)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO catering_package_categories (id, merchant_id, created_by, scope, category_name, description, is_active)
+            VALUES (?, ?, ?, 'merchant', ?, ?, ?)
         ");
-        $stmt->bind_param('ssssi', $id, $merchantId, $name, $description, $isActive);
+        $userId = (string)($payload['sub'] ?? '');
+        $stmt->bind_param('sssssi', $id, $merchantId, $userId, $name, $description, $isActive);
         $stmt->execute();
         $stmt->close();
         merchantSendJson(true, ['id' => $id], 'Kategori berhasil ditambahkan');

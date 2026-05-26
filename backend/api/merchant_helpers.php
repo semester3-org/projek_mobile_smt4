@@ -42,6 +42,30 @@ function merchantColumnExists(mysqli $conn, string $table, string $column): bool
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function merchantConstraintExists(mysqli $conn, string $table, string $constraint): bool {
+    $stmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM information_schema.table_constraints WHERE table_schema = DATABASE() AND table_name = ? AND constraint_name = ?'
+    );
+    if (!$stmt) return false;
+    $stmt->bind_param('ss', $table, $constraint);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
+function merchantAddForeignKey(mysqli $conn, string $table, string $constraint, string $definition): void {
+    if (!merchantTableExists($conn, $table) || merchantConstraintExists($conn, $table, $constraint)) {
+        return;
+    }
+
+    try {
+        @$conn->query("ALTER TABLE `$table` ADD CONSTRAINT `$constraint` $definition");
+    } catch (Throwable $e) {
+        // Existing installs may contain older data; schema setup should keep the app usable.
+    }
+}
+
 function merchantUuid(): string {
     return sprintf(
         '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
@@ -147,6 +171,7 @@ function merchantEnsureSchema(mysqli $conn): void {
 
     if (merchantTableExists($conn, 'products')) {
         merchantAddColumn($conn, 'products', 'price_20_days', "`price_20_days` DECIMAL(14,2) DEFAULT NULL");
+        merchantAddColumn($conn, 'products', 'package_delivery_type', "`package_delivery_type` ENUM('full_day','weekday') DEFAULT NULL");
     }
 
     if (merchantTableExists($conn, 'orders')) {
@@ -256,14 +281,36 @@ function merchantEnsureSchema(mysqli $conn): void {
                 product_id BIGINT UNSIGNED DEFAULT NULL,
                 rating TINYINT UNSIGNED NOT NULL,
                 comment TEXT DEFAULT NULL,
+                deleted_at TIMESTAMP NULL DEFAULT NULL,
                 created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
                 KEY idx_merchant_reviews_merchant (merchant_id),
-                KEY idx_merchant_reviews_user (user_id)
+                KEY idx_merchant_reviews_user (user_id),
+                KEY idx_merchant_reviews_product (product_id),
+                KEY idx_merchant_reviews_deleted (deleted_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     }
+    merchantAddColumn($conn, 'merchant_reviews', 'deleted_at', "`deleted_at` TIMESTAMP NULL DEFAULT NULL");
+    merchantAddForeignKey(
+        $conn,
+        'merchant_reviews',
+        'fk_merchant_reviews_merchant',
+        'FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE'
+    );
+    merchantAddForeignKey(
+        $conn,
+        'merchant_reviews',
+        'fk_merchant_reviews_user',
+        'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE'
+    );
+    merchantAddForeignKey(
+        $conn,
+        'merchant_reviews',
+        'fk_merchant_reviews_product',
+        'FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL'
+    );
 
     if (merchantTableExists($conn, 'app_notifications')) {
         merchantAddColumn($conn, 'app_notifications', 'type', "`type` VARCHAR(30) DEFAULT NULL");
@@ -283,14 +330,47 @@ function merchantEnsureSchema(mysqli $conn): void {
         $conn->query("
             CREATE TABLE catering_package_categories (
                 id VARCHAR(36) PRIMARY KEY,
-                merchant_id VARCHAR(36) NOT NULL,
+                merchant_id VARCHAR(36) DEFAULT NULL,
+                created_by VARCHAR(36) DEFAULT NULL,
+                scope ENUM('global','merchant') DEFAULT 'merchant',
                 category_name VARCHAR(100) NOT NULL,
                 description TEXT,
                 is_active TINYINT(1) DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_merchant_category (merchant_id, category_name)
+                UNIQUE KEY unique_scope_category (scope, merchant_id, category_name),
+                KEY idx_catering_package_categories_merchant (merchant_id),
+                KEY idx_catering_package_categories_created_by (created_by),
+                KEY idx_catering_package_categories_scope (scope),
+                CONSTRAINT fk_catering_package_categories_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE SET NULL,
+                CONSTRAINT fk_catering_package_categories_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+    merchantAddColumn($conn, 'catering_package_categories', 'created_by', "`created_by` VARCHAR(36) DEFAULT NULL");
+    merchantAddColumn($conn, 'catering_package_categories', 'scope', "`scope` ENUM('global','merchant') DEFAULT 'merchant'");
+
+    if (merchantTableExists($conn, 'catering_package_categories')) {
+        $conn->query("ALTER TABLE catering_package_categories MODIFY merchant_id VARCHAR(36) DEFAULT NULL");
+        merchantAddForeignKey(
+            $conn,
+            'catering_package_categories',
+            'fk_catering_package_categories_merchant',
+            'FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE SET NULL'
+        );
+        merchantAddForeignKey(
+            $conn,
+            'catering_package_categories',
+            'fk_catering_package_categories_created_by',
+            'FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL'
+        );
+        $conn->query("
+            INSERT IGNORE INTO catering_package_categories
+                (id, merchant_id, created_by, scope, category_name, description, is_active, created_at, updated_at)
+            VALUES
+                ('catpkg-hemat', NULL, NULL, 'global', 'Paket Hemat', 'Kategori paket standar dengan menu harian terjangkau.', 1, NOW(), NOW()),
+                ('catpkg-premium', NULL, NULL, 'global', 'Paket Premium', 'Kategori paket dengan variasi lauk lebih lengkap.', 1, NOW(), NOW()),
+                ('catpkg-diet', NULL, NULL, 'global', 'Paket Diet Sehat', 'Kategori paket rendah kalori dan tinggi protein.', 1, NOW(), NOW())
         ");
     }
 
@@ -327,6 +407,24 @@ function merchantEnsureSchema(mysqli $conn): void {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY unique_merchant_day (merchant_id, day_of_week)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+
+    if (!merchantTableExists($conn, 'user_favorite_merchants')) {
+        $conn->query("
+            CREATE TABLE user_favorite_merchants (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                user_id VARCHAR(36) NOT NULL,
+                merchant_id VARCHAR(36) NOT NULL,
+                merchant_type ENUM('laundry','catering') NOT NULL,
+                created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY unique_user_favorite_merchant (user_id, merchant_id, merchant_type),
+                KEY idx_user_favorite_merchants_user (user_id),
+                KEY idx_user_favorite_merchants_merchant (merchant_id),
+                KEY idx_user_favorite_merchants_type (merchant_type)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     }
@@ -849,16 +947,14 @@ function merchantProductPayload(array $row): array {
         'name' => $row['nama_produk'] ?? $row['name'] ?? '',
         'description' => $row['deskripsi'] ?? $row['description'] ?? '',
         'price' => (float)($row['harga'] ?? $row['price'] ?? 0),
+        'price20Days' => isset($row['price_20_days']) ? (float)$row['price_20_days'] : null,
         'category' => $row['category'] ?? '',
         'unit' => $row['unit'] ?? '',
         'imageUrl' => $row['image_url'] ?? $row['imageUrl'] ?? '',
         'isActive' => (int)($row['is_active'] ?? 1) === 1,
         'serviceType' => $row['service_type'] ?? '',
+        'packageDeliveryType' => $row['package_delivery_type'] ?? null,
     ];
-    if (isset($row['price_20_days']) && (float)$row['price_20_days'] > 0) {
-        $payload['price20Days'] = (float)$row['price_20_days'];
-        $payload['price30Days'] = (float)($row['harga'] ?? 0);
-    }
     return $payload;
 }
 
@@ -1031,7 +1127,7 @@ function merchantRatingSummary(mysqli $conn, string $merchantId): array {
     if (!merchantTableExists($conn, 'merchant_reviews')) {
         return ['rating' => 0.0, 'reviewCount' => 0];
     }
-    $stmt = $conn->prepare("SELECT AVG(rating) AS rating, COUNT(*) AS total FROM merchant_reviews WHERE merchant_id = ?");
+    $stmt = $conn->prepare("SELECT AVG(rating) AS rating, COUNT(*) AS total FROM merchant_reviews WHERE merchant_id = ? AND deleted_at IS NULL");
     if (!$stmt) return ['rating' => 0.0, 'reviewCount' => 0];
     $stmt->bind_param('s', $merchantId);
     $stmt->execute();

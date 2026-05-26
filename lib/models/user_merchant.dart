@@ -9,21 +9,28 @@ class MerchantMenuItem {
     this.unit = '',
     this.price20Days,
     this.price30Days,
+    this.packageDeliveryType,
   });
 
   final String id;
   final String name;
   final String description;
-  /// Harga paket 30 hari (catering) atau harga layanan (laundry).
+
+  /// Harga Full Day (catering) atau harga layanan (laundry).
   final double price;
   final String imageUrl;
   final String category;
   final String unit;
+
+  /// Harga Weekday: dikirim Senin-Jumat, weekend libur.
   final double? price20Days;
   final double? price30Days;
+  final String? packageDeliveryType;
+
+  bool get hasWeekdayPrice => price20Days != null && price20Days! > 0;
 
   double cateringPriceForDays(int days) {
-    if (days == 20 && price20Days != null && price20Days! > 0) {
+    if (days == 20 && hasWeekdayPrice) {
       return price20Days!;
     }
     if (days == 30 && price30Days != null && price30Days! > 0) {
@@ -50,6 +57,7 @@ class MerchantMenuItem {
       unit: json['unit'] as String? ?? '',
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       price30Days: price30 > 0 ? price30 : null,
+      packageDeliveryType: json['packageDeliveryType'] as String?,
     );
   }
 
@@ -64,29 +72,96 @@ class MerchantMenuItem {
       'unit': unit,
       'price20Days': price20Days,
       'price30Days': price30Days ?? price,
+      'packageDeliveryType': packageDeliveryType,
     };
   }
 }
 
 class MerchantReview {
   const MerchantReview({
+    this.id = '',
+    this.productId = '',
+    this.productName = '',
+    this.userId = '',
     required this.reviewer,
     required this.rating,
     required this.comment,
     required this.timeLabel,
+    this.createdAt = '',
+    this.updatedAt = '',
+    this.deletedAt = '',
+    this.isDeleted = false,
   });
 
+  final String id;
+  final String productId;
+  final String productName;
+  final String userId;
   final String reviewer;
   final double rating;
   final String comment;
   final String timeLabel;
+  final String createdAt;
+  final String updatedAt;
+  final String deletedAt;
+  final bool isDeleted;
 
   factory MerchantReview.fromJson(Map<String, dynamic> json) {
     return MerchantReview(
+      id: json['id'] as String? ?? '',
+      productId: json['productId'] as String? ?? '',
+      productName: json['productName'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       reviewer: json['reviewer'] as String? ?? '',
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       comment: json['comment'] as String? ?? '',
       timeLabel: json['timeLabel'] as String? ?? '',
+      createdAt: json['createdAt'] as String? ?? '',
+      updatedAt: json['updatedAt'] as String? ?? '',
+      deletedAt: json['deletedAt'] as String? ?? '',
+      isDeleted: json['isDeleted'] as bool? ?? false,
+    );
+  }
+}
+
+class ReviewableProduct {
+  const ReviewableProduct({
+    required this.id,
+    required this.name,
+  });
+
+  final String id;
+  final String name;
+
+  factory ReviewableProduct.fromJson(Map<String, dynamic> json) {
+    return ReviewableProduct(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Produk',
+    );
+  }
+}
+
+class UserMerchantReviewState {
+  const UserMerchantReviewState({
+    required this.reviewableProducts,
+    required this.myReviews,
+  });
+
+  final List<ReviewableProduct> reviewableProducts;
+  final List<MerchantReview> myReviews;
+
+  factory UserMerchantReviewState.fromJson(Map<String, dynamic> json) {
+    final productsRaw =
+        json['reviewableProducts'] as List<dynamic>? ?? const [];
+    final reviewsRaw = json['myReviews'] as List<dynamic>? ?? const [];
+    return UserMerchantReviewState(
+      reviewableProducts: productsRaw
+          .map((e) => ReviewableProduct.fromJson(e as Map<String, dynamic>))
+          .where((e) => e.id.isNotEmpty)
+          .toList(),
+      myReviews: reviewsRaw
+          .map((e) => MerchantReview.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

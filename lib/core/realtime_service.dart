@@ -176,6 +176,7 @@ class RealtimeService extends ChangeNotifier {
   }
 
   /// Cleanup all timers
+  @override
   void dispose() {
     _orderStatusPolling?.cancel();
     _dashboardPolling?.cancel();

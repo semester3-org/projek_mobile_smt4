@@ -125,7 +125,7 @@ class MerchantRepository {
       'name': name,
       'description': description,
       'price': price,
-      if (price20Days != null && price20Days > 0) 'price20Days': price20Days,
+      if (price20Days != null) 'price20Days': price20Days,
       'category': category,
       'unit': unit,
       'imageUrl': imageUrl,
@@ -404,8 +404,8 @@ class MerchantRepository {
     }
     try {
       final list = (res.data!['data'] as List)
-          .map((e) =>
-              LaundryServiceEstimate.fromJson(e as Map<String, dynamic>))
+          .map(
+              (e) => LaundryServiceEstimate.fromJson(e as Map<String, dynamic>))
           .toList();
       return RepoResult.ok(list);
     } catch (e) {

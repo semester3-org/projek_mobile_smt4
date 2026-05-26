@@ -72,7 +72,8 @@ class UserRepository {
       final list = (res.data!['data'] as List)
           .map((e) => UserMerchant.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list.isEmpty ? _fallbackMerchants(type) : list);
+      final unique = _dedupeMerchants(list);
+      return RepoResult.ok(unique.isEmpty ? _fallbackMerchants(type) : unique);
     } catch (_) {
       return RepoResult.ok(_fallbackMerchants(type));
     }
@@ -567,6 +568,20 @@ class UserRepository {
   }
 
   static Future<Set<String>> getFavoriteMerchantKeys() async {
+    final res = await ApiService.get('api/user_favorite_merchants');
+    if (res.success) {
+      try {
+        final data = res.data!['data'] as Map<String, dynamic>;
+        final keys = (data['keys'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toSet();
+        await _saveFavoriteMerchantKeys(keys);
+        return keys;
+      } catch (_) {
+        // Fall through to local cache.
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
   }
@@ -580,10 +595,32 @@ class UserRepository {
   }
 
   static Future<bool> toggleMerchantFavorite(UserMerchant merchant) async {
+    final merchantId =
+        merchant.merchantId.isNotEmpty ? merchant.merchantId : merchant.id;
+    final res = await ApiService.post('api/user_favorite_merchants', {
+      'merchantId': merchantId,
+      'type': merchant.type,
+      'action': 'toggle',
+    });
+
+    if (res.success) {
+      try {
+        final data = res.data!['data'] as Map<String, dynamic>;
+        final favorite = data['favorite'] == true;
+        final keys = (data['keys'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toSet();
+        await _saveFavoriteMerchantKeys(keys);
+        return favorite;
+      } catch (_) {
+        // Fall through to local cache.
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final keys =
         (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
-    final key = _merchantKey(merchant.type, merchant.id);
+    final key = _merchantKey(merchant.type, merchantId);
     final next = !keys.contains(key);
     if (next) {
       keys.add(key);
@@ -608,6 +645,11 @@ class UserRepository {
       );
     }
     return RepoResult.ok(items);
+  }
+
+  static Future<void> _saveFavoriteMerchantKeys(Set<String> keys) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
   }
 
   static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
@@ -666,41 +708,108 @@ class UserRepository {
     }
   }
 
-  static Future<void> _saveLocalBillingStatus(BillingRecord billing) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_billingStatusKey);
-    final map = raw == null || raw.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(raw) as Map<String, dynamic>;
-    map[billing.id] = {
-      'status': billing.status,
-      'paymentMethod': billing.paymentMethod,
-      'paymentDate': billing.paymentDate?.toIso8601String(),
-    };
-    await prefs.setString(_billingStatusKey, jsonEncode(map));
-  }
-
   static String _merchantKey(String type, String merchantId) =>
       '$type:$merchantId';
 
-  static Future<RepoResult<bool>> submitMerchantRating({
+  static List<UserMerchant> _dedupeMerchants(List<UserMerchant> merchants) {
+    final seen = <String>{};
+    final unique = <UserMerchant>[];
+    for (final merchant in merchants) {
+      final key = merchant.merchantId.isNotEmpty
+          ? merchant.merchantId
+          : (merchant.id.isNotEmpty ? merchant.id : merchant.placeId);
+      if (key.isEmpty || seen.add('${merchant.type}:$key')) {
+        unique.add(merchant);
+      }
+    }
+    return unique;
+  }
+
+  static Future<RepoResult<UserMerchantReviewState>> getMerchantReviewState({
     required String type,
     required String merchantId,
+  }) async {
+    final res = await ApiService.get(
+      'api/user_ratings',
+      queryParams: {'type': type, 'merchantId': merchantId},
+    );
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat data ulasan');
+    }
+
+    try {
+      return RepoResult.ok(
+        UserMerchantReviewState.fromJson(
+          res.data!['data'] as Map<String, dynamic>,
+        ),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca data ulasan: $e');
+    }
+  }
+
+  static Future<RepoResult<UserMerchantReviewState>> submitMerchantRating({
+    required String type,
+    required String merchantId,
+    required String productId,
     required int rating,
     required String comment,
+    bool update = false,
   }) async {
-    final res = await ApiService.post('api/user_ratings', {
+    final payload = {
       'type': type,
       'merchantId': merchantId,
+      'productId': productId,
       'rating': rating,
       'comment': comment,
-    });
+    };
+    final res = update
+        ? await ApiService.put('api/user_ratings', payload)
+        : await ApiService.post('api/user_ratings', payload);
 
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal mengirim ulasan');
     }
 
-    return const RepoResult.ok(true);
+    try {
+      return RepoResult.ok(
+        UserMerchantReviewState.fromJson(
+          res.data!['data'] as Map<String, dynamic>,
+        ),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca data ulasan: $e');
+    }
+  }
+
+  static Future<RepoResult<UserMerchantReviewState>> deleteMerchantRating({
+    required String type,
+    required String merchantId,
+    required String productId,
+  }) async {
+    final res = await ApiService.delete(
+      'api/user_ratings',
+      queryParams: {
+        'type': type,
+        'merchantId': merchantId,
+        'productId': productId,
+      },
+    );
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menghapus ulasan');
+    }
+
+    try {
+      return RepoResult.ok(
+        UserMerchantReviewState.fromJson(
+          res.data!['data'] as Map<String, dynamic>,
+        ),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca data ulasan: $e');
+    }
   }
 
   static List<UserMerchant> _fallbackMerchants(String type) {

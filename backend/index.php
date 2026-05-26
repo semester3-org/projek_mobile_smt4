@@ -42,6 +42,7 @@ if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_no
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
 if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-password.php';     exit; }
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
+if ($path === 'api/user_favorite_merchants') { require_once __DIR__ . '/api/user_favorite_merchants.php'; exit; }
 if ($path === 'api/midtrans')             { require_once __DIR__ . '/api/midtrans.php';            exit; }
 if ($path === 'api/midtrans_notification') { require_once __DIR__ . '/api/midtrans_notification.php'; exit; }
 if ($path === 'api/catering_subscribers') { require_once __DIR__ . '/api/catering_subscribers.php'; exit; }
@@ -95,7 +96,8 @@ if (empty($path)) {
             'GET  /api/user_notifications',
             'GET|POST|PUT /api/user_profile',
             'POST /api/change-password',
-            'POST /api/user_ratings',
+            'GET|POST|PUT|DELETE /api/user_ratings',
+            'GET|POST|DELETE /api/user_favorite_merchants',
             'POST /api/midtrans',
             'POST /api/midtrans_notification',
             'GET /api/merchant_dashboard',

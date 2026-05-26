@@ -4,7 +4,6 @@ import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
 import '../../widgets/merchant_laundry_estimates_panel.dart';
-import '../../widgets/merchant_package_categories_panel.dart';
 import 'merchant_edit_product_page.dart';
 import 'merchant_notifications_page.dart';
 
@@ -100,11 +99,6 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           const Padding(
             padding: EdgeInsets.only(bottom: 20),
             child: MerchantLaundryEstimatesPanel(),
-          )
-        else
-          const Padding(
-            padding: EdgeInsets.only(bottom: 20),
-            child: MerchantPackageCategoriesPanel(),
           ),
         MerchantCard(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
@@ -128,9 +122,9 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
                 ),
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Aktif',
-                style: TextStyle(
+              Text(
+                widget.isLaundry ? 'Layanan' : 'Paket',
+                style: const TextStyle(
                   color: MerchantPalette.muted,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -201,6 +195,9 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasWeekdayPackage =
+        !isLaundry && product.price20Days != null && product.price20Days! > 0;
+
     return MerchantCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -230,6 +227,16 @@ class _ProductCard extends StatelessWidget {
                   background: MerchantPalette.primary.withValues(alpha: 0.8),
                 ),
               ),
+              if (hasWeekdayPackage)
+                Positioned(
+                  top: 12,
+                  right: 16,
+                  child: MerchantStatusPill(
+                    label: 'Weekday tersedia',
+                    color: MerchantPalette.text,
+                    background: Colors.white.withValues(alpha: 0.92),
+                  ),
+                ),
             ],
           ),
           Padding(
@@ -250,24 +257,51 @@ class _ProductCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Text(
-                      formatMerchantCurrency(product.price),
-                      style: const TextStyle(
-                        color: MerchantPalette.primary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                    if (isLaundry)
+                      Row(
+                        children: [
+                          Text(
+                            formatMerchantCurrency(product.price),
+                            style: const TextStyle(
+                              color: MerchantPalette.primary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            product.unit,
+                            style: const TextStyle(
+                              color: MerchantPalette.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Text(
-                      product.unit,
-                      style: const TextStyle(
-                        color: MerchantPalette.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                   ],
                 ),
+                if (!isLaundry) ...[
+                  const SizedBox(height: 10),
+                  _PackagePriceTag(
+                    icon: Icons.calendar_month_rounded,
+                    text:
+                        'Full Day ${formatMerchantCurrency(product.price)} - dikirim setiap hari',
+                    color: MerchantPalette.primary,
+                    background: const Color(0xFFF3F6FF),
+                    border: const Color(0xFFD8E1FF),
+                  ),
+                  if (hasWeekdayPackage) ...[
+                    const SizedBox(height: 8),
+                    _PackagePriceTag(
+                      icon: Icons.event_busy_rounded,
+                      text:
+                          'Weekday ${formatMerchantCurrency(product.price20Days!)} - Sabtu/Minggu libur',
+                      color: const Color(0xFF2F7D4E),
+                      background: const Color(0xFFF2F7F4),
+                      border: const Color(0xFFCDE3D5),
+                    ),
+                  ],
+                ],
                 const SizedBox(height: 8),
                 Text(
                   product.description,
@@ -345,6 +379,50 @@ class _AddProductCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PackagePriceTag extends StatelessWidget {
+  const _PackagePriceTag({
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.background,
+    required this.border,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color background;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

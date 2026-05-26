@@ -84,7 +84,7 @@ class _FavoriteMerchantsPageState extends State<FavoriteMerchantsPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Tekan ikon love di detail merchant untuk menyimpannya di profil.',
+                        'Tekan ikon love di card atau detail merchant untuk menyimpannya di profil.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: UserTheme.muted),
                       ),

@@ -29,6 +29,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   bool _isFavorite = false;
   bool _submittingReview = false;
   int _selectedRating = 0;
+  UserMerchantReviewState? _reviewState;
+  String? _selectedReviewProductId;
   final _reviewCtrl = TextEditingController();
 
   @override
@@ -37,6 +39,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     _merchant = widget.merchant;
     _load();
     _loadFavorite();
+    _loadReviewState();
   }
 
   @override
@@ -46,16 +49,10 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   }
 
   Future<void> _load({bool silent = false}) async {
-    final merchantId = widget.merchant.id.isNotEmpty
-        ? widget.merchant.id
-        : (widget.merchant.placeId.isNotEmpty
-            ? widget.merchant.placeId
-            : widget.merchant.merchantId);
-
     final coords = await UserLocationService.current();
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
-      id: merchantId,
+      id: _merchantId,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
     );
@@ -66,10 +63,16 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     });
   }
 
+  String get _merchantId =>
+      _merchant.merchantId.isNotEmpty ? _merchant.merchantId : _merchant.id;
+
   Future<void> _loadFavorite() async {
+    final merchantId = widget.merchant.merchantId.isNotEmpty
+        ? widget.merchant.merchantId
+        : widget.merchant.id;
     final favorite = await UserRepository.isMerchantFavorite(
       type: widget.merchant.type,
-      merchantId: widget.merchant.id,
+      merchantId: merchantId,
     );
     if (!mounted) return;
     setState(() => _isFavorite = favorite);
@@ -86,6 +89,51 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         ),
       ),
     );
+  }
+
+  MerchantReview? _activeReviewFor(String? productId) {
+    if (productId == null || productId.isEmpty) return null;
+    final reviews = _reviewState?.myReviews ?? const <MerchantReview>[];
+    for (final review in reviews) {
+      if (!review.isDeleted && review.productId == productId) return review;
+    }
+    return null;
+  }
+
+  void _syncReviewForm() {
+    final products = _reviewState?.reviewableProducts ?? const [];
+    if (products.isEmpty) {
+      _selectedReviewProductId = null;
+      _selectedRating = 0;
+      _reviewCtrl.clear();
+      return;
+    }
+    if (_selectedReviewProductId == null ||
+        !products.any((product) => product.id == _selectedReviewProductId)) {
+      _selectedReviewProductId = products.first.id;
+    }
+    final active = _activeReviewFor(_selectedReviewProductId);
+    _selectedRating = active?.rating.round() ?? 0;
+    _reviewCtrl.text = active?.comment ?? '';
+  }
+
+  Future<void> _loadReviewState() async {
+    final result = await UserRepository.getMerchantReviewState(
+      type: _merchant.type,
+      merchantId: _merchantId,
+    );
+    if (!mounted || !result.isSuccess) return;
+    setState(() {
+      _reviewState = result.data;
+      _syncReviewForm();
+    });
+  }
+
+  void _selectReviewProduct(String productId) {
+    setState(() {
+      _selectedReviewProductId = productId;
+      _syncReviewForm();
+    });
   }
 
   Future<void> _showProductDetail(MerchantMenuItem item) async {
@@ -176,6 +224,17 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
 
   Future<void> _submitReview() async {
     final comment = _reviewCtrl.text.trim();
+    final productId = _selectedReviewProductId;
+    if (productId == null || productId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Ulasan hanya bisa dibuat untuk produk yang pernah dibeli',
+          ),
+        ),
+      );
+      return;
+    }
     if (_selectedRating == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pilih jumlah bintang terlebih dahulu')),
@@ -190,42 +249,30 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     }
 
     setState(() => _submittingReview = true);
+    final isUpdate = _activeReviewFor(productId) != null;
     final result = await UserRepository.submitMerchantRating(
       type: _merchant.type,
-      merchantId:
-          _merchant.merchantId.isNotEmpty ? _merchant.merchantId : _merchant.id,
+      merchantId: _merchantId,
+      productId: productId,
       rating: _selectedRating,
       comment: comment,
+      update: isUpdate,
     );
     if (!mounted) return;
-
-    final newReview = MerchantReview(
-      reviewer: 'Anda',
-      rating: _selectedRating.toDouble(),
-      comment: comment,
-      timeLabel: 'Baru saja',
-    );
-    final newCount = _merchant.reviewCount + 1;
-    final newRating =
-        ((_merchant.rating * _merchant.reviewCount) + _selectedRating) /
-            newCount;
 
     if (result.isSuccess) {
       final coords = await UserLocationService.current();
       final refreshed = await UserRepository.getMerchantDetail(
         type: _merchant.type,
-        id: _merchant.merchantId.isNotEmpty ? _merchant.merchantId : _merchant.id,
+        id: _merchantId,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
       );
       if (!mounted) return;
       setState(() {
-        _merchant = refreshed.data ?? _merchant.copyWith(
-          rating: newRating,
-          reviewCount: newCount,
-          reviews: [newReview, ..._merchant.reviews],
-        );
-        _reviewCtrl.clear();
+        _merchant = refreshed.data ?? _merchant;
+        _reviewState = result.data;
+        _syncReviewForm();
         _submittingReview = false;
       });
     } else {
@@ -235,8 +282,72 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(result.isSuccess
-            ? 'Ulasan berhasil dikirim'
+            ? (isUpdate
+                ? 'Ulasan berhasil diperbarui'
+                : 'Ulasan berhasil dikirim')
             : result.error ?? 'Gagal mengirim ulasan'),
+      ),
+    );
+  }
+
+  Future<void> _deleteReview() async {
+    final productId = _selectedReviewProductId;
+    if (productId == null || productId.isEmpty) return;
+    final active = _activeReviewFor(productId);
+    if (active == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus ulasan?'),
+        content: const Text(
+          'Ulasan akan dihapus dari rating publik. Setelah itu Anda bisa membuat ulasan baru untuk produk ini.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _submittingReview = true);
+    final result = await UserRepository.deleteMerchantRating(
+      type: _merchant.type,
+      merchantId: _merchantId,
+      productId: productId,
+    );
+    if (!mounted) return;
+    if (result.isSuccess) {
+      final coords = await UserLocationService.current();
+      final refreshed = await UserRepository.getMerchantDetail(
+        type: _merchant.type,
+        id: _merchantId,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+      );
+      if (!mounted) return;
+      setState(() {
+        _merchant = refreshed.data ?? _merchant;
+        _reviewState = result.data;
+        _syncReviewForm();
+        _submittingReview = false;
+      });
+    } else {
+      setState(() => _submittingReview = false);
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.isSuccess
+            ? 'Ulasan berhasil dihapus'
+            : result.error ?? 'Gagal menghapus ulasan'),
       ),
     );
   }
@@ -248,87 +359,92 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         if (!didPop) return;
       },
       child: Scaffold(
-      backgroundColor: UserTheme.background,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.pop(context, _merchant),
-        ),
-        title: const Text(
-          'Detail Merchant',
-          style: TextStyle(
-            color: UserTheme.primaryDark,
-            fontWeight: FontWeight.w800,
+        backgroundColor: UserTheme.background,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => Navigator.pop(context, _merchant),
           ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _toggleFavorite,
-            icon: Icon(
-              _isFavorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              color: _isFavorite ? Colors.redAccent : null,
+          title: const Text(
+            'Detail Merchant',
+            style: TextStyle(
+              color: UserTheme.primaryDark,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.share_outlined),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        color: UserTheme.primary,
-        onRefresh: _load,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-                children: [
-                  _HeaderCard(merchant: _merchant),
-                  const SizedBox(height: 22),
-                  _MerchantSummary(merchant: _merchant),
-                  const SizedBox(height: 30),
-                  UserSectionHeader(
-                    title: _merchant.type == 'laundry'
-                        ? 'Daftar Layanan'
-                        : 'Daftar Menu',
-                  ),
-                  const SizedBox(height: 14),
-                  if (_merchant.menuItems.isEmpty)
-                    _EmptyMenu(type: _merchant.type)
-                  else
-                    ..._merchant.menuItems.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _MenuItemCard(
-                          type: _merchant.type,
-                          item: item,
-                          onOrder: () {
-                            _showProductDetail(item);
-                          },
+          actions: [
+            IconButton(
+              onPressed: _toggleFavorite,
+              icon: Icon(
+                _isFavorite
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                color: _isFavorite ? Colors.redAccent : null,
+              ),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.share_outlined),
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          color: UserTheme.primary,
+          onRefresh: _load,
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+                  children: [
+                    _HeaderCard(merchant: _merchant),
+                    const SizedBox(height: 22),
+                    _MerchantSummary(merchant: _merchant),
+                    const SizedBox(height: 30),
+                    UserSectionHeader(
+                      title: _merchant.type == 'laundry'
+                          ? 'Daftar Layanan'
+                          : 'Daftar Menu',
+                    ),
+                    const SizedBox(height: 14),
+                    if (_merchant.menuItems.isEmpty)
+                      _EmptyMenu(type: _merchant.type)
+                    else
+                      ..._merchant.menuItems.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _MenuItemCard(
+                            type: _merchant.type,
+                            item: item,
+                            onOrder: () {
+                              _showProductDetail(item);
+                            },
+                          ),
                         ),
                       ),
+                    const SizedBox(height: 24),
+                    _ReviewSection(
+                      merchant: _merchant,
+                      reviewState: _reviewState,
+                      selectedProductId: _selectedReviewProductId,
+                      selectedRating: _selectedRating,
+                      controller: _reviewCtrl,
+                      isSubmitting: _submittingReview,
+                      activeReview: _activeReviewFor(_selectedReviewProductId),
+                      onProductChanged: _selectReviewProduct,
+                      onRatingChanged: (rating) {
+                        setState(() => _selectedRating = rating);
+                      },
+                      onSubmit: _submitReview,
+                      onDelete: _deleteReview,
                     ),
-                  const SizedBox(height: 24),
-                  _ReviewSection(
-                    merchant: _merchant,
-                    selectedRating: _selectedRating,
-                    controller: _reviewCtrl,
-                    isSubmitting: _submittingReview,
-                    onRatingChanged: (rating) {
-                      setState(() => _selectedRating = rating);
-                    },
-                    onSubmit: _submitReview,
-                  ),
-                  const SizedBox(height: 22),
-                  const UserBottomSpacer(),
-                ],
-              ),
+                    const SizedBox(height: 22),
+                    const UserBottomSpacer(),
+                  ],
+                ),
+        ),
+        bottomNavigationBar: null,
       ),
-      bottomNavigationBar: null,
-    ),
     );
   }
 }
@@ -360,6 +476,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   int _cateringDays = 30;
 
   bool get _isCatering => widget.merchant.type == 'catering';
+  bool get _hasWeekdayPackage => widget.item.hasWeekdayPrice;
 
   double get _price {
     if (!_isCatering) return widget.item.price;
@@ -430,21 +547,22 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             ),
             if (_isCatering) ...[
               const SizedBox(height: 16),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 20, label: Text('20 hari')),
-                  ButtonSegment(value: 30, label: Text('30 hari')),
-                ],
-                selected: {_cateringDays},
-                onSelectionChanged: (value) {
-                  setState(() => _cateringDays = value.first);
-                },
-              ),
+              if (_hasWeekdayPackage)
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 20, label: Text('Weekday')),
+                    ButtonSegment(value: 30, label: Text('Full Day')),
+                  ],
+                  selected: {_cateringDays},
+                  onSelectionChanged: (value) {
+                    setState(() => _cateringDays = value.first);
+                  },
+                ),
               const SizedBox(height: 8),
               Text(
-                _cateringDays == 20
-                    ? 'Dikirim Senin sampai Jumat selama 20 hari.'
-                    : 'Dikirim setiap hari selama 30 hari.',
+                _hasWeekdayPackage && _cateringDays == 20
+                    ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+                    : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
                 style: const TextStyle(color: UserTheme.muted, fontSize: 12),
               ),
             ],
@@ -563,6 +681,9 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       _selectedLaundryIds.add(initial.id);
     } else {
       _selectedCateringItem = initial;
+      if (_cateringDays == 20 && !initial.hasWeekdayPrice) {
+        _cateringDays = 30;
+      }
     }
   }
 
@@ -608,12 +729,15 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
 
   double _adjustedCateringPrice(MerchantMenuItem? item) {
     if (item == null) return 0;
+    if (_cateringDays == 20 && !item.hasWeekdayPrice) return item.price;
     return item.cateringPriceForDays(_cateringDays);
   }
 
   List<MerchantMenuItem> get _selectedItems {
     if (_isLaundry) {
-      return _items.where((item) => _selectedLaundryIds.contains(item.id)).toList();
+      return _items
+          .where((item) => _selectedLaundryIds.contains(item.id))
+          .toList();
     }
     final selected = _selectedCateringItem;
     if (selected == null) return const [];
@@ -626,6 +750,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         imageUrl: selected.imageUrl,
         category: selected.category,
         unit: selected.unit,
+        packageDeliveryType: selected.packageDeliveryType,
       ),
     ];
   }
@@ -679,8 +804,14 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       return;
     }
 
+    final selectedCatering = _selectedCateringItem;
+    final useWeekday = widget.merchant.type == 'catering' &&
+        _cateringDays == 20 &&
+        (selectedCatering?.hasWeekdayPrice ?? false);
     final cateringNote = widget.merchant.type == 'catering'
-        ? 'Paket $_cateringDays hari: ${_cateringDays == 20 ? 'Senin-Jumat, Sabtu/Minggu tidak dikirim' : 'Dikirim setiap hari selama 30 hari'}.'
+        ? (useWeekday
+            ? 'Paket Weekday: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
+            : 'Paket Full Day: dikirim setiap hari, termasuk Sabtu dan Minggu.')
         : '';
     final notes = [
       if (cateringNote.isNotEmpty) cateringNote,
@@ -699,9 +830,9 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
             ? _laundryServiceEstimateFor(selectedItems)
-            : 'Paket $_cateringDays hari',
+            : (useWeekday ? 'Paket Weekday' : 'Paket Full Day'),
         paymentMethod: _paymentMethod,
-        subscriptionDays: _isLaundry ? null : _cateringDays,
+        subscriptionDays: _isLaundry ? null : (useWeekday ? 20 : 30),
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
         notes: notes,
@@ -745,12 +876,12 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
             const SizedBox(height: 14),
             if (widget.initialItem != null) ...[
               _lockedItemSummary(widget.initialItem!),
-              if (!_isLaundry) ...[
+              if (!_isLaundry && widget.initialItem!.hasWeekdayPrice) ...[
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('20 hari')),
-                    ButtonSegment(value: 30, label: Text('30 hari')),
+                    ButtonSegment(value: 20, label: Text('Weekday')),
+                    ButtonSegment(value: 30, label: Text('Full Day')),
                   ],
                   selected: {_cateringDays},
                   onSelectionChanged: (value) {
@@ -945,7 +1076,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           if (!_isLaundry) ...[
             const SizedBox(height: 6),
             Text(
-              '${formatUserCurrency(_adjustedCateringPrice(item))} / $_cateringDays hari',
+              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
               style: const TextStyle(color: UserTheme.muted),
             ),
           ] else ...[
@@ -1049,7 +1180,12 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         ..._items.map((item) {
           final selected = _selectedCateringItem?.id == item.id;
           return InkWell(
-            onTap: () => setState(() => _selectedCateringItem = item),
+            onTap: () => setState(() {
+              _selectedCateringItem = item;
+              if (_cateringDays == 20 && !item.hasWeekdayPrice) {
+                _cateringDays = 30;
+              }
+            }),
             borderRadius: BorderRadius.circular(14),
             child: Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -1080,9 +1216,20 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / $_cateringDays hari',
+                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
                           style: const TextStyle(color: UserTheme.muted),
                         ),
+                        if (item.hasWeekdayPrice) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Weekday tersedia: ${formatUserCurrency(item.price20Days!)}',
+                            style: const TextStyle(
+                              color: UserTheme.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1092,21 +1239,23 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           );
         }),
         const SizedBox(height: 8),
-        SegmentedButton<int>(
-          segments: const [
-            ButtonSegment(value: 20, label: Text('20 hari')),
-            ButtonSegment(value: 30, label: Text('30 hari')),
-          ],
-          selected: {_cateringDays},
-          onSelectionChanged: (value) {
-            setState(() => _cateringDays = value.first);
-          },
-        ),
+        if (_selectedCateringItem?.hasWeekdayPrice ?? false)
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 20, label: Text('Weekday')),
+              ButtonSegment(value: 30, label: Text('Full Day')),
+            ],
+            selected: {_cateringDays},
+            onSelectionChanged: (value) {
+              setState(() => _cateringDays = value.first);
+            },
+          ),
         const SizedBox(height: 8),
         Text(
-          _cateringDays == 20
-              ? 'Paket 20 hari dikirim Senin sampai Jumat.'
-              : 'Paket 30 hari dikirim penuh setiap hari.',
+          _cateringDays == 20 &&
+                  (_selectedCateringItem?.hasWeekdayPrice ?? false)
+              ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+              : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
           style: const TextStyle(color: UserTheme.muted, fontSize: 12),
         ),
       ],
@@ -1582,22 +1731,36 @@ class _EmptyMenu extends StatelessWidget {
 class _ReviewSection extends StatelessWidget {
   const _ReviewSection({
     required this.merchant,
+    required this.reviewState,
+    required this.selectedProductId,
     required this.selectedRating,
     required this.controller,
     required this.isSubmitting,
+    required this.activeReview,
+    required this.onProductChanged,
     required this.onRatingChanged,
     required this.onSubmit,
+    required this.onDelete,
   });
 
   final UserMerchant merchant;
+  final UserMerchantReviewState? reviewState;
+  final String? selectedProductId;
   final int selectedRating;
   final TextEditingController controller;
   final bool isSubmitting;
+  final MerchantReview? activeReview;
+  final ValueChanged<String> onProductChanged;
   final ValueChanged<int> onRatingChanged;
   final VoidCallback onSubmit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final products = reviewState?.reviewableProducts ?? const [];
+    final myReviews = reviewState?.myReviews ?? const <MerchantReview>[];
+    final canReview = products.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1641,12 +1804,62 @@ class _ReviewSection extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              const SizedBox(height: 8),
+              if (!canReview)
+                const Text(
+                  'Anda bisa memberi ulasan setelah pernah membeli produk merchant ini dan pesanan sudah selesai.',
+                  style: TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                )
+              else ...[
+                DropdownButtonFormField<String>(
+                  initialValue: selectedProductId,
+                  decoration: InputDecoration(
+                    labelText: 'Produk yang diulas',
+                    filled: true,
+                    fillColor: const Color(0xFFF7F9FC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  items: products
+                      .map(
+                        (product) => DropdownMenuItem(
+                          value: product.id,
+                          child: Text(product.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: isSubmitting || products.isEmpty
+                      ? null
+                      : (value) {
+                          if (value != null) onProductChanged(value);
+                        },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  activeReview == null
+                      ? 'Belum ada ulasan aktif untuk produk ini.'
+                      : 'Ulasan produk ini sudah ada. Anda bisa mengedit atau menghapusnya.',
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               Row(
                 children: List.generate(5, (index) {
                   final rating = index + 1;
                   return IconButton(
-                    onPressed: () => onRatingChanged(rating),
+                    onPressed: !canReview || isSubmitting
+                        ? null
+                        : () => onRatingChanged(rating),
                     icon: Icon(
                       rating <= selectedRating
                           ? Icons.star_rounded
@@ -1661,6 +1874,7 @@ class _ReviewSection extends StatelessWidget {
               TextField(
                 controller: controller,
                 maxLines: 4,
+                enabled: canReview && !isSubmitting,
                 decoration: InputDecoration(
                   hintText: 'Bagikan pengalaman Anda di sini...',
                   filled: true,
@@ -1675,7 +1889,7 @@ class _ReviewSection extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: isSubmitting ? null : onSubmit,
+                  onPressed: isSubmitting || !canReview ? null : onSubmit,
                   style: FilledButton.styleFrom(
                     backgroundColor: UserTheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -1683,13 +1897,56 @@ class _ReviewSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(isSubmitting ? 'Mengirim...' : 'Kirim Ulasan'),
+                  child: Text(isSubmitting
+                      ? 'Menyimpan...'
+                      : activeReview == null
+                          ? 'Kirim Ulasan'
+                          : 'Update Ulasan'),
                 ),
               ),
+              if (activeReview != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : onDelete,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Hapus Ulasan'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+        if (myReviews.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Text(
+            'Riwayat Ulasan Anda',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...myReviews.map((review) => _ReviewCard(review: review)),
+        ],
         const SizedBox(height: 16),
+        if (merchant.reviews.isNotEmpty)
+          const Text(
+            'Ulasan Pengguna',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        if (merchant.reviews.isNotEmpty) const SizedBox(height: 10),
         ...merchant.reviews.map((review) => _ReviewCard(review: review)),
         if (merchant.reviews.isNotEmpty)
           Center(
@@ -1716,11 +1973,12 @@ class _ReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final deleted = review.isDeleted;
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: deleted ? const Color(0xFFF4F5F7) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [UserTheme.softShadow(opacity: 0.04)],
       ),
@@ -1753,8 +2011,17 @@ class _ReviewCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    if (review.productName.isNotEmpty)
+                      Text(
+                        review.productName,
+                        style: const TextStyle(
+                          color: UserTheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     Text(
-                      review.timeLabel,
+                      _reviewTimeText(review),
                       style: const TextStyle(
                         color: UserTheme.muted,
                         fontSize: 12,
@@ -1778,14 +2045,38 @@ class _ReviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            review.comment,
-            style: const TextStyle(
-              color: UserTheme.text,
+            deleted ? 'Ulasan ini sudah dihapus.' : review.comment,
+            style: TextStyle(
+              color: deleted ? UserTheme.muted : UserTheme.text,
               height: 1.45,
+              fontStyle: deleted ? FontStyle.italic : FontStyle.normal,
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _reviewTimeText(MerchantReview review) {
+    if (review.isDeleted && review.deletedAt.isNotEmpty) {
+      return 'Dihapus ${_formatReviewDate(review.deletedAt)}';
+    }
+    if (review.updatedAt.isNotEmpty &&
+        review.createdAt.isNotEmpty &&
+        review.updatedAt != review.createdAt) {
+      return 'Diedit ${_formatReviewDate(review.updatedAt)}';
+    }
+    if (review.createdAt.isNotEmpty) {
+      return 'Dikirim ${_formatReviewDate(review.createdAt)}';
+    }
+    return review.timeLabel;
+  }
+
+  String _formatReviewDate(String raw) {
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    final local = parsed.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
   }
 }

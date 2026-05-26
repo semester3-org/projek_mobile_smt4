@@ -11,7 +11,8 @@ class UserRecommendationsPage extends StatefulWidget {
   const UserRecommendationsPage({super.key});
 
   @override
-  State<UserRecommendationsPage> createState() => _UserRecommendationsPageState();
+  State<UserRecommendationsPage> createState() =>
+      _UserRecommendationsPageState();
 }
 
 class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
@@ -53,12 +54,6 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
   }
 
   void _open(UserMerchant merchant) {
-    if (!merchant.isAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Merchant sedang tutup')),
-      );
-      return;
-    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MerchantDetailPage(merchant: merchant),
@@ -101,7 +96,8 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
                     ..._laundry.map(
                       (m) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _MerchantTile(merchant: m, onTap: () => _open(m)),
+                        child:
+                            _MerchantTile(merchant: m, onTap: () => _open(m)),
                       ),
                     ),
                   const SizedBox(height: 28),
@@ -113,7 +109,8 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
                     ..._catering.map(
                       (m) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _MerchantTile(merchant: m, onTap: () => _open(m)),
+                        child:
+                            _MerchantTile(merchant: m, onTap: () => _open(m)),
                       ),
                     ),
                 ],
@@ -152,98 +149,109 @@ class _MerchantTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final closed = !merchant.isAvailable;
     return Material(
-      color: Colors.white,
+      color: closed ? const Color(0xFFF1F3F5) : Colors.white,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        onTap: closed ? null : onTap,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        child: Opacity(
-          opacity: closed ? 0.55 : 1,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                UserImage(
-                  url: merchant.imageUrl,
-                  icon: merchant.type == 'laundry'
-                      ? Icons.local_laundry_service_rounded
-                      : Icons.restaurant_rounded,
-                  width: 72,
-                  height: 72,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        merchant.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: UserTheme.text,
-                        ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: closed ? Border.all(color: const Color(0xFFD5DAE1)) : null,
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              UserImage(
+                url: merchant.imageUrl,
+                icon: merchant.type == 'laundry'
+                    ? Icons.local_laundry_service_rounded
+                    : Icons.restaurant_rounded,
+                width: 72,
+                height: 72,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      merchant.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color:
+                            closed ? const Color(0xFF4B5563) : UserTheme.text,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.star_rounded,
-                              size: 16, color: Color(0xFFFFB300)),
-                          const SizedBox(width: 4),
-                          Text(
-                            merchant.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: UserTheme.muted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (merchant.hasDistanceEstimate) ...[
-                            const SizedBox(width: 10),
-                            Text(
-                              '${merchant.distanceKm.toStringAsFixed(1)} km',
-                              style: const TextStyle(color: UserTheme.muted),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (merchant.eta.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded,
+                            size: 16, color: Color(0xFFFFB300)),
+                        const SizedBox(width: 4),
                         Text(
-                          'Estimasi ${merchant.eta}',
+                          merchant.rating.toStringAsFixed(1),
                           style: const TextStyle(
-                            color: UserTheme.primary,
-                            fontSize: 12,
+                            color: UserTheme.muted,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                        if (merchant.hasDistanceEstimate) ...[
+                          const SizedBox(width: 10),
+                          Text(
+                            '${merchant.distanceKm.toStringAsFixed(1)} km',
+                            style: const TextStyle(color: UserTheme.muted),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
-                if (closed)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFE8E8),
-                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'TUTUP',
-                      style: TextStyle(
-                        color: Color(0xFFC62828),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11,
+                    if (closed && merchant.openHours.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Jam operasional ${merchant.openHours}',
+                        style: const TextStyle(
+                          color: Color(0xFF6D7375),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                    ] else if (merchant.eta.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Estimasi ${merchant.eta}',
+                        style: const TextStyle(
+                          color: UserTheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (closed)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE8E8),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'TUTUP',
+                    style: TextStyle(
+                      color: Color(0xFFC62828),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
                     ),
-                  )
-                else
-                  const Icon(Icons.chevron_right_rounded,
-                      color: UserTheme.muted),
-              ],
-            ),
+                  ),
+                )
+              else
+                const Icon(Icons.chevron_right_rounded, color: UserTheme.muted),
+            ],
           ),
         ),
       ),

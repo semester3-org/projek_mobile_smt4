@@ -11,6 +11,8 @@ $files = [
     '2026-05-26-order-payment-subscription-address.sql',
     '2026-05-27-payment-methods-catering-improvements.sql',
     '2026-05-28-products-price20-finish.sql',
+    '2026-05-28-catering-package-category-admin-and-delivery-type.sql',
+    '2026-05-29-product-review-per-purchase.sql',
 ];
 
 function runSqlFile(mysqli $conn, string $path): array {

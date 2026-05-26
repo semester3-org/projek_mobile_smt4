@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../data/repositories/merchant_repository.dart';
+import '../../../../models/catering_package_category.dart';
 import '../../../../models/laundry_service_estimate.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
@@ -33,10 +35,12 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   final _picker = ImagePicker();
 
   String _imageUrl = '';
-  bool _isActive = true;
   bool _saving = false;
+  bool _showWeekdayPrice = false;
   List<LaundryServiceEstimate> _estimates = [];
+  List<CateringPackageCategory> _packageCategories = [];
   String? _selectedEstimate;
+  String? _selectedPackageCategory;
 
   bool get _isEdit => widget.product != null;
 
@@ -46,22 +50,31 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     final product = widget.product;
     _nameCtrl.text = product?.name ?? '';
     _categoryCtrl.text = product?.category ?? '';
-    _selectedEstimate = product?.category.isNotEmpty == true
-        ? product!.category
-        : null;
+    _selectedEstimate =
+        product?.category.isNotEmpty == true ? product!.category : null;
     if (widget.isLaundry) {
       _loadEstimates();
     } else if (_categoryCtrl.text.isEmpty) {
-      _categoryCtrl.text = 'Paket Bulanan';
+      _loadPackageCategories();
+    } else {
+      _selectedPackageCategory = _categoryCtrl.text;
+      _loadPackageCategories();
     }
-    _priceCtrl.text = product == null ? '' : product.price.toStringAsFixed(0);
-    _price20Ctrl.text = product?.price20Days != null && product!.price20Days! > 0
-        ? product.price20Days!.toStringAsFixed(0)
-        : '';
+    _priceCtrl.text = product == null
+        ? ''
+        : _formatThousands(product.price.toStringAsFixed(0));
+    _price20Ctrl.text = product?.price20Days == null
+        ? ''
+        : _formatThousands(product!.price20Days!.toStringAsFixed(0));
+    _showWeekdayPrice = !widget.isLaundry &&
+        product?.price20Days != null &&
+        product!.price20Days! > 0;
     _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '');
+    if (!widget.isLaundry) {
+      _unitCtrl.text = 'Paket bulanan';
+    }
     _descriptionCtrl.text = product?.description ?? '';
     _imageUrl = product?.imageUrl ?? '';
-    _isActive = product?.isActive ?? true;
   }
 
   Future<void> _loadEstimates() async {
@@ -73,6 +86,19 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       if (_selectedEstimate == null && items.isNotEmpty) {
         _selectedEstimate = items.first.serviceName;
         _categoryCtrl.text = _selectedEstimate!;
+      }
+    });
+  }
+
+  Future<void> _loadPackageCategories() async {
+    final result = await MerchantRepository.getPackageCategories();
+    if (!mounted) return;
+    final items = (result.data ?? []).where((e) => e.isActive).toList();
+    setState(() {
+      _packageCategories = items;
+      if (_selectedPackageCategory == null && items.isNotEmpty) {
+        _selectedPackageCategory = items.first.categoryName;
+        _categoryCtrl.text = _selectedPackageCategory!;
       }
     });
   }
@@ -109,7 +135,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
           _priceCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
         ) ??
         0;
-    final price20 = double.tryParse(
+    final price20Days = double.tryParse(
           _price20Ctrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
         ) ??
         0;
@@ -117,6 +143,14 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     if (name.isEmpty || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nama dan harga wajib diisi')),
+      );
+      return;
+    }
+    if (!widget.isLaundry && _showWeekdayPrice && price20Days <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Harga weekday wajib diisi lebih dari 0'),
+        ),
       );
       return;
     }
@@ -129,10 +163,12 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       );
       return;
     }
-    if (!widget.isLaundry && price20 <= 0) {
+    if (!widget.isLaundry &&
+        (_selectedPackageCategory == null ||
+            _selectedPackageCategory!.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Harga paket 20 hari wajib diisi terpisah dari 30 hari'),
+          content: Text('Pilih kategori paket terlebih dahulu'),
         ),
       );
       return;
@@ -144,13 +180,13 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       name: name,
       description: description,
       price: price,
-      price20Days: widget.isLaundry ? null : price20,
+      price20Days: widget.isLaundry || !_showWeekdayPrice ? null : price20Days,
       category: widget.isLaundry
           ? (_selectedEstimate ?? _categoryCtrl.text.trim())
-          : _categoryCtrl.text.trim(),
-      unit: widget.isLaundry ? _unitCtrl.text.trim() : '',
+          : (_selectedPackageCategory ?? _categoryCtrl.text.trim()),
+      unit: widget.isLaundry ? _unitCtrl.text.trim() : 'Paket bulanan',
       imageUrl: _imageUrl,
-      isActive: _isActive,
+      isActive: true,
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -270,7 +306,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
             )
           else
             DropdownButtonFormField<String>(
-              value: _selectedEstimate != null &&
+              initialValue: _selectedEstimate != null &&
                       _estimates.any((e) => e.serviceName == _selectedEstimate)
                   ? _selectedEstimate
                   : _estimates.first.serviceName,
@@ -303,7 +339,43 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
         ] else ...[
           const _FieldLabel('Kategori Paket'),
           const SizedBox(height: 8),
-          _Input(controller: _categoryCtrl),
+          if (_packageCategories.isEmpty)
+            const Text(
+              'Belum ada kategori paket. Kategori akan disiapkan admin.',
+              style: TextStyle(color: MerchantPalette.muted, fontSize: 13),
+            )
+          else
+            DropdownButtonFormField<String>(
+              initialValue: _selectedPackageCategory != null &&
+                      _packageCategories.any(
+                        (e) => e.categoryName == _selectedPackageCategory,
+                      )
+                  ? _selectedPackageCategory
+                  : _packageCategories.first.categoryName,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFFF7F9FC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              items: _packageCategories
+                  .map(
+                    (e) => DropdownMenuItem(
+                      value: e.categoryName,
+                      child: Text(e.categoryName),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _selectedPackageCategory = value;
+                  _categoryCtrl.text = value;
+                });
+              },
+            ),
         ],
         const SizedBox(height: 22),
         if (widget.isLaundry) ...[
@@ -319,6 +391,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
                       controller: _priceCtrl,
                       keyboardType: TextInputType.number,
                       prefix: 'Rp',
+                      inputFormatters: const [_ThousandsInputFormatter()],
                     ),
                   ],
                 ),
@@ -337,21 +410,47 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
             ],
           ),
         ] else ...[
-          const _FieldLabel('Harga Paket 30 Hari (IDR)'),
+          const _FieldLabel(
+            'Harga Full Day (dikirim setiap hari, termasuk Sabtu-Minggu)',
+          ),
           const SizedBox(height: 8),
           _Input(
             controller: _priceCtrl,
             keyboardType: TextInputType.number,
             prefix: 'Rp',
+            inputFormatters: const [_ThousandsInputFormatter()],
           ),
-          const SizedBox(height: 16),
-          const _FieldLabel('Harga Paket 20 Hari (IDR)'),
-          const SizedBox(height: 8),
-          _Input(
-            controller: _price20Ctrl,
-            keyboardType: TextInputType.number,
-            prefix: 'Rp',
-          ),
+          const SizedBox(height: 18),
+          if (_showWeekdayPrice) ...[
+            Row(
+              children: [
+                const Expanded(
+                  child: _FieldLabel(
+                    'Harga Weekday (Senin-Jumat, Sabtu-Minggu libur)',
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _showWeekdayPrice = false;
+                      _price20Ctrl.clear();
+                    });
+                  },
+                  child: const Text('Hapus'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _Input(
+              controller: _price20Ctrl,
+              keyboardType: TextInputType.number,
+              prefix: 'Rp',
+              inputFormatters: const [_ThousandsInputFormatter()],
+            ),
+          ] else
+            _AddWeekdayPriceCard(
+              onTap: () => setState(() => _showWeekdayPrice = true),
+            ),
         ],
         const SizedBox(height: 22),
         _FieldLabel(widget.isLaundry
@@ -359,43 +458,6 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
             : 'Menu, Lauk Pauk & Jadwal Antar'),
         const SizedBox(height: 8),
         _Input(controller: _descriptionCtrl, maxLines: 5),
-        const SizedBox(height: 26),
-        MerchantCard(
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.isLaundry ? 'Layanan Aktif' : 'Paket Aktif',
-                      style: const TextStyle(
-                        color: MerchantPalette.text,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Aktifkan agar item tampil di aplikasi user.',
-                      style: TextStyle(
-                        color: MerchantPalette.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _isActive,
-                activeThumbColor: Colors.white,
-                activeTrackColor: MerchantPalette.primary,
-                onChanged: (value) => setState(() => _isActive = value),
-              ),
-            ],
-          ),
-        ),
         if (_isEdit) ...[
           const SizedBox(height: 28),
           OutlinedButton.icon(
@@ -443,18 +505,72 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
+class _AddWeekdayPriceCard extends StatelessWidget {
+  const _AddWeekdayPriceCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F9FC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFC9D3E1)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE3E6EC),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.add_rounded,
+                color: MerchantPalette.primary,
+                size: 26,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Text(
+                'Ingin menambahkan paket Weekday? Senin-Jumat, Sabtu dan Minggu libur.',
+                style: TextStyle(
+                  color: MerchantPalette.text,
+                  fontSize: 14,
+                  height: 1.35,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Input extends StatelessWidget {
   const _Input({
     required this.controller,
     this.maxLines = 1,
     this.prefix,
     this.keyboardType,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
   final int maxLines;
   final String? prefix;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -462,6 +578,7 @@ class _Input extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       style: const TextStyle(
         color: MerchantPalette.text,
         fontSize: 16,
@@ -493,4 +610,43 @@ class _Input extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ThousandsInputFormatter extends TextInputFormatter {
+  const _ThousandsInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    final formatted = _formatThousands(digits);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+String _formatThousands(String value) {
+  final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return '';
+
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    final remaining = digits.length - i;
+    buffer.write(digits[i]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+  return buffer.toString();
 }

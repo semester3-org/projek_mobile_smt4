@@ -61,9 +61,10 @@ try {
     $name = trim((string)($body['name'] ?? $body['namaProduk'] ?? ''));
     $description = trim((string)($body['description'] ?? ''));
     $price = (float)($body['price'] ?? 0);
-    $price20Days = (float)($body['price20Days'] ?? $body['price_20_days'] ?? 0);
+    $price20Days = (float)($body['price20Days'] ?? 0);
     $category = trim((string)($body['category'] ?? ''));
     $unit = trim((string)($body['unit'] ?? ($merchantType === 'laundry' ? '/kg' : '')));
+    $packageDeliveryType = null;
     $imageUrl = trim((string)($body['imageUrl'] ?? ''));
     $isActive = !array_key_exists('isActive', $body) || !empty($body['isActive']) ? 1 : 0;
 
@@ -78,15 +79,15 @@ try {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("
                 INSERT INTO products
-                    (merchant_id, nama_produk, harga, price_20_days, deskripsi, category, unit, image_url, is_active, service_type, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    (merchant_id, nama_produk, harga, price_20_days, deskripsi, category, unit, image_url, is_active, service_type, package_delivery_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ");
             if (!$stmt) {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $price20Value = $merchantType === 'catering' ? $price20Days : 0.0;
             $stmt->bind_param(
-                'ssddssssis',
+                'ssddssssiss',
                 $merchantId,
                 $name,
                 $price,
@@ -96,7 +97,8 @@ try {
                 $unit,
                 $imageUrl,
                 $isActive,
-                $merchantType
+                $merchantType,
+                $packageDeliveryType
             );
             $stmt->execute();
             $id = (string)$conn->insert_id;
@@ -117,6 +119,7 @@ try {
                     image_url = ?,
                     is_active = ?,
                     service_type = ?,
+                    package_delivery_type = ?,
                     updated_at = NOW()
                 WHERE id = ? AND merchant_id = ?
             ");
@@ -124,7 +127,7 @@ try {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $stmt->bind_param(
-                'sddssssisss',
+                'sddssssissss',
                 $name,
                 $price,
                 $price20Value,
@@ -134,6 +137,7 @@ try {
                 $imageUrl,
                 $isActive,
                 $merchantType,
+                $packageDeliveryType,
                 $id,
                 $merchantId
             );

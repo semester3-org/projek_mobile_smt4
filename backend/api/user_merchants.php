@@ -112,7 +112,6 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
     if (empty($rows)) return [];
     return array_map(function ($row) use ($type) {
         $price30 = (float)($row['harga'] ?? 0);
-        $price20 = isset($row['price_20_days']) ? (float)$row['price_20_days'] : 0;
         $payload = [
             'id' => (string)$row['id'],
             'name' => $row['nama_produk'],
@@ -121,12 +120,11 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
             'imageUrl' => $row['image_url'] ?? '',
             'category' => $row['category'] ?? '',
             'unit' => $row['unit'] ?? '',
+            'packageDeliveryType' => $row['package_delivery_type'] ?? null,
         ];
         if ($type === 'catering') {
+            $payload['price20Days'] = isset($row['price_20_days']) ? (float)$row['price_20_days'] : null;
             $payload['price30Days'] = $price30;
-            if ($price20 > 0) {
-                $payload['price20Days'] = $price20;
-            }
         }
         return $payload;
     }, $rows);
@@ -135,10 +133,13 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
 function userMerchantReviews(mysqli $conn, string $merchantId): array {
     if (!merchantTableExists($conn, 'merchant_reviews')) return [];
     $stmt = $conn->prepare("
-        SELECT mr.rating, mr.comment, mr.created_at, u.display_name
+        SELECT mr.id, mr.product_id, mr.rating, mr.comment, mr.created_at, mr.updated_at,
+               u.id AS user_id, u.display_name, p.nama_produk
         FROM merchant_reviews mr
         INNER JOIN users u ON u.id = mr.user_id
+        LEFT JOIN products p ON p.id = mr.product_id
         WHERE mr.merchant_id = ?
+          AND mr.deleted_at IS NULL
         ORDER BY mr.created_at DESC
         LIMIT 10
     ");
@@ -148,10 +149,18 @@ function userMerchantReviews(mysqli $conn, string $merchantId): array {
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     return array_map(fn($row) => [
+        'id' => (string)($row['id'] ?? ''),
+        'productId' => isset($row['product_id']) ? (string)$row['product_id'] : '',
+        'productName' => $row['nama_produk'] ?? '',
+        'userId' => (string)($row['user_id'] ?? ''),
         'reviewer' => $row['display_name'] ?? 'User',
         'rating' => (float)$row['rating'],
         'comment' => $row['comment'] ?? '',
-        'timeLabel' => date('d M Y', strtotime($row['created_at'] ?? 'now')),
+        'timeLabel' => date('d M Y H:i', strtotime($row['created_at'] ?? 'now')),
+        'createdAt' => $row['created_at'] ?? '',
+        'updatedAt' => $row['updated_at'] ?? '',
+        'deletedAt' => '',
+        'isDeleted' => false,
     ], $rows);
 }
 
@@ -407,7 +416,20 @@ try {
         }
     }
 
-    $data = array_map(fn($row) => userMerchantPayload($conn, $row, $type, $userLat, $userLng), $rows);
+    $data = [];
+    $seenMerchantIds = [];
+    foreach ($rows as $row) {
+        $merchantId = (string)($row['merchant_id'] ?? $row['id'] ?? '');
+        $placeId = (string)($row['place_id'] ?? '');
+        $dedupeKey = $merchantId !== '' ? $merchantId : $placeId;
+        if ($dedupeKey !== '' && isset($seenMerchantIds[$dedupeKey])) {
+            continue;
+        }
+        if ($dedupeKey !== '') {
+            $seenMerchantIds[$dedupeKey] = true;
+        }
+        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng);
+    }
     if (empty($data)) {
         $data = userMerchantFallback($type);
     }

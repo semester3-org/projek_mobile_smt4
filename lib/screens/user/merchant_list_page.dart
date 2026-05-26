@@ -30,6 +30,7 @@ class MerchantListPage extends StatefulWidget {
 class _MerchantListPageState extends State<MerchantListPage> {
   final _searchCtrl = TextEditingController();
   List<UserMerchant> _merchants = [];
+  Set<String> _favoriteKeys = {};
   bool _loading = true;
   String _selectedFilter = 'Semua';
   bool _locationUnavailable = false;
@@ -66,9 +67,11 @@ class _MerchantListPageState extends State<MerchantListPage> {
       latitude: coords?.latitude,
       longitude: coords?.longitude,
     );
+    final favoriteKeys = await UserRepository.getFavoriteMerchantKeys();
     if (!mounted) return;
     setState(() {
       _merchants = result.data ?? [];
+      _favoriteKeys = favoriteKeys;
       _loading = false;
     });
   }
@@ -111,33 +114,46 @@ class _MerchantListPageState extends State<MerchantListPage> {
   }
 
   Future<void> _openDetail(UserMerchant merchant) async {
-    if (!merchant.isAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            merchant.openHours.isNotEmpty
-                ? 'Merchant tutup. Jam operasional: ${merchant.openHours}'
-                : 'Merchant sedang tutup',
-          ),
-        ),
-      );
-      return;
-    }
     final updated = await Navigator.of(context).push<UserMerchant>(
       MaterialPageRoute<UserMerchant>(
         builder: (_) => MerchantDetailPage(merchant: merchant),
       ),
     );
     if (updated != null && mounted) {
+      final favoriteKeys = await UserRepository.getFavoriteMerchantKeys();
+      if (!mounted) return;
       setState(() {
-        _merchants = _merchants
-            .map((m) => m.id == updated.id ? updated : m)
-            .toList();
+        _merchants =
+            _merchants.map((m) => m.id == updated.id ? updated : m).toList();
+        _favoriteKeys = favoriteKeys;
       });
     } else {
       _load(silent: true);
     }
   }
+
+  Future<void> _toggleFavorite(UserMerchant merchant) async {
+    final favorite = await UserRepository.toggleMerchantFavorite(merchant);
+    if (!mounted) return;
+    setState(() {
+      final key = _favoriteKey(merchant);
+      if (favorite) {
+        _favoriteKeys.add(key);
+      } else {
+        _favoriteKeys.remove(key);
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          favorite ? 'Disimpan ke favorite' : 'Dihapus dari favorite',
+        ),
+      ),
+    );
+  }
+
+  String _favoriteKey(UserMerchant merchant) =>
+      '${merchant.type}:${merchant.merchantId.isNotEmpty ? merchant.merchantId : merchant.id}';
 
   void _openNotifications() {
     Navigator.of(context).push(
@@ -206,7 +222,11 @@ class _MerchantListPageState extends State<MerchantListPage> {
                         padding: const EdgeInsets.only(bottom: 22),
                         child: _MerchantCard(
                           merchant: merchant,
+                          isFavorite: _favoriteKeys.contains(
+                            _favoriteKey(merchant),
+                          ),
                           onTap: () => _openDetail(merchant),
+                          onToggleFavorite: () => _toggleFavorite(merchant),
                         ),
                       ),
                     ),
@@ -221,11 +241,15 @@ class _MerchantListPageState extends State<MerchantListPage> {
 class _MerchantCard extends StatelessWidget {
   const _MerchantCard({
     required this.merchant,
+    required this.isFavorite,
     required this.onTap,
+    required this.onToggleFavorite,
   });
 
   final UserMerchant merchant;
+  final bool isFavorite;
   final VoidCallback onTap;
+  final VoidCallback onToggleFavorite;
 
   @override
   Widget build(BuildContext context) {
@@ -234,18 +258,20 @@ class _MerchantCard extends StatelessWidget {
     final closed = !merchant.isAvailable;
 
     return Material(
-      color: Colors.white,
+      color: closed ? const Color(0xFFF1F3F5) : Colors.white,
       borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        onTap: closed ? null : onTap,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        child: Opacity(
-          opacity: closed ? 0.55 : 1,
-          child: Container(
+        child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
+            color: closed ? const Color(0xFFF1F3F5) : Colors.white,
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [UserTheme.softShadow(opacity: 0.06)],
+            border: closed
+                ? Border.all(color: const Color(0xFFD5DAE1))
+                : Border.all(color: Colors.transparent),
+            boxShadow: [UserTheme.softShadow(opacity: closed ? 0.03 : 0.06)],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,6 +283,31 @@ class _MerchantCard extends StatelessWidget {
                     icon: icon,
                     height: 192,
                     width: double.infinity,
+                  ),
+                  if (closed)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.grey.withValues(alpha: 0.18),
+                      ),
+                    ),
+                  Positioned(
+                    top: 14,
+                    left: 14,
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        tooltip: 'Favorite',
+                        onPressed: onToggleFavorite,
+                        icon: Icon(
+                          isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color:
+                              isFavorite ? Colors.redAccent : UserTheme.muted,
+                        ),
+                      ),
+                    ),
                   ),
                   if (closed)
                     Positioned(
@@ -308,7 +359,9 @@ class _MerchantCard extends StatelessWidget {
                                 .titleLarge
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
-                                  color: UserTheme.text,
+                                  color: closed
+                                      ? const Color(0xFF4B5563)
+                                      : UserTheme.text,
                                 ),
                           ),
                         ),
@@ -316,7 +369,28 @@ class _MerchantCard extends StatelessWidget {
                         _DistanceSummary(merchant: merchant),
                       ],
                     ),
-                    if (merchant.hasDistanceEstimate &&
+                    if (closed && merchant.openHours.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 16,
+                            color: Color(0xFF6D7375),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Jam operasional ${merchant.openHours}',
+                              style: const TextStyle(
+                                color: Color(0xFF6D7375),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (merchant.hasDistanceEstimate &&
                         merchant.eta.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Row(
@@ -372,9 +446,12 @@ class _MerchantCard extends StatelessWidget {
                                         children: [
                                           TextSpan(
                                             text: formatUserCurrency(
-                                                merchant.minPrice),
-                                            style: const TextStyle(
-                                              color: UserTheme.primaryDark,
+                                              merchant.minPrice,
+                                            ),
+                                            style: TextStyle(
+                                              color: closed
+                                                  ? const Color(0xFF4B5563)
+                                                  : UserTheme.primaryDark,
                                               fontSize: 18,
                                               fontWeight: FontWeight.w900,
                                             ),
@@ -430,7 +507,7 @@ class _MerchantCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: const Text('Pesan'),
+                          child: Text(closed ? 'Tutup' : 'Pesan'),
                         ),
                       ],
                     ),
@@ -439,7 +516,6 @@ class _MerchantCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
         ),
       ),
     );

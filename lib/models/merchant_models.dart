@@ -195,6 +195,7 @@ class MerchantProduct {
     required this.imageUrl,
     required this.isActive,
     required this.serviceType,
+    this.packageDeliveryType,
   });
 
   final String id;
@@ -207,6 +208,7 @@ class MerchantProduct {
   final String imageUrl;
   final bool isActive;
   final String serviceType;
+  final String? packageDeliveryType;
 
   factory MerchantProduct.fromJson(Map<String, dynamic> json) {
     return MerchantProduct(
@@ -220,6 +222,7 @@ class MerchantProduct {
       imageUrl: json['imageUrl'] as String? ?? '',
       isActive: json['isActive'] as bool? ?? true,
       serviceType: json['serviceType'] as String? ?? '',
+      packageDeliveryType: json['packageDeliveryType'] as String?,
     );
   }
 }

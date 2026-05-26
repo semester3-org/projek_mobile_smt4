@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../core/payment_methods.dart';
 
 // Enum sesuai DB: unpaid, paid, overdue
 enum PaymentStatus { unpaid, paid, overdue }
@@ -396,7 +397,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                 _DetailRow(
                     label: 'payment_status', value: item.paymentStatus.dbValue),
                 _DetailRow(
-                    label: 'payment_method', value: item.paymentMethod ?? '-'),
+                    label: 'payment_method',
+                    value: PaymentMethodHelper.getDisplayName(item.paymentMethod)),
                 _DetailRow(label: 'paid_at', value: item.paidAt ?? '-'),
                 const SizedBox(height: 16),
                 if (item.paymentStatus == PaymentStatus.unpaid ||

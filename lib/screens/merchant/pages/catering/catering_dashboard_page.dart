@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../shared/merchant_dashboard_view.dart';
-import 'catering_orders_page.dart';
+import '../shared/merchant_orders_view.dart';
 
 class CateringDashboardPage extends StatelessWidget {
   const CateringDashboardPage({super.key});
@@ -12,7 +12,10 @@ class CateringDashboardPage extends StatelessWidget {
       isLaundry: false,
       onViewAllOrders: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const CateringOrdersPage()),
+        MaterialPageRoute(
+          builder: (_) => const MerchantOrdersView(isLaundry: false, showBack: true),
+          fullscreenDialog: false,
+        ),
       ),
     );
   }

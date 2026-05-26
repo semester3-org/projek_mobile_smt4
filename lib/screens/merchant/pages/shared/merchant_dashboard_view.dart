@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/realtime_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
@@ -28,6 +29,18 @@ class _MerchantDashboardViewState extends State<MerchantDashboardView> {
   void initState() {
     super.initState();
     _load();
+    
+    // Start real-time polling untuk dashboard
+    RealtimeService().startMerchantDashboardPolling();
+    RealtimeService().addEventListener('dashboard_updated', _load);
+  }
+
+  @override
+  void dispose() {
+    // Stop real-time polling dan remove listeners
+    RealtimeService().removeEventListener('dashboard_updated', _load);
+    RealtimeService().stopMerchantDashboardPolling();
+    super.dispose();
   }
 
   Future<void> _load() async {

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Tema aplikasi: hijau & putih, Material 3, bersih dan modern.
+/// Tema aplikasi: biru & putih, Material 3, bersih dan modern.
 class AppTheme {
   AppTheme._();
 
-  static const Color primaryGreen = Color(0xFF2E7D32);
-  static const Color primaryGreenLight = Color(0xFF4CAF50);
-  static const Color surfaceTint = Color(0xFFF1F8F4);
+  static const Color primaryGreen = Color(0xFF0B63B6);
+  static const Color primaryGreenLight = Color(0xFF1B7FD8);
+  static const Color surfaceTint = Color(0xFFF5F7FB);
 
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(

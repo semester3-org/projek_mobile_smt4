@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/payment_methods.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
@@ -398,7 +399,8 @@ class _PaymentCard extends StatelessWidget {
       children: [
         _PaymentMeta(
           label: 'METODE PEMBAYARAN',
-          value: order.paymentMethod.isEmpty ? '-' : order.paymentMethod,
+          value: PaymentMethodHelper.getDisplayName(
+              order.paymentMethod.isEmpty ? null : order.paymentMethod),
         ),
         const SizedBox(height: 12),
         _PaymentMeta(

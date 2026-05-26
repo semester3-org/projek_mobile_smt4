@@ -12,9 +12,11 @@ class MerchantOrdersView extends StatefulWidget {
   const MerchantOrdersView({
     super.key,
     required this.isLaundry,
+    this.showBack = false,
   });
 
   final bool isLaundry;
+  final bool showBack;
 
   @override
   State<MerchantOrdersView> createState() => _MerchantOrdersViewState();
@@ -111,21 +113,15 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
   Widget build(BuildContext context) {
     return MerchantPage(
       topBar: MerchantTopBar(
-        title: 'MerchantHub',
+        title: 'Daftar Pesanan',
+        showBack: widget.showBack,
+        showAvatar: !widget.showBack,
         onAction: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),
         ),
       ),
       children: [
-        const Text(
-          'Daftar Pesanan',
-          style: TextStyle(
-            color: MerchantPalette.text,
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
         const SizedBox(height: 8),
         Text(
           widget.isLaundry

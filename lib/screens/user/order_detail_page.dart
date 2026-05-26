@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/payment_methods.dart';
+import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
 import 'user_theme.dart';
@@ -19,7 +21,6 @@ class UserOrderDetailPage extends StatefulWidget {
 
 class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   late Order _order;
-  Timer? _refreshTimer;
   bool _confirmingPayment = false;
   bool _openingPayment = false;
   bool _syncingPayment = false;
@@ -29,15 +30,17 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   void initState() {
     super.initState();
     _order = widget.order;
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 8),
-      (_) => _refreshOrder(),
-    );
+    
+    // Use RealtimeService untuk real-time order updates
+    RealtimeService().startUserOrderPolling();
+    RealtimeService().addEventListener('order_status_updated', _refreshOrder);
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    // Stop real-time polling dan remove listeners
+    RealtimeService().removeEventListener('order_status_updated', _refreshOrder);
+    RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
 
@@ -269,7 +272,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      order.paymentMethod ?? 'GOPAY',
+                      PaymentMethodHelper.getDisplayName(order.paymentMethod),
                       style: const TextStyle(
                         color: UserTheme.primaryDark,
                         fontWeight: FontWeight.w900,

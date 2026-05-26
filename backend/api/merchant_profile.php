@@ -89,9 +89,18 @@ try {
 
     if (merchantTableExists($conn, 'users')) {
         $userId = (string)$merchant['user_id'];
-        $stmt = $conn->prepare("UPDATE users SET display_name = ?, phone = NULLIF(?, ''), address = NULLIF(?, ''), updated_at = NOW() WHERE id = ?");
+        $stmt = $conn->prepare("
+            UPDATE users
+            SET display_name = ?,
+                phone = NULLIF(?, ''),
+                address = NULLIF(?, ''),
+                latitude = ?,
+                longitude = ?,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
         if ($stmt) {
-            $stmt->bind_param('ssss', $businessName, $phone, $address, $userId);
+            $stmt->bind_param('sssdds', $businessName, $phone, $address, $latitude, $longitude, $userId);
             $stmt->execute();
             $stmt->close();
         }

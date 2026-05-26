@@ -13,6 +13,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function userOrderPayload(mysqli $conn, array $row): array {
     $order = merchantOrderPayload($conn, $row);
+    $isCatering = ($order['serviceType'] ?? '') === 'catering';
+    $subscriptionStatus = strtolower((string)($order['subscriptionStatus'] ?? ''));
+    $subscriptionEnd = $order['subscriptionEndDate'] ?? null;
+    $subscriptionEndDate = $subscriptionEnd ? date('Y-m-d', strtotime($subscriptionEnd)) : null;
+    $subscriptionStillRunning = $subscriptionEndDate === null || $subscriptionEndDate >= date('Y-m-d');
+    $canCancel = $isCatering
+        ? (($order['subscriptionDays'] ?? null) !== null &&
+            $subscriptionStillRunning &&
+            !in_array($subscriptionStatus, ['cancel_requested', 'ended'], true))
+        : (($order['status'] ?? '') === 'pending');
+
     return [
         'id' => $order['code'],
         'databaseId' => $order['id'],
@@ -29,6 +40,7 @@ function userOrderPayload(mysqli $conn, array $row): array {
         },
         'items' => array_map(fn($item) => [
             'name' => $item['name'],
+            'description' => $item['description'] ?? '',
             'quantity' => $item['quantity'],
             'price' => $item['price'],
             'subtotal' => $item['subtotal'],
@@ -38,8 +50,16 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'paymentStatus' => $order['paymentStatus'],
         'paymentStatusLabel' => $order['paymentStatusLabel'],
         'deliveryAddress' => $order['deliveryAddress'],
+        'deliveryLatitude' => $order['deliveryLatitude'],
+        'deliveryLongitude' => $order['deliveryLongitude'],
         'estimatedTime' => $order['estimatedTime'],
-        'canCancel' => $order['serviceType'] !== 'catering' || $order['status'] === 'pending',
+        'midtransOrderId' => $order['midtransOrderId'],
+        'subscriptionDays' => $order['subscriptionDays'],
+        'subscriptionStartDate' => $order['subscriptionStartDate'],
+        'subscriptionEndDate' => $order['subscriptionEndDate'],
+        'subscriptionStatus' => $order['subscriptionStatus'],
+        'cancellationRequestedAt' => $order['cancellationRequestedAt'],
+        'canCancel' => $canCancel,
     ];
 }
 
@@ -51,8 +71,36 @@ function userOrderInitialPaymentStatus(string $paymentMethod): string {
     return 'waiting_payment';
 }
 
+function userOrderIsCod(string $paymentMethod): bool {
+    $method = strtolower(trim($paymentMethod));
+    return str_contains($method, 'cod') || str_contains($method, 'cash');
+}
+
+function userOrderPaymentAllowed(string $merchantType, string $paymentMethod): bool {
+    if ($merchantType === 'catering' && userOrderIsCod($paymentMethod)) {
+        return false;
+    }
+    return true;
+}
+
+function userOrderSubscriptionDays(string $service, array $body): ?int {
+    if ($service !== 'catering') return null;
+    $days = (int)($body['subscriptionDays'] ?? 0);
+    if ($days <= 0) {
+        $estimated = (string)($body['estimatedTime'] ?? '');
+        if (preg_match('/(\d+)\s*hari/i', $estimated, $matches)) {
+            $days = (int)$matches[1];
+        }
+    }
+    if (!in_array($days, [20, 30], true)) {
+        $days = 30;
+    }
+    return $days;
+}
+
 try {
     merchantEnsureSchema($conn);
+    merchantExpireFinishedCateringSubscriptions($conn);
     $payload = merchantRequireAuth();
     $userId = (string)($payload['sub'] ?? '');
     if ($userId === '') {
@@ -84,7 +132,7 @@ try {
         $id = trim((string)($body['id'] ?? ''));
         $action = strtolower(trim((string)($body['action'] ?? '')));
 
-        if ($id === '' || $action !== 'confirm_payment') {
+        if ($id === '' || !in_array($action, ['confirm_payment', 'cancel_subscription'], true)) {
             merchantSendJson(false, null, 'Aksi pesanan tidak valid', 400);
         }
 
@@ -106,6 +154,56 @@ try {
 
         if (!$row) {
             merchantSendJson(false, null, 'Pesanan tidak ditemukan', 404);
+        }
+
+        if ($action === 'cancel_subscription') {
+            $serviceType = strtolower((string)($row['service_type'] ?? $row['merchant_type'] ?? ''));
+            if ($serviceType !== 'catering') {
+                merchantSendJson(false, null, 'Hanya langganan catering yang bisa dibatalkan dari menu ini', 400);
+            }
+            $subscriptionStatus = strtolower((string)($row['subscription_status'] ?? ''));
+            if (in_array($subscriptionStatus, ['cancel_requested', 'ended'], true)) {
+                merchantSendJson(false, null, 'Langganan sudah dibatalkan atau selesai', 400);
+            }
+
+            $orderIdInt = (int)$row['id'];
+            $stmt = $conn->prepare("
+                UPDATE orders
+                SET subscription_status = 'cancel_requested',
+                    cancellation_requested_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = ? AND user_id = ?
+            ");
+            if (!$stmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $stmt->bind_param('is', $orderIdInt, $userId);
+            $stmt->execute();
+            $stmt->close();
+
+            merchantCreateNotification(
+                $conn,
+                (string)$row['merchant_user_id'],
+                'Langganan catering dibatalkan',
+                ($row['order_code'] ?? ('#' . $row['id'])) . ' tetap aktif sampai masa langganan selesai.',
+                'catering',
+                'Lihat Pesanan',
+                'order:' . (string)$row['id']
+            );
+
+            $stmt = $conn->prepare("
+                SELECT o.*, m.business_name, m.merchant_type
+                FROM orders o
+                INNER JOIN merchants m ON m.id = o.merchant_id
+                WHERE o.id = ?
+                LIMIT 1
+            ");
+            $stmt->bind_param('i', $orderIdInt);
+            $stmt->execute();
+            $updated = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            merchantSendJson(true, userOrderPayload($conn, $updated), 'Langganan akan berhenti saat periode selesai');
         }
 
         $paymentMethod = (string)($row['payment_method'] ?? '');
@@ -162,9 +260,14 @@ try {
     $merchantId = merchantResolveMerchantId($conn, $merchantInput);
     $service = strtolower(trim((string)($body['service'] ?? '')));
     $deliveryAddress = trim((string)($body['deliveryAddress'] ?? ''));
+    $deliveryLatitude = isset($body['deliveryLatitude']) && $body['deliveryLatitude'] !== '' && $body['deliveryLatitude'] !== null
+        ? (float)$body['deliveryLatitude']
+        : null;
+    $deliveryLongitude = isset($body['deliveryLongitude']) && $body['deliveryLongitude'] !== '' && $body['deliveryLongitude'] !== null
+        ? (float)$body['deliveryLongitude']
+        : null;
     $estimatedTime = trim((string)($body['estimatedTime'] ?? ''));
-    $paymentMethod = trim((string)($body['paymentMethod'] ?? 'GOPAY'));
-    $paymentStatus = userOrderInitialPaymentStatus($paymentMethod);
+    $paymentMethod = trim((string)($body['paymentMethod'] ?? ''));
     $customerName = trim((string)($body['customerName'] ?? ''));
     $customerPhone = trim((string)($body['customerPhone'] ?? ''));
     $notes = trim((string)($body['notes'] ?? ''));
@@ -183,6 +286,26 @@ try {
     $merchantType = merchantQueryValue($conn, 'SELECT merchant_type FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
     if ($service === '') {
         $service = (string)($merchantType ?: 'laundry');
+    }
+    $merchantType = (string)($merchantType ?: $service);
+    if ($paymentMethod === '') {
+        $paymentMethod = $merchantType === 'catering' ? 'GoPay/QRIS' : 'Cash on Delivery';
+    }
+    if (!userOrderPaymentAllowed($merchantType, $paymentMethod)) {
+        merchantSendJson(false, null, 'Catering tidak mendukung pembayaran COD. Pilih e-wallet, QRIS, atau transfer bank.', 400);
+    }
+    $paymentStatus = userOrderInitialPaymentStatus($paymentMethod);
+    $subscriptionDays = userOrderSubscriptionDays($service, $body);
+    $subscriptionStartDate = null;
+    $subscriptionEndDate = null;
+    $subscriptionStatus = null;
+    if ($subscriptionDays !== null) {
+        $start = new DateTime(date('Y-m-d'));
+        $end = clone $start;
+        $end->modify('+' . ($subscriptionDays - 1) . ' day');
+        $subscriptionStartDate = $start->format('Y-m-d');
+        $subscriptionEndDate = $end->format('Y-m-d');
+        $subscriptionStatus = $paymentStatus === 'paid' ? 'active' : 'pending_payment';
     }
 
     $total = 0.0;
@@ -228,11 +351,34 @@ try {
     try {
         $stmt = $conn->prepare("
             INSERT INTO orders
-                (user_id, merchant_id, total_harga, status, service_type, delivery_address, estimated_time, payment_method, payment_status, customer_name, customer_phone, notes, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                (user_id, merchant_id, total_harga, status, service_type, delivery_address,
+                 delivery_latitude, delivery_longitude, estimated_time, payment_method,
+                 payment_status, customer_name, customer_phone, notes, subscription_days,
+                 subscription_start_date, subscription_end_date, subscription_status,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         ");
         if (!$stmt) throw new Exception($conn->error);
-        $stmt->bind_param('ssdssssssss', $userId, $merchantId, $total, $service, $deliveryAddress, $estimatedTime, $paymentMethod, $paymentStatus, $customerName, $customerPhone, $notes);
+        $stmt->bind_param(
+            'ssdssddssssssisss',
+            $userId,
+            $merchantId,
+            $total,
+            $service,
+            $deliveryAddress,
+            $deliveryLatitude,
+            $deliveryLongitude,
+            $estimatedTime,
+            $paymentMethod,
+            $paymentStatus,
+            $customerName,
+            $customerPhone,
+            $notes,
+            $subscriptionDays,
+            $subscriptionStartDate,
+            $subscriptionEndDate,
+            $subscriptionStatus
+        );
         $stmt->execute();
         $orderId = (int)$conn->insert_id;
         $stmt->close();

@@ -49,6 +49,56 @@ function localPaymentStatus(string $transactionStatus): string {
     return in_array($transactionStatus, ['capture', 'settlement'], true) ? 'paid' : 'unpaid';
 }
 
+function localOrderPaymentStatus(string $transactionStatus): string {
+    return match ($transactionStatus) {
+        'capture', 'settlement' => 'paid',
+        'pending' => 'waiting_payment',
+        'deny', 'cancel', 'expire', 'failure' => 'cancelled',
+        default => 'waiting_payment',
+    };
+}
+
+function midtransEnabledPayments(string $paymentMethod): array {
+    $normalizedMethod = strtolower($paymentMethod);
+    if (textContains($normalizedMethod, 'cod') || textContains($normalizedMethod, 'cash')) {
+        sendError('COD tidak diproses melalui Midtrans', 400);
+    }
+    if (textContains($normalizedMethod, 'shopeepay')) {
+        return ['shopeepay', 'qris'];
+    }
+    if (textContains($normalizedMethod, 'bca') ||
+        textContains($normalizedMethod, 'mandiri') ||
+        textContains($normalizedMethod, 'virtual account') ||
+        textContains($normalizedMethod, 'bank') ||
+        textContains($normalizedMethod, 'transfer')) {
+        return ['bank_transfer'];
+    }
+    if (textContains($normalizedMethod, 'qris') ||
+        textContains($normalizedMethod, 'gopay') ||
+        textContains($normalizedMethod, 'ovo') ||
+        textContains($normalizedMethod, 'dana') ||
+        textContains($normalizedMethod, 'e-wallet') ||
+        textContains($normalizedMethod, 'ewallet')) {
+        return ['gopay', 'qris', 'shopeepay'];
+    }
+    if (textContains($normalizedMethod, 'credit') ||
+        textContains($normalizedMethod, 'debit') ||
+        textContains($normalizedMethod, 'kartu')) {
+        return ['credit_card'];
+    }
+    sendError('Payment method tidak didukung: ' . $paymentMethod, 400);
+}
+
+function orderIdFromMidtransOrderId(string $midtransOrderId): ?int {
+    if (strpos($midtransOrderId, 'ORD-') !== 0) {
+        return null;
+    }
+    $raw = substr($midtransOrderId, 4);
+    $dash = strpos($raw, '-');
+    $id = $dash === false ? $raw : substr($raw, 0, $dash);
+    return ctype_digit($id) ? (int)$id : null;
+}
+
 function tableExists(mysqli $conn, string $table): bool {
     $stmt = $conn->prepare(
         'SELECT COUNT(*) AS total FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
@@ -190,6 +240,221 @@ if (!is_array($body)) {
 }
 
 $action = trim((string)($body['action'] ?? 'create'));
+if ($action === 'create_order_payment') {
+    $orderInput = trim((string)($body['order_id'] ?? $body['orderId'] ?? ''));
+    $paymentMethodInput = trim((string)($body['payment_method'] ?? $body['paymentMethod'] ?? ''));
+    if ($orderInput === '') {
+        sendError('order_id wajib diisi', 400);
+    }
+
+    require_once __DIR__ . '/../config/db.php';
+    require_once __DIR__ . '/merchant_helpers.php';
+    merchantEnsureSchema($conn);
+
+    $stmt = $conn->prepare("
+        SELECT o.*, m.business_name, m.user_id AS merchant_user_id, m.merchant_type,
+               u.email, u.display_name
+        FROM orders o
+        INNER JOIN merchants m ON m.id = o.merchant_id
+        INNER JOIN users u ON u.id = o.user_id
+        WHERE (CAST(o.id AS CHAR) = ? OR o.order_code = ?)
+          AND o.user_id = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $stmt->bind_param('sss', $orderInput, $orderInput, $userId);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$order) {
+        sendError('Pesanan tidak ditemukan', 404);
+    }
+
+    $currentPaymentStatus = strtolower((string)($order['payment_status'] ?? ''));
+    if (in_array($currentPaymentStatus, ['paid', 'payment_submitted'], true)) {
+        sendError('Pembayaran pesanan sudah tercatat', 400);
+    }
+
+    $serviceType = strtolower((string)($order['service_type'] ?? $order['merchant_type'] ?? ''));
+    $paymentMethod = $paymentMethodInput !== '' ? $paymentMethodInput : (string)($order['payment_method'] ?? '');
+    if ($paymentMethod === '') {
+        $paymentMethod = $serviceType === 'catering' ? 'GoPay/QRIS' : 'Transfer Bank';
+    }
+    if ($serviceType === 'catering' &&
+        (textContains(strtolower($paymentMethod), 'cod') || textContains(strtolower($paymentMethod), 'cash'))) {
+        sendError('Catering tidak mendukung pembayaran COD', 400);
+    }
+
+    $enabledPayments = midtransEnabledPayments($paymentMethod);
+    $amount = (int)round((float)($order['total_harga'] ?? 0));
+    if ($amount <= 0) {
+        sendError('Total pesanan tidak valid', 400);
+    }
+
+    $orderIdInt = (int)$order['id'];
+    $items = [];
+    $itemsStmt = $conn->prepare("
+        SELECT oi.product_id, oi.qty, oi.harga, p.nama_produk
+        FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id ASC
+    ");
+    if ($itemsStmt) {
+        $itemsStmt->bind_param('i', $orderIdInt);
+        $itemsStmt->execute();
+        $rows = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $itemsStmt->close();
+        foreach ($rows as $index => $item) {
+            $price = (int)round((float)($item['harga'] ?? 0));
+            $quantity = (int)($item['qty'] ?? 1);
+            if ($price <= 0 || $quantity <= 0) continue;
+            $items[] = [
+                'id' => (string)($item['product_id'] ?? ('item-' . ($index + 1))),
+                'price' => $price,
+                'quantity' => $quantity,
+                'name' => substr((string)($item['nama_produk'] ?? 'Item Pesanan'), 0, 50),
+            ];
+        }
+    }
+    $itemsTotal = array_reduce($items, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+    if (empty($items) || $itemsTotal !== $amount) {
+        $items = [[
+            'id' => 'order-' . $orderIdInt,
+            'price' => $amount,
+            'quantity' => 1,
+            'name' => substr((string)($order['order_code'] ?? 'Pembayaran Pesanan'), 0, 50),
+        ]];
+    }
+
+    $orderSuffix = date('His') . mt_rand(100, 999);
+    $midtransOrderId = 'ORD-' . $orderIdInt . '-' . $orderSuffix;
+    $customerName = trim((string)($order['customer_name'] ?? ''));
+    if ($customerName === '') {
+        $customerName = (string)($order['display_name'] ?? 'User');
+    }
+
+    $transactionParams = [
+        'transaction_details' => [
+            'order_id' => $midtransOrderId,
+            'gross_amount' => $amount,
+        ],
+        'customer_details' => [
+            'first_name' => $customerName,
+            'email' => (string)($order['email'] ?? ''),
+        ],
+        'item_details' => $items,
+        'enabled_payments' => $enabledPayments,
+    ];
+
+    try {
+        $paymentUrl = \Midtrans\Snap::getSnapUrl($transactionParams);
+        $update = $conn->prepare("
+            UPDATE orders
+            SET payment_method = ?,
+                payment_status = 'waiting_payment',
+                midtrans_order_id = ?,
+                updated_at = NOW()
+            WHERE id = ? AND user_id = ?
+        ");
+        if (!$update) {
+            sendError('Database error: ' . $conn->error, 500);
+        }
+        $update->bind_param('ssis', $paymentMethod, $midtransOrderId, $orderIdInt, $userId);
+        $update->execute();
+        $update->close();
+
+        sendSuccess([
+            'payment_url' => $paymentUrl,
+            'midtrans_order_id' => $midtransOrderId,
+            'order_id' => (string)$orderIdInt,
+            'payment_method' => $paymentMethod,
+            'enabled_payments' => $enabledPayments,
+            'midtrans_config' => midtransSandboxInfo(),
+        ], 'Midtrans pembayaran pesanan berhasil dibuat');
+    } catch (Exception $e) {
+        sendError('Gagal membuat transaksi Midtrans: ' . $e->getMessage(), 500);
+    }
+}
+
+if ($action === 'sync_order_status') {
+    $midtransOrderId = trim((string)($body['midtrans_order_id'] ?? ''));
+    if ($midtransOrderId === '') {
+        sendError('midtrans_order_id wajib diisi', 400);
+    }
+
+    try {
+        $statusResponse = \Midtrans\Transaction::status($midtransOrderId);
+        $transactionStatus = (string)($statusResponse->transaction_status ?? '');
+        $paymentType = (string)($statusResponse->payment_type ?? '');
+        $localStatus = localOrderPaymentStatus($transactionStatus);
+        $orderId = orderIdFromMidtransOrderId($midtransOrderId);
+
+        require_once __DIR__ . '/../config/db.php';
+        require_once __DIR__ . '/merchant_helpers.php';
+        merchantEnsureSchema($conn);
+
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET payment_status = ?,
+                payment_method = IF(? = '', payment_method, ?),
+                paid_at = IF(? = 'paid', COALESCE(paid_at, NOW()), paid_at),
+                subscription_status = IF(
+                    service_type = 'catering'
+                    AND ? = 'paid'
+                    AND COALESCE(subscription_status, '') NOT IN ('cancel_requested', 'ended'),
+                    'active',
+                    subscription_status
+                ),
+                updated_at = NOW()
+            WHERE (midtrans_order_id = ? OR id = ?)
+              AND user_id = ?
+        ");
+        if (!$stmt) {
+            sendError('Database error: ' . $conn->error, 500);
+        }
+        $orderIdForBind = $orderId ?? 0;
+        $stmt->bind_param('ssssssis', $localStatus, $paymentType, $paymentType, $localStatus, $localStatus, $midtransOrderId, $orderIdForBind, $userId);
+        $stmt->execute();
+        $affectedRows = $stmt->affected_rows;
+        $stmt->close();
+
+        if ($localStatus === 'paid') {
+            $merchantUserId = merchantQueryValue(
+                $conn,
+                'SELECT m.user_id FROM orders o INNER JOIN merchants m ON m.id = o.merchant_id WHERE (o.midtrans_order_id = ? OR o.id = ?) LIMIT 1',
+                'si',
+                [$midtransOrderId, $orderIdForBind]
+            );
+            if ($merchantUserId) {
+                merchantCreateNotification(
+                    $conn,
+                    (string)$merchantUserId,
+                    'Pembayaran pesanan berhasil',
+                    'Pembayaran Midtrans untuk pesanan user sudah diterima.',
+                    'payment',
+                    'Lihat Pesanan',
+                    'order:' . (string)$orderIdForBind
+                );
+            }
+        }
+
+        sendSuccess([
+            'order_id' => $orderId !== null ? (string)$orderId : null,
+            'midtrans_order_id' => $midtransOrderId,
+            'transaction_status' => $transactionStatus,
+            'payment_status' => $localStatus,
+            'payment_type' => $paymentType,
+            'updated' => $affectedRows > 0,
+        ], 'Status Midtrans pesanan berhasil disinkronkan');
+    } catch (Exception $e) {
+        sendError('Gagal cek status Midtrans pesanan: ' . $e->getMessage(), 500);
+    }
+}
+
 if ($action === 'sync_status') {
     $midtransOrderId = trim((string)($body['midtrans_order_id'] ?? ''));
     if ($midtransOrderId === '') {

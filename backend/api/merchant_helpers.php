@@ -155,6 +155,15 @@ function merchantEnsureSchema(mysqli $conn): void {
         merchantAddColumn($conn, 'orders', 'customer_name', "`customer_name` VARCHAR(120) DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'customer_phone', "`customer_phone` VARCHAR(25) DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'notes', "`notes` TEXT DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'delivery_latitude', "`delivery_latitude` DECIMAL(10,8) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'delivery_longitude', "`delivery_longitude` DECIMAL(11,8) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'midtrans_order_id', "`midtrans_order_id` VARCHAR(50) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'paid_at', "`paid_at` DATETIME DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'subscription_days', "`subscription_days` INT DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'subscription_start_date', "`subscription_start_date` DATE DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'subscription_end_date', "`subscription_end_date` DATE DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'subscription_status', "`subscription_status` VARCHAR(30) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'cancellation_requested_at', "`cancellation_requested_at` DATETIME DEFAULT NULL");
     } else {
         $conn->query("
             CREATE TABLE orders (
@@ -172,6 +181,15 @@ function merchantEnsureSchema(mysqli $conn): void {
                 customer_name VARCHAR(120) DEFAULT NULL,
                 customer_phone VARCHAR(25) DEFAULT NULL,
                 notes TEXT DEFAULT NULL,
+                delivery_latitude DECIMAL(10,8) DEFAULT NULL,
+                delivery_longitude DECIMAL(11,8) DEFAULT NULL,
+                midtrans_order_id VARCHAR(50) DEFAULT NULL,
+                paid_at DATETIME DEFAULT NULL,
+                subscription_days INT DEFAULT NULL,
+                subscription_start_date DATE DEFAULT NULL,
+                subscription_end_date DATE DEFAULT NULL,
+                subscription_status VARCHAR(30) DEFAULT NULL,
+                cancellation_requested_at DATETIME DEFAULT NULL,
                 created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
@@ -251,6 +269,8 @@ function merchantEnsureSchema(mysqli $conn): void {
     if (merchantTableExists($conn, 'users')) {
         merchantAddColumn($conn, 'users', 'phone', "`phone` VARCHAR(25) DEFAULT NULL");
         merchantAddColumn($conn, 'users', 'address', "`address` VARCHAR(255) DEFAULT NULL");
+        merchantAddColumn($conn, 'users', 'latitude', "`latitude` DECIMAL(10,8) DEFAULT NULL");
+        merchantAddColumn($conn, 'users', 'longitude', "`longitude` DECIMAL(11,8) DEFAULT NULL");
     }
 
     $conn->query("
@@ -262,6 +282,25 @@ function merchantEnsureSchema(mysqli $conn): void {
         UPDATE orders
         SET order_code = CONCAT('SR-', UPPER(COALESCE(service_type, 'ORDER')), '-', LPAD(id, 6, '0'))
         WHERE order_code IS NULL OR order_code = ''
+    ");
+}
+
+function merchantExpireFinishedCateringSubscriptions(mysqli $conn): void {
+    if (!merchantTableExists($conn, 'orders') ||
+        !merchantColumnExists($conn, 'orders', 'subscription_end_date')) {
+        return;
+    }
+
+    $conn->query("
+        UPDATE orders
+        SET subscription_status = 'ended',
+            status = 'done',
+            updated_at = NOW()
+        WHERE service_type = 'catering'
+          AND subscription_end_date IS NOT NULL
+          AND subscription_end_date < CURDATE()
+          AND COALESCE(subscription_status, 'active') IN ('active', 'cancel_requested')
+          AND status <> 'done'
     ");
 }
 
@@ -356,6 +395,7 @@ function merchantPaymentStatusLabel(?string $status, ?string $method = null): st
     }
     return match ($normalized) {
         'paid', 'payment_submitted' => 'Pembayaran masuk',
+        'waiting_payment', 'unpaid' => 'Menunggu pembayaran',
         'cancelled' => 'Pembayaran batal',
         default => 'Menunggu pembayaran',
     };
@@ -453,10 +493,18 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
         'statusLabel' => merchantStatusLabel($status),
         'statusGroup' => merchantStatusGroup($status),
         'deliveryAddress' => $row['delivery_address'] ?? '',
+        'deliveryLatitude' => isset($row['delivery_latitude']) ? (float)$row['delivery_latitude'] : null,
+        'deliveryLongitude' => isset($row['delivery_longitude']) ? (float)$row['delivery_longitude'] : null,
         'totalAmount' => (float)($row['total_harga'] ?? 0),
         'paymentMethod' => $row['payment_method'] ?? '',
         'paymentStatus' => $row['payment_status'] ?? '',
         'paymentStatusLabel' => merchantPaymentStatusLabel($row['payment_status'] ?? null, $row['payment_method'] ?? null),
+        'midtransOrderId' => $row['midtrans_order_id'] ?? null,
+        'subscriptionDays' => isset($row['subscription_days']) ? (int)$row['subscription_days'] : null,
+        'subscriptionStartDate' => !empty($row['subscription_start_date']) ? date(DATE_ATOM, strtotime($row['subscription_start_date'])) : null,
+        'subscriptionEndDate' => !empty($row['subscription_end_date']) ? date(DATE_ATOM, strtotime($row['subscription_end_date'])) : null,
+        'subscriptionStatus' => $row['subscription_status'] ?? null,
+        'cancellationRequestedAt' => !empty($row['cancellation_requested_at']) ? date(DATE_ATOM, strtotime($row['cancellation_requested_at'])) : null,
         'canApprove' => merchantOrderCanApprove($row),
         'notes' => $row['notes'] ?? '',
         'items' => $items,

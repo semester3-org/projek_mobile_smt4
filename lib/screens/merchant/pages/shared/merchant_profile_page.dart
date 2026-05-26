@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../auth/auth_scope.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
+import '../../../../widgets/location_picker_page.dart';
 import '../../merchant_ui.dart';
 
 class MerchantProfilePage extends StatefulWidget {
@@ -114,6 +115,27 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         _addressCtrl.text =
             'Lokasi merchant (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})';
       }
+    });
+  }
+
+  Future<void> _pickLocation() async {
+    final result = await Navigator.of(context).push<PickedLocation>(
+      MaterialPageRoute<PickedLocation>(
+        builder: (_) => LocationPickerPage(
+          title: 'Pilih Lokasi Merchant',
+          initialAddress: _addressCtrl.text,
+          initialLatitude: _latitude,
+          initialLongitude: _longitude,
+          primaryColor: MerchantPalette.primary,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      _addressCtrl.text = result.address;
+      _latitude = result.latitude;
+      _longitude = result.longitude;
     });
   }
 
@@ -358,6 +380,27 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
             controller: _addressCtrl,
             suffix: Icons.my_location_rounded,
             onSuffixTap: _useCurrentLocation,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _pickLocation,
+              icon: const Icon(Icons.map_outlined),
+              label: Text(
+                _latitude == null || _longitude == null
+                    ? 'Pilih Titik Map'
+                    : 'Ubah Titik Map',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: MerchantPalette.primary,
+                side: const BorderSide(color: MerchantPalette.primary),
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
           ),
           if (_latitude != null && _longitude != null) ...[
             const SizedBox(height: 8),

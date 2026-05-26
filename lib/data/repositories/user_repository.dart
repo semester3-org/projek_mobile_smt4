@@ -161,6 +161,49 @@ class UserRepository {
     return RepoResult.ok(data);
   }
 
+  static Future<RepoResult<Map<String, dynamic>>> createOrderMidtransPayment({
+    required String orderId,
+    required String paymentMethod,
+  }) async {
+    final res = await ApiService.post('api/midtrans', {
+      'action': 'create_order_payment',
+      'order_id': orderId,
+      'payment_method': paymentMethod,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(
+          res.message ?? 'Gagal membuat pembayaran Midtrans');
+    }
+
+    final data = res.data?['data'] as Map<String, dynamic>?;
+    if (data == null) {
+      return const RepoResult.fail('Response Midtrans tidak valid');
+    }
+
+    return RepoResult.ok(data);
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> syncOrderMidtransStatus({
+    required String midtransOrderId,
+  }) async {
+    final res = await ApiService.post('api/midtrans', {
+      'action': 'sync_order_status',
+      'midtrans_order_id': midtransOrderId,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal mengecek status Midtrans');
+    }
+
+    final data = res.data?['data'] as Map<String, dynamic>?;
+    if (data == null) {
+      return const RepoResult.fail('Response status Midtrans tidak valid');
+    }
+
+    return RepoResult.ok(data);
+  }
+
   static Future<RepoResult<Map<String, dynamic>>> syncMidtransPaymentStatus({
     required String midtransOrderId,
   }) async {
@@ -202,8 +245,11 @@ class UserRepository {
     required UserMerchant merchant,
     required List<MerchantMenuItem> items,
     required String deliveryAddress,
+    double? deliveryLatitude,
+    double? deliveryLongitude,
     required String estimatedTime,
     required String paymentMethod,
+    int? subscriptionDays,
     Map<String, int>? quantities,
     String? customerName,
     String? customerPhone,
@@ -214,8 +260,11 @@ class UserRepository {
           merchant.merchantId.isNotEmpty ? merchant.merchantId : merchant.id,
       'service': merchant.type,
       'deliveryAddress': deliveryAddress,
+      'deliveryLatitude': deliveryLatitude,
+      'deliveryLongitude': deliveryLongitude,
       'estimatedTime': estimatedTime,
       'paymentMethod': paymentMethod,
+      if (subscriptionDays != null) 'subscriptionDays': subscriptionDays,
       'customerName': customerName ?? '',
       'customerPhone': customerPhone ?? '',
       'notes': notes ?? '',
@@ -256,7 +305,8 @@ class UserRepository {
     return const RepoResult.fail('Pesanan tidak ditemukan');
   }
 
-  static Future<RepoResult<Order>> confirmMerchantPayment(String orderId) async {
+  static Future<RepoResult<Order>> confirmMerchantPayment(
+      String orderId) async {
     final res = await ApiService.put('api/user_orders', {
       'id': orderId,
       'action': 'confirm_payment',
@@ -272,6 +322,26 @@ class UserRepository {
       );
     } catch (_) {
       return const RepoResult.fail('Gagal membaca status pesanan terbaru');
+    }
+  }
+
+  static Future<RepoResult<Order>> cancelCateringSubscription(
+      String orderId) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'cancel_subscription',
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal membatalkan langganan');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status langganan terbaru');
     }
   }
 

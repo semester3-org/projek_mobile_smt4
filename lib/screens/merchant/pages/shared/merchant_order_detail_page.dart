@@ -185,9 +185,17 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
             ],
           ),
           const SizedBox(height: 20),
-          _AddressCard(address: order.deliveryAddress),
+          _AddressCard(
+            address: order.deliveryAddress,
+            latitude: order.deliveryLatitude,
+            longitude: order.deliveryLongitude,
+          ),
           const SizedBox(height: 20),
           _ItemsCard(order: order, isLaundry: widget.isLaundry),
+          if (order.isCateringSubscription) ...[
+            const SizedBox(height: 20),
+            _SubscriptionCard(order: order),
+          ],
           const SizedBox(height: 20),
           _PaymentCard(order: order),
           const MerchantBottomSpacer(),
@@ -272,9 +280,15 @@ class _InfoCard extends StatelessWidget {
 }
 
 class _AddressCard extends StatelessWidget {
-  const _AddressCard({required this.address});
+  const _AddressCard({
+    required this.address,
+    this.latitude,
+    this.longitude,
+  });
 
   final String address;
+  final double? latitude;
+  final double? longitude;
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +309,17 @@ class _AddressCard extends StatelessWidget {
               height: 1.45,
             ),
           ),
+          if (latitude != null && longitude != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Koordinat: ${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}',
+              style: const TextStyle(
+                color: MerchantPalette.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -384,6 +409,45 @@ class _PaymentCard extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _PaymentNotice(canApprove: order.canApprove),
+      ],
+    );
+  }
+}
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({required this.order});
+
+  final MerchantOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InfoCard(
+      icon: Icons.calendar_month_outlined,
+      title: 'Langganan Catering',
+      children: [
+        _PaymentMeta(
+          label: 'DURASI',
+          value: '${order.subscriptionDays ?? 0} hari',
+        ),
+        const SizedBox(height: 12),
+        _PaymentMeta(
+          label: 'PERIODE',
+          value:
+              '${_formatDate(order.subscriptionStartDate)} - ${_formatDate(order.subscriptionEndDate)}',
+        ),
+        const SizedBox(height: 12),
+        _PaymentMeta(
+          label: 'STATUS LANGGANAN',
+          value: _subscriptionStatusLabel(order.subscriptionStatus ?? ''),
+        ),
+        if (order.isSubscriptionCancellationRequested) ...[
+          const SizedBox(height: 12),
+          const _PaymentNotice(
+            canApprove: true,
+            message:
+                'User sudah membatalkan langganan. Layanan tetap berjalan sampai tanggal berakhir.',
+          ),
+        ],
       ],
     );
   }
@@ -517,9 +581,13 @@ class _PaymentMeta extends StatelessWidget {
 }
 
 class _PaymentNotice extends StatelessWidget {
-  const _PaymentNotice({required this.canApprove});
+  const _PaymentNotice({
+    required this.canApprove,
+    this.message,
+  });
 
   final bool canApprove;
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -540,9 +608,10 @@ class _PaymentNotice extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              canApprove
-                  ? 'Pembayaran sudah bisa diverifikasi. Merchant dapat approve dan memproses pesanan.'
-                  : 'Pesanan non-COD baru bisa di-approve setelah user mengonfirmasi pembayaran.',
+              message ??
+                  (canApprove
+                      ? 'Pembayaran sudah bisa diverifikasi. Merchant dapat approve dan memproses pesanan.'
+                      : 'Pesanan non-COD baru bisa di-approve setelah user mengonfirmasi pembayaran.'),
               style: const TextStyle(
                 color: MerchantPalette.primary,
                 fontSize: 12,
@@ -591,4 +660,25 @@ Color _statusColor(String group) {
 String _formatDateTime(DateTime date) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${two(date.day)}/${two(date.month)}/${date.year} ${two(date.hour)}:${two(date.minute)}';
+}
+
+String _formatDate(DateTime? date) {
+  if (date == null) return '-';
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(date.day)}/${two(date.month)}/${date.year}';
+}
+
+String _subscriptionStatusLabel(String status) {
+  switch (status) {
+    case 'active':
+      return 'Aktif';
+    case 'cancel_requested':
+      return 'Dibatalkan, aktif sampai selesai';
+    case 'ended':
+      return 'Selesai';
+    case 'pending_payment':
+      return 'Menunggu pembayaran';
+    default:
+      return status.isEmpty ? '-' : status;
+  }
 }

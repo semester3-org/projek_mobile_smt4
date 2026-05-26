@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
@@ -20,6 +21,9 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   late Order _order;
   Timer? _refreshTimer;
   bool _confirmingPayment = false;
+  bool _openingPayment = false;
+  bool _syncingPayment = false;
+  bool _cancellingSubscription = false;
 
   @override
   void initState() {
@@ -59,6 +63,85 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           result.isSuccess
               ? 'Konfirmasi pembayaran dikirim ke merchant'
               : result.error ?? 'Gagal mengonfirmasi pembayaran',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _payWithMidtrans() async {
+    final id = _order.databaseId ?? _order.id;
+    setState(() => _openingPayment = true);
+    final result = await UserRepository.createOrderMidtransPayment(
+      orderId: id,
+      paymentMethod: _order.paymentMethod ?? 'GoPay/QRIS',
+    );
+    if (!mounted) return;
+    setState(() => _openingPayment = false);
+
+    if (!result.isSuccess || result.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Gagal membuka Midtrans')),
+      );
+      return;
+    }
+
+    final url = result.data!['payment_url'] as String? ?? '';
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('URL pembayaran tidak valid')),
+      );
+      return;
+    }
+
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    if (!launched) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak bisa membuka halaman pembayaran')),
+      );
+      return;
+    }
+    await _refreshOrder();
+  }
+
+  Future<void> _syncPaymentStatus() async {
+    final midtransOrderId = _order.midtransOrderId ?? '';
+    if (midtransOrderId.isEmpty) return;
+    setState(() => _syncingPayment = true);
+    final result = await UserRepository.syncOrderMidtransStatus(
+      midtransOrderId: midtransOrderId,
+    );
+    if (!mounted) return;
+    setState(() => _syncingPayment = false);
+    await _refreshOrder();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? 'Status pembayaran diperbarui'
+              : result.error ?? 'Gagal mengecek status pembayaran',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cancelSubscription() async {
+    final id = _order.databaseId ?? _order.id;
+    setState(() => _cancellingSubscription = true);
+    final result = await UserRepository.cancelCateringSubscription(id);
+    if (!mounted) return;
+    setState(() {
+      _cancellingSubscription = false;
+      if (result.data != null) _order = result.data!;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? 'Langganan akan berhenti saat periode selesai'
+              : result.error ?? 'Gagal membatalkan langganan',
         ),
       ),
     );
@@ -132,7 +215,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
             icon: Icons.local_shipping_outlined,
             title: 'Informasi Pengiriman',
             children: [
-              Text(
+              const Text(
                 'Alamat tujuan',
                 style: TextStyle(
                   color: UserTheme.text,
@@ -152,6 +235,18 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                   style: const TextStyle(
                     color: UserTheme.primaryDark,
                     fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              if (order.deliveryLatitude != null &&
+                  order.deliveryLongitude != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Koordinat: ${order.deliveryLatitude!.toStringAsFixed(6)}, ${order.deliveryLongitude!.toStringAsFixed(6)}',
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
@@ -185,7 +280,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                   Expanded(
                     child: Text(
                       order.needsPaymentConfirmation
-                          ? 'Konfirmasi setelah pembayaran dilakukan'
+                          ? 'Pembayaran cashless diproses melalui Midtrans'
                           : 'Pembayaran tercatat di sistem pesanan',
                       style: const TextStyle(color: UserTheme.muted),
                     ),
@@ -194,8 +289,44 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
               ),
             ],
           ),
+          if (order.isCateringSubscription) ...[
+            const SizedBox(height: 18),
+            _SubscriptionInfoCard(order: order),
+          ],
           const SizedBox(height: 28),
-          if (order.needsPaymentConfirmation)
+          if (order.needsOnlinePayment) ...[
+            FilledButton.icon(
+              onPressed: _openingPayment ? null : _payWithMidtrans,
+              style: FilledButton.styleFrom(
+                backgroundColor: UserTheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              label: Text(
+                _openingPayment ? 'Membuka Midtrans...' : 'Bayar via Midtrans',
+              ),
+            ),
+            if ((order.midtransOrderId ?? '').isNotEmpty) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _syncingPayment ? null : _syncPaymentStatus,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: UserTheme.primaryDark,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ),
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(
+                  _syncingPayment ? 'Mengecek...' : 'Cek Status Pembayaran',
+                ),
+              ),
+            ],
+          ] else if (order.needsPaymentConfirmation)
             FilledButton(
               onPressed: _confirmingPayment ? null : _confirmPayment,
               style: FilledButton.styleFrom(
@@ -226,22 +357,30 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           ),
           if (order.canCancel)
             TextButton(
-              onPressed: () {},
-              child: const Text(
-                'Batalkan Pesanan',
-                style: TextStyle(
+              onPressed: order.isCateringSubscription
+                  ? (_cancellingSubscription ? null : _cancelSubscription)
+                  : () {},
+              child: Text(
+                order.isCateringSubscription
+                    ? (_cancellingSubscription
+                        ? 'Membatalkan...'
+                        : 'Batalkan Langganan')
+                    : 'Batalkan Pesanan',
+                style: const TextStyle(
                   color: UserTheme.danger,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             )
-          else
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
+          else if (order.isCateringSubscription)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Paket catering aktif tidak dapat dibatalkan sampai periode berjalan selesai.',
+                order.isSubscriptionCancellationRequested
+                    ? 'Langganan sudah dibatalkan dan tetap aktif sampai periode selesai.'
+                    : 'Paket catering aktif akan berakhir sesuai periode berjalan.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: UserTheme.muted, fontSize: 12),
+                style: const TextStyle(color: UserTheme.muted, fontSize: 12),
               ),
             ),
         ],
@@ -392,7 +531,8 @@ class _OrderProgressBar extends StatelessWidget {
             return Expanded(
               child: Container(
                 height: 5,
-                margin: EdgeInsets.only(right: index == _steps.length - 1 ? 0 : 6),
+                margin:
+                    EdgeInsets.only(right: index == _steps.length - 1 ? 0 : 6),
                 decoration: BoxDecoration(
                   color: active ? UserTheme.primary : const Color(0xFFE3E9F3),
                   borderRadius: BorderRadius.circular(999),
@@ -498,6 +638,18 @@ class _OrderItemsCard extends StatelessWidget {
                                 '${item.quantity} pcs x ${formatUserCurrency(item.price)}',
                                 style: const TextStyle(color: UserTheme.muted),
                               ),
+                              if ((item.description ?? '').isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  item.description!,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: UserTheme.muted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -607,6 +759,80 @@ class _PaymentStatusNotice extends StatelessWidget {
   }
 }
 
+class _SubscriptionInfoCard extends StatelessWidget {
+  const _SubscriptionInfoCard({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = order.subscriptionStatus ?? 'pending_payment';
+    return _InfoCard(
+      icon: Icons.calendar_month_outlined,
+      title: 'Status Langganan',
+      children: [
+        _SubscriptionLine(
+          label: 'Paket',
+          value: '${order.subscriptionDays ?? 0} hari',
+        ),
+        const SizedBox(height: 10),
+        _SubscriptionLine(
+          label: 'Mulai',
+          value: order.subscriptionStartDate == null
+              ? '-'
+              : formatShortDate(order.subscriptionStartDate!),
+        ),
+        const SizedBox(height: 10),
+        _SubscriptionLine(
+          label: 'Berakhir',
+          value: order.subscriptionEndDate == null
+              ? '-'
+              : formatShortDate(order.subscriptionEndDate!),
+        ),
+        const SizedBox(height: 10),
+        _SubscriptionLine(
+          label: 'Status',
+          value: _subscriptionStatusLabel(status),
+          strong: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _SubscriptionLine extends StatelessWidget {
+  const _SubscriptionLine({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
+
+  final String label;
+  final String value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: UserTheme.muted),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: strong ? UserTheme.primaryDark : UserTheme.text,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _InfoCard extends StatelessWidget {
   const _InfoCard({
     required this.icon,
@@ -649,5 +875,20 @@ class _InfoCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String _subscriptionStatusLabel(String status) {
+  switch (status) {
+    case 'active':
+      return 'Aktif';
+    case 'cancel_requested':
+      return 'Dibatalkan, aktif sampai selesai';
+    case 'ended':
+      return 'Selesai';
+    case 'pending_payment':
+      return 'Menunggu pembayaran';
+    default:
+      return status.isEmpty ? '-' : status;
   }
 }

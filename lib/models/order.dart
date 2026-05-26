@@ -4,12 +4,14 @@ class OrderItem {
   final int quantity;
   final double price;
   final double subtotal;
+  final String? description;
 
   OrderItem({
     required this.name,
     required this.quantity,
     required this.price,
     required this.subtotal,
+    this.description,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -18,6 +20,7 @@ class OrderItem {
       quantity: json['quantity'] as int? ?? 0,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0.0,
+      description: json['description'] as String?,
     );
   }
 
@@ -27,6 +30,7 @@ class OrderItem {
       'quantity': quantity,
       'price': price,
       'subtotal': subtotal,
+      'description': description,
     };
   }
 }
@@ -48,7 +52,15 @@ class Order {
   final String? paymentStatus;
   final String? paymentStatusLabel;
   final String? deliveryAddress;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
   final String? estimatedTime;
+  final String? midtransOrderId;
+  final int? subscriptionDays;
+  final DateTime? subscriptionStartDate;
+  final DateTime? subscriptionEndDate;
+  final String? subscriptionStatus;
+  final DateTime? cancellationRequestedAt;
   final bool canCancel;
 
   Order({
@@ -66,7 +78,15 @@ class Order {
     this.paymentStatus,
     this.paymentStatusLabel,
     this.deliveryAddress,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
     this.estimatedTime,
+    this.midtransOrderId,
+    this.subscriptionDays,
+    this.subscriptionStartDate,
+    this.subscriptionEndDate,
+    this.subscriptionStatus,
+    this.cancellationRequestedAt,
     this.canCancel = true,
   });
 
@@ -92,7 +112,18 @@ class Order {
       paymentStatus: json['paymentStatus'] as String?,
       paymentStatusLabel: json['paymentStatusLabel'] as String?,
       deliveryAddress: json['deliveryAddress'] as String?,
+      deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
+      deliveryLongitude: (json['deliveryLongitude'] as num?)?.toDouble(),
       estimatedTime: json['estimatedTime'] as String?,
+      midtransOrderId: json['midtransOrderId'] as String?,
+      subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
+      subscriptionStartDate:
+          DateTime.tryParse(json['subscriptionStartDate'] as String? ?? ''),
+      subscriptionEndDate:
+          DateTime.tryParse(json['subscriptionEndDate'] as String? ?? ''),
+      subscriptionStatus: json['subscriptionStatus'] as String?,
+      cancellationRequestedAt:
+          DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
       canCancel: json['canCancel'] as bool? ?? true,
     );
   }
@@ -113,7 +144,15 @@ class Order {
       'paymentStatus': paymentStatus,
       'paymentStatusLabel': paymentStatusLabel,
       'deliveryAddress': deliveryAddress,
+      'deliveryLatitude': deliveryLatitude,
+      'deliveryLongitude': deliveryLongitude,
       'estimatedTime': estimatedTime,
+      'midtransOrderId': midtransOrderId,
+      'subscriptionDays': subscriptionDays,
+      'subscriptionStartDate': subscriptionStartDate?.toIso8601String(),
+      'subscriptionEndDate': subscriptionEndDate?.toIso8601String(),
+      'subscriptionStatus': subscriptionStatus,
+      'cancellationRequestedAt': cancellationRequestedAt?.toIso8601String(),
       'canCancel': canCancel,
     };
   }
@@ -141,6 +180,33 @@ class Order {
     final isCod = method.contains('cod') || method.contains('cash');
     return !isCod &&
         (status == 'pending' || status == 'confirmed') &&
-        (payment.isEmpty || payment == 'waiting_payment' || payment == 'unpaid');
+        (payment.isEmpty ||
+            payment == 'waiting_payment' ||
+            payment == 'unpaid');
   }
+
+  bool get isCashOnDelivery {
+    final method = (paymentMethod ?? '').toLowerCase();
+    return method.contains('cod') || method.contains('cash');
+  }
+
+  bool get needsOnlinePayment {
+    final payment = (paymentStatus ?? '').toLowerCase();
+    return !isCashOnDelivery &&
+        payment != 'paid' &&
+        payment != 'payment_submitted' &&
+        payment != 'cod' &&
+        payment != 'cancelled';
+  }
+
+  bool get isPaid {
+    final payment = (paymentStatus ?? '').toLowerCase();
+    return payment == 'paid' || payment == 'payment_submitted';
+  }
+
+  bool get isCateringSubscription =>
+      service == 'catering' && subscriptionDays != null;
+
+  bool get isSubscriptionCancellationRequested =>
+      (subscriptionStatus ?? '').toLowerCase() == 'cancel_requested';
 }

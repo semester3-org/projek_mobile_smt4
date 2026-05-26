@@ -262,11 +262,21 @@ class _MerchantOrderCard extends StatelessWidget {
                 ? 'Estimasi belum diatur'
                 : 'Estimasi: ${order.estimatedTime}',
           ),
+          if (order.isCateringSubscription) ...[
+            const SizedBox(height: 10),
+            _InfoLine(
+              icon: Icons.calendar_month_outlined,
+              text:
+                  'Langganan ${order.subscriptionDays ?? 0} hari - ${_subscriptionStatusLabel(order.subscriptionStatus ?? '')}',
+            ),
+          ],
           const SizedBox(height: 10),
           _InfoLine(
             icon: Icons.payments_outlined,
             text: [
-              order.paymentMethod.isEmpty ? 'Metode belum dipilih' : order.paymentMethod,
+              order.paymentMethod.isEmpty
+                  ? 'Metode belum dipilih'
+                  : order.paymentMethod,
               if (order.paymentStatusLabel.isNotEmpty) order.paymentStatusLabel,
             ].join(' - '),
           ),
@@ -352,5 +362,20 @@ Color _statusColor(String group) {
       return MerchantPalette.success;
     default:
       return const Color(0xFF1D4ED8);
+  }
+}
+
+String _subscriptionStatusLabel(String status) {
+  switch (status) {
+    case 'active':
+      return 'Aktif';
+    case 'cancel_requested':
+      return 'Dibatalkan, tetap jalan';
+    case 'ended':
+      return 'Selesai';
+    case 'pending_payment':
+      return 'Menunggu pembayaran';
+    default:
+      return status.isEmpty ? '-' : status;
   }
 }

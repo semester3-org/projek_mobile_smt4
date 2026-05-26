@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 try {
     $payload = merchantRequireMerchant();
     $merchant = merchantCurrent($conn, $payload);
+    merchantExpireFinishedCateringSubscriptions($conn);
     $merchantId = (string)$merchant['id'];
 
     $totalOrders = (int)(merchantQueryValue(

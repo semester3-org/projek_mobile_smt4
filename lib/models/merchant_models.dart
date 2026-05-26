@@ -55,6 +55,14 @@ class MerchantOrder {
     required this.canApprove,
     required this.notes,
     required this.items,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
+    this.midtransOrderId,
+    this.subscriptionDays,
+    this.subscriptionStartDate,
+    this.subscriptionEndDate,
+    this.subscriptionStatus,
+    this.cancellationRequestedAt,
   });
 
   final String id;
@@ -77,6 +85,14 @@ class MerchantOrder {
   final bool canApprove;
   final String notes;
   final List<MerchantOrderItem> items;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
+  final String? midtransOrderId;
+  final int? subscriptionDays;
+  final DateTime? subscriptionStartDate;
+  final DateTime? subscriptionEndDate;
+  final String? subscriptionStatus;
+  final DateTime? cancellationRequestedAt;
 
   factory MerchantOrder.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? const [];
@@ -105,8 +121,25 @@ class MerchantOrder {
           .map((item) =>
               MerchantOrderItem.fromJson(item as Map<String, dynamic>))
           .toList(),
+      deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
+      deliveryLongitude: (json['deliveryLongitude'] as num?)?.toDouble(),
+      midtransOrderId: json['midtransOrderId'] as String?,
+      subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
+      subscriptionStartDate:
+          DateTime.tryParse(json['subscriptionStartDate'] as String? ?? ''),
+      subscriptionEndDate:
+          DateTime.tryParse(json['subscriptionEndDate'] as String? ?? ''),
+      subscriptionStatus: json['subscriptionStatus'] as String?,
+      cancellationRequestedAt:
+          DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
     );
   }
+
+  bool get isCateringSubscription =>
+      serviceType == 'catering' && subscriptionDays != null;
+
+  bool get isSubscriptionCancellationRequested =>
+      (subscriptionStatus ?? '').toLowerCase() == 'cancel_requested';
 }
 
 class MerchantDashboard {

@@ -45,6 +45,7 @@ if (!verifyMidtransSignature($body, $signatureKey)) {
 }
 
 $orderId = (string)($body['order_id'] ?? '');
+$rawMidtransOrderId = $orderId;
 if (strpos($orderId, 'PAY-') === 0) {
     $midtransOrderId = substr($orderId, 4);
     $lastDashPosition = strrpos($midtransOrderId, '-');
@@ -76,6 +77,51 @@ $statusMapping = [
 $localStatus = $statusMapping[$transactionStatus] ?? 'unpaid';
 
 require_once __DIR__ . '/../config/db.php';
+
+if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
+    require_once __DIR__ . '/merchant_helpers.php';
+    merchantEnsureSchema($conn);
+
+    $rawOrder = substr($rawMidtransOrderId, 4);
+    $dashPosition = strpos($rawOrder, '-');
+    $orderIdForOrder = $dashPosition === false ? $rawOrder : substr($rawOrder, 0, $dashPosition);
+    if (!ctype_digit($orderIdForOrder)) {
+        sendError('Invalid order id', 400);
+    }
+
+    $orderPaymentStatus = in_array($transactionStatus, ['capture', 'settlement'], true)
+        ? 'paid'
+        : ($transactionStatus === 'pending' ? 'waiting_payment' : 'cancelled');
+    $orderInt = (int)$orderIdForOrder;
+    $stmt = $conn->prepare("
+        UPDATE orders
+        SET payment_status = ?,
+            payment_method = IF(? = '', payment_method, ?),
+            paid_at = IF(? = 'paid', COALESCE(paid_at, NOW()), paid_at),
+            subscription_status = IF(
+                service_type = 'catering'
+                AND ? = 'paid'
+                AND COALESCE(subscription_status, '') NOT IN ('cancel_requested', 'ended'),
+                'active',
+                subscription_status
+            ),
+            updated_at = NOW()
+        WHERE id = ? OR midtrans_order_id = ?
+    ");
+    if (!$stmt) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $stmt->bind_param('sssssis', $orderPaymentStatus, $paymentType, $paymentType, $orderPaymentStatus, $orderPaymentStatus, $orderInt, $rawMidtransOrderId);
+    $success = $stmt->execute();
+    $stmt->close();
+
+    if (!$success) {
+        sendError('Failed to update order payment status', 500);
+    }
+
+    error_log("Midtrans order notification: Order ID $orderIdForOrder, Status $transactionStatus -> $orderPaymentStatus");
+    sendSuccess(null, 'Order notification processed successfully');
+}
 
 // Update payment_history berdasarkan order_id
 $stmt = $conn->prepare("

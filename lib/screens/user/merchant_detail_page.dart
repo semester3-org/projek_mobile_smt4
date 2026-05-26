@@ -4,6 +4,7 @@ import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
+import '../../widgets/location_picker_page.dart';
 import 'order_detail_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
@@ -43,8 +44,12 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   }
 
   Future<void> _load() async {
-    final merchantId = widget.merchant.id.isNotEmpty ? widget.merchant.id : (widget.merchant.placeId.isNotEmpty ? widget.merchant.placeId : widget.merchant.merchantId);
-    
+    final merchantId = widget.merchant.id.isNotEmpty
+        ? widget.merchant.id
+        : (widget.merchant.placeId.isNotEmpty
+            ? widget.merchant.placeId
+            : widget.merchant.merchantId);
+
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
       id: merchantId,
@@ -78,7 +83,32 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     );
   }
 
-  Future<void> _openOrder(MerchantMenuItem? item) async {
+  Future<void> _showProductDetail(MerchantMenuItem item) async {
+    final result = await showModalBottomSheet<_ProductDetailResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _ProductDetailSheet(
+        merchant: _merchant,
+        item: item,
+      ),
+    );
+
+    if (result == null) return;
+    await _openOrder(
+      result.item,
+      initialCateringDays: result.cateringDays,
+    );
+  }
+
+  Future<void> _openOrder(
+    MerchantMenuItem? item, {
+    int? initialCateringDays,
+  }) async {
     final draft = await showModalBottomSheet<_OrderDraft>(
       context: context,
       isScrollControlled: true,
@@ -90,6 +120,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
       builder: (_) => _OrderCheckoutSheet(
         merchant: _merchant,
         initialItem: item,
+        initialCateringDays: initialCateringDays,
       ),
     );
 
@@ -105,8 +136,11 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
       items: draft.items,
       quantities: draft.quantities,
       deliveryAddress: draft.deliveryAddress,
+      deliveryLatitude: draft.deliveryLatitude,
+      deliveryLongitude: draft.deliveryLongitude,
       estimatedTime: draft.estimatedTime,
       paymentMethod: draft.paymentMethod,
+      subscriptionDays: draft.subscriptionDays,
       customerName: draft.customerName,
       customerPhone: draft.customerPhone,
       notes: draft.notes,
@@ -239,7 +273,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                           type: _merchant.type,
                           item: item,
                           onOrder: () {
-                            _openOrder(item);
+                            _showProductDetail(item);
                           },
                         ),
                       ),
@@ -264,13 +298,186 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     );
   }
 }
+
+class _ProductDetailResult {
+  const _ProductDetailResult({
+    required this.item,
+    this.cateringDays,
+  });
+
+  final MerchantMenuItem item;
+  final int? cateringDays;
+}
+
+class _ProductDetailSheet extends StatefulWidget {
+  const _ProductDetailSheet({
+    required this.merchant,
+    required this.item,
+  });
+
+  final UserMerchant merchant;
+  final MerchantMenuItem item;
+
+  @override
+  State<_ProductDetailSheet> createState() => _ProductDetailSheetState();
+}
+
+class _ProductDetailSheetState extends State<_ProductDetailSheet> {
+  int _cateringDays = 30;
+
+  bool get _isCatering => widget.merchant.type == 'catering';
+
+  double get _price {
+    if (!_isCatering) return widget.item.price;
+    return widget.item.price / 30 * _cateringDays;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reviews = widget.merchant.reviews.take(3).toList();
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 18,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD7E3F4),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            UserImage(
+              url: widget.item.imageUrl,
+              icon: _isCatering
+                  ? Icons.restaurant_rounded
+                  : Icons.local_laundry_service_rounded,
+              width: double.infinity,
+              height: 190,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              widget.item.name,
+              style: const TextStyle(
+                color: UserTheme.text,
+                fontSize: 21,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.item.description.isEmpty
+                  ? widget.merchant.description
+                  : widget.item.description,
+              style: const TextStyle(
+                color: UserTheme.muted,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+                    style: const TextStyle(
+                      color: UserTheme.primaryDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                RatingBadge(rating: widget.merchant.rating),
+              ],
+            ),
+            if (_isCatering) ...[
+              const SizedBox(height: 16),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 20, label: Text('20 hari')),
+                  ButtonSegment(value: 30, label: Text('30 hari')),
+                ],
+                selected: {_cateringDays},
+                onSelectionChanged: (value) {
+                  setState(() => _cateringDays = value.first);
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _cateringDays == 20
+                    ? 'Dikirim Senin sampai Jumat selama 20 hari.'
+                    : 'Dikirim setiap hari selama 30 hari.',
+                style: const TextStyle(color: UserTheme.muted, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 20),
+            const UserSectionHeader(title: 'Rating & Ulasan'),
+            const SizedBox(height: 12),
+            if (reviews.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F9FC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Text(
+                  'Belum ada ulasan untuk merchant ini.',
+                  style: TextStyle(color: UserTheme.muted),
+                ),
+              )
+            else
+              ...reviews.map((review) => _ReviewCard(review: review)),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(
+                  _ProductDetailResult(
+                    item: widget.item,
+                    cateringDays: _isCatering ? _cateringDays : null,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: UserTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.shopping_bag_outlined),
+                label: const Text('Lanjut Pesan'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OrderDraft {
   const _OrderDraft({
     required this.items,
     required this.quantities,
     required this.deliveryAddress,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
     required this.estimatedTime,
     required this.paymentMethod,
+    this.subscriptionDays,
     required this.customerName,
     required this.customerPhone,
     required this.notes,
@@ -279,8 +486,11 @@ class _OrderDraft {
   final List<MerchantMenuItem> items;
   final Map<String, int> quantities;
   final String deliveryAddress;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
   final String estimatedTime;
   final String paymentMethod;
+  final int? subscriptionDays;
   final String customerName;
   final String customerPhone;
   final String notes;
@@ -290,10 +500,12 @@ class _OrderCheckoutSheet extends StatefulWidget {
   const _OrderCheckoutSheet({
     required this.merchant,
     this.initialItem,
+    this.initialCateringDays,
   });
 
   final UserMerchant merchant;
   final MerchantMenuItem? initialItem;
+  final int? initialCateringDays;
 
   @override
   State<_OrderCheckoutSheet> createState() => _OrderCheckoutSheetState();
@@ -309,9 +521,27 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   MerchantMenuItem? _selectedCateringItem;
   String _paymentMethod = 'Cash on Delivery';
   int _cateringDays = 20;
+  double? _deliveryLatitude;
+  double? _deliveryLongitude;
   bool _didLoadProfile = false;
 
   bool get _isLaundry => widget.merchant.type == 'laundry';
+
+  List<String> get _paymentOptions {
+    if (_isLaundry) {
+      return const [
+        'Cash on Delivery',
+        'GoPay/QRIS',
+        'ShopeePay',
+        'Transfer Bank',
+      ];
+    }
+    return const [
+      'GoPay/QRIS',
+      'ShopeePay',
+      'Transfer Bank',
+    ];
+  }
 
   List<MerchantMenuItem> get _items {
     if (widget.merchant.menuItems.isNotEmpty) return widget.merchant.menuItems;
@@ -331,6 +561,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   @override
   void initState() {
     super.initState();
+    _paymentMethod = _isLaundry ? 'Cash on Delivery' : 'GoPay/QRIS';
+    _cateringDays = widget.initialCateringDays ?? 30;
     final initial = widget.initialItem ?? _items.first;
     if (_isLaundry) {
       _quantities[initial.id] = 1;
@@ -369,6 +601,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       _nameCtrl.text = profile.displayName;
       _phoneCtrl.text = profile.phone ?? '';
       _addressCtrl.text = profile.address ?? '';
+      _deliveryLatitude = profile.latitude;
+      _deliveryLongitude = profile.longitude;
     });
   }
 
@@ -378,7 +612,12 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         return sum + ((_quantities[item.id] ?? 0) * item.price);
       });
     }
-    return _selectedCateringItem?.price ?? 0;
+    return _adjustedCateringPrice(_selectedCateringItem);
+  }
+
+  double _adjustedCateringPrice(MerchantMenuItem? item) {
+    if (item == null) return 0;
+    return item.price / 30 * _cateringDays;
   }
 
   List<MerchantMenuItem> get _selectedItems {
@@ -386,7 +625,39 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       return _items.where((item) => (_quantities[item.id] ?? 0) > 0).toList();
     }
     final selected = _selectedCateringItem;
-    return selected == null ? const [] : [selected];
+    if (selected == null) return const [];
+    return [
+      MerchantMenuItem(
+        id: selected.id,
+        name: selected.name,
+        description: selected.description,
+        price: _adjustedCateringPrice(selected),
+        imageUrl: selected.imageUrl,
+        category: selected.category,
+        unit: selected.unit,
+      ),
+    ];
+  }
+
+  Future<void> _pickDeliveryLocation() async {
+    final result = await Navigator.of(context).push<PickedLocation>(
+      MaterialPageRoute<PickedLocation>(
+        builder: (_) => LocationPickerPage(
+          title: 'Pilih Alamat Tujuan',
+          initialAddress: _addressCtrl.text,
+          initialLatitude: _deliveryLatitude,
+          initialLongitude: _deliveryLongitude,
+          primaryColor: UserTheme.primary,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      _addressCtrl.text = result.address;
+      _deliveryLatitude = result.latitude;
+      _deliveryLongitude = result.longitude;
+    });
   }
 
   void _submit() {
@@ -420,6 +691,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
             item.id: _isLaundry ? (_quantities[item.id] ?? 1) : 1,
         },
         deliveryAddress: _addressCtrl.text.trim(),
+        deliveryLatitude: _deliveryLatitude,
+        deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
             ? (widget.merchant.hasDistanceEstimate &&
                     widget.merchant.eta.isNotEmpty
@@ -427,6 +700,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 : 'Estimasi ditentukan merchant')
             : 'Paket $_cateringDays hari',
         paymentMethod: _paymentMethod,
+        subscriptionDays: _isLaundry ? null : _cateringDays,
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
         notes: notes,
@@ -468,7 +742,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
             const SizedBox(height: 14),
-            if (_isLaundry) _LaundryItemPicker() else _CateringItemPicker(),
+            if (_isLaundry) _laundryItemPicker() else _cateringItemPicker(),
             const SizedBox(height: 18),
             _CheckoutField(
               controller: _nameCtrl,
@@ -489,6 +763,33 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               icon: Icons.location_on_outlined,
               maxLines: 3,
             ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDeliveryLocation,
+                    icon: const Icon(Icons.map_outlined),
+                    label: Text(
+                      _deliveryLatitude == null || _deliveryLongitude == null
+                          ? 'Pilih Titik Map'
+                          : 'Ubah Titik Map',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_deliveryLatitude != null && _deliveryLongitude != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${_deliveryLatitude!.toStringAsFixed(6)}, ${_deliveryLongitude!.toStringAsFixed(6)}',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _paymentMethod,
@@ -496,20 +797,14 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 label: 'Metode Pembayaran',
                 icon: Icons.payments_outlined,
               ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'Cash on Delivery',
-                  child: Text('Cash on Delivery'),
-                ),
-                DropdownMenuItem(
-                  value: 'Transfer Bank',
-                  child: Text('Transfer Bank'),
-                ),
-                DropdownMenuItem(
-                  value: 'E-Wallet',
-                  child: Text('E-Wallet'),
-                ),
-              ],
+              items: _paymentOptions
+                  .map(
+                    (method) => DropdownMenuItem(
+                      value: method,
+                      child: Text(method),
+                    ),
+                  )
+                  .toList(),
               onChanged: (value) {
                 if (value != null) setState(() => _paymentMethod = value);
               },
@@ -573,7 +868,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     );
   }
 
-  Widget _LaundryItemPicker() {
+  Widget _laundryItemPicker() {
     return Column(
       children: _items.map((item) {
         final quantity = _quantities[item.id] ?? 0;
@@ -633,22 +928,52 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     );
   }
 
-  Widget _CateringItemPicker() {
+  Widget _cateringItemPicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ..._items.map((item) {
-          return RadioListTile<MerchantMenuItem>(
-            value: item,
-            groupValue: _selectedCateringItem,
-            onChanged: (value) => setState(() => _selectedCateringItem = value),
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              item.name,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-            subtitle: Text(
-              '${item.description}\n${formatUserCurrency(item.price)}${item.unit}',
+          final selected = _selectedCateringItem?.id == item.id;
+          return InkWell(
+            onTap: () => setState(() => _selectedCateringItem = item),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: selected ? UserTheme.softBlue : const Color(0xFFF7F9FC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? UserTheme.primary : Colors.transparent,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: selected ? UserTheme.primary : UserTheme.muted,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / $_cateringDays hari',
+                          style: const TextStyle(color: UserTheme.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }),
@@ -799,7 +1124,7 @@ class _HeaderCard extends StatelessWidget {
                           shadows: merchant.type == 'catering'
                               ? [
                                   Shadow(
-                                    color: Colors.black.withOpacity(0.45),
+                                    color: Colors.black.withValues(alpha: 0.45),
                                     blurRadius: 10,
                                   ),
                                 ]
@@ -837,8 +1162,10 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Wrap(
-              children:
-                  merchant.tags.map((tag) => UserTag(label: tag)).toList()),
+            spacing: 8,
+            runSpacing: 8,
+            children: merchant.tags.map((tag) => UserTag(label: tag)).toList(),
+          ),
         ],
       ],
     );
@@ -928,8 +1255,6 @@ class _MenuItemCard extends StatefulWidget {
 }
 
 class _MenuItemCardState extends State<_MenuItemCard> {
-  String _selectedDuration = '30';
-
   @override
   Widget build(BuildContext context) {
     if (widget.type == 'laundry') {
@@ -939,220 +1264,162 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 
   Widget _buildLaundryCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-      ),
-      child: Row(
-        children: [
-          UserImage(
-            url: widget.item.imageUrl,
-            icon: Icons.local_laundry_service_rounded,
-            width: 84,
-            height: 84,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.item.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: UserTheme.text,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.item.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: UserTheme.muted),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
-                  style: const TextStyle(
-                    color: UserTheme.primaryDark,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      onTap: widget.onOrder,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+        ),
+        child: Row(
+          children: [
+            UserImage(
+              url: widget.item.imageUrl,
+              icon: Icons.local_laundry_service_rounded,
+              width: 84,
+              height: 84,
+              borderRadius: BorderRadius.circular(14),
             ),
-          ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: widget.onOrder,
-            style: FilledButton.styleFrom(
-              backgroundColor: UserTheme.primaryDark,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.item.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: UserTheme.text,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.item.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: UserTheme.muted),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
+                    style: const TextStyle(
+                      color: UserTheme.primaryDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: const Text('Pesan'),
-          ),
-        ],
+            const SizedBox(width: 10),
+            FilledButton(
+              onPressed: widget.onOrder,
+              style: FilledButton.styleFrom(
+                backgroundColor: UserTheme.primaryDark,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Pesan'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildCateringCard() {
-    // Calculate price based on duration
     final basePrice = widget.item.price;
-    final durationDays = int.tryParse(_selectedDuration) ?? 30;
-    final adjustedPrice = (basePrice / 30 * durationDays);
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image
-          UserImage(
-            url: widget.item.imageUrl,
-            icon: Icons.restaurant_rounded,
-            width: double.infinity,
-            height: 180,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          const SizedBox(height: 16),
-
-          // Title
-          Text(
-            widget.item.name,
-            style: const TextStyle(
-              color: UserTheme.text,
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
+    return GestureDetector(
+      onTap: widget.onOrder,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            UserImage(
+              url: widget.item.imageUrl,
+              icon: Icons.restaurant_rounded,
+              width: double.infinity,
+              height: 180,
+              borderRadius: BorderRadius.circular(16),
             ),
-          ),
-          const SizedBox(height: 8),
-
-          // Description
-          Text(
-            widget.item.description,
-            style: const TextStyle(
-              color: UserTheme.muted,
-              fontSize: 14,
-              height: 1.5,
+            const SizedBox(height: 16),
+            Text(
+              widget.item.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: UserTheme.text,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-
-          // Duration selector
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: UserTheme.background,
-              borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 8),
+            Text(
+              widget.item.description,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: UserTheme.muted,
+                fontSize: 14,
+                height: 1.5,
+              ),
             ),
-            child: Row(
+            const SizedBox(height: 16),
+            Row(
               children: [
-                const Expanded(
-                  child: Text(
-                    'Pilih Durasi:',
-                    style: TextStyle(
-                      color: UserTheme.text,
-                      fontWeight: FontWeight.w600,
-                    ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Harga',
+                        style: TextStyle(
+                          color: UserTheme.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${formatUserCurrency(basePrice)} / bulan',
+                        style: const TextStyle(
+                          color: UserTheme.primaryDark,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                _buildDurationButton('20', 'hari'),
-                const SizedBox(width: 8),
-                _buildDurationButton('30', 'hari'),
+                FilledButton(
+                  onPressed: widget.onOrder,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: UserTheme.primary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Pesan'),
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-
-          // Price and button
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Harga',
-                      style: TextStyle(
-                        color: UserTheme.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formatUserCurrency(adjustedPrice),
-                      style: const TextStyle(
-                        color: UserTheme.primaryDark,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              FilledButton(
-                onPressed: widget.onOrder,
-                style: FilledButton.styleFrom(
-                  backgroundColor: UserTheme.primary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text('Pesan'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDurationButton(String days, String label) {
-    final isSelected = _selectedDuration == days;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _selectedDuration = days);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? UserTheme.primary : Colors.white,
-            border: Border.all(
-              color: isSelected ? UserTheme.primary : UserTheme.muted.withOpacity(0.2),
-              width: 1.5,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              '$days $label',
-              style: TextStyle(
-                color: isSelected ? Colors.white : UserTheme.text,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ),
+          ],
         ),
       ),
     );

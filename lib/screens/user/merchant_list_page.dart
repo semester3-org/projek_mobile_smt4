@@ -54,7 +54,8 @@ class _MerchantListPageState extends State<MerchantListPage> {
       _locationUnavailable = false;
     });
 
-    final position = widget.showLocationPrompt ? await _resolveLocation() : null;
+    final position =
+        widget.showLocationPrompt ? await _resolveLocation() : null;
     final result = await UserRepository.getMerchants(
       widget.type,
       latitude: position?.latitude,
@@ -87,7 +88,9 @@ class _MerchantListPageState extends State<MerchantListPage> {
       }
 
       return Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       ).timeout(const Duration(seconds: 12));
     } catch (_) {
       if (mounted) setState(() => _locationUnavailable = true);
@@ -314,6 +317,8 @@ class _MerchantCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: merchant.tags
                           .take(3)
                           .map((tag) => UserTag(label: tag))
@@ -324,61 +329,67 @@ class _MerchantCard extends StatelessWidget {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        if (merchant.minPrice > 0) ...[
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Mulai dari',
-                                style: TextStyle(
-                                  color: UserTheme.muted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              Text.rich(
-                                TextSpan(
+                        Expanded(
+                          child: merchant.minPrice > 0
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    TextSpan(
-                                      text:
-                                          formatUserCurrency(merchant.minPrice),
-                                      style: const TextStyle(
-                                        color: UserTheme.primaryDark,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w900,
+                                    const Text(
+                                      'Mulai dari',
+                                      style: TextStyle(
+                                        color: UserTheme.muted,
+                                        fontSize: 11,
                                       ),
                                     ),
-                                    TextSpan(
-                                      text: merchant.priceUnit,
-                                      style: const TextStyle(
-                                        color: UserTheme.muted,
-                                        fontSize: 12,
+                                    Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: formatUserCurrency(
+                                                merchant.minPrice),
+                                            style: const TextStyle(
+                                              color: UserTheme.primaryDark,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: merchant.priceUnit,
+                                            style: const TextStyle(
+                                              color: UserTheme.muted,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                )
+                              : Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.near_me_rounded,
+                                      size: 17,
+                                      color: UserTheme.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        merchant.eta,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: UserTheme.primaryDark,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.near_me_rounded,
-                                size: 17,
-                                color: UserTheme.primary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                merchant.eta,
-                                style: const TextStyle(
-                                  color: UserTheme.primaryDark,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const Spacer(),
+                        ),
+                        const SizedBox(width: 12),
                         FilledButton(
                           onPressed: onTap,
                           style: FilledButton.styleFrom(

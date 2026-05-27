@@ -17,6 +17,7 @@ function userRatingDateLabel(?string $value): string {
 }
 
 function userRatingReviewPayload(array $row): array {
+    $editCount = isset($row['edit_count']) ? (int)$row['edit_count'] : 0;
     return [
         'id' => (string)($row['id'] ?? ''),
         'merchantId' => (string)($row['merchant_id'] ?? ''),
@@ -30,6 +31,8 @@ function userRatingReviewPayload(array $row): array {
         'updatedAt' => $row['updated_at'] ?? '',
         'deletedAt' => $row['deleted_at'] ?? '',
         'isDeleted' => !empty($row['deleted_at']),
+        'editCount' => $editCount,
+        'remainingEditAttempts' => max(0, 3 - $editCount),
     ];
 }
 
@@ -197,8 +200,8 @@ try {
             merchantSendJson(false, null, 'Produk ini sudah pernah Anda ulas. Gunakan edit untuk memperbarui ulasan.', 409);
         }
         $stmt = $conn->prepare("
-            INSERT INTO merchant_reviews (merchant_id, user_id, product_id, rating, comment, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+            INSERT INTO merchant_reviews (merchant_id, user_id, product_id, rating, comment, edit_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())
         ");
         if (!$stmt) {
             merchantSendJson(false, null, 'Database error', 500);
@@ -210,10 +213,14 @@ try {
         if (!$existing) {
             merchantSendJson(false, null, 'Ulasan aktif tidak ditemukan', 404);
         }
+        $currentEditCount = isset($existing['edit_count']) ? (int)$existing['edit_count'] : 0;
+        if ($currentEditCount >= 3) {
+            merchantSendJson(false, null, 'Batas edit ulasan telah tercapai', 403);
+        }
         $reviewId = (int)$existing['id'];
         $stmt = $conn->prepare("
             UPDATE merchant_reviews
-            SET rating = ?, comment = ?, updated_at = NOW()
+            SET rating = ?, comment = ?, updated_at = NOW(), edit_count = edit_count + 1
             WHERE id = ? AND user_id = ? AND merchant_id = ? AND product_id = ? AND deleted_at IS NULL
         ");
         if (!$stmt) {

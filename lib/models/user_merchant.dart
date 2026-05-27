@@ -91,6 +91,8 @@ class MerchantReview {
     this.updatedAt = '',
     this.deletedAt = '',
     this.isDeleted = false,
+    this.editCount = 0,
+    this.remainingEditAttempts = 3,
   });
 
   final String id;
@@ -105,8 +107,11 @@ class MerchantReview {
   final String updatedAt;
   final String deletedAt;
   final bool isDeleted;
+  final int editCount;
+  final int remainingEditAttempts;
 
   factory MerchantReview.fromJson(Map<String, dynamic> json) {
+    final editCount = (json['editCount'] as num?)?.toInt() ?? 0;
     return MerchantReview(
       id: json['id'] as String? ?? '',
       productId: json['productId'] as String? ?? '',
@@ -120,6 +125,9 @@ class MerchantReview {
       updatedAt: json['updatedAt'] as String? ?? '',
       deletedAt: json['deletedAt'] as String? ?? '',
       isDeleted: json['isDeleted'] as bool? ?? false,
+      editCount: editCount,
+      remainingEditAttempts: (json['remainingEditAttempts'] as num?)?.toInt() ??
+          (editCount < 3 ? 3 - editCount : 0),
     );
   }
 }

@@ -7,6 +7,8 @@ import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
 import '../../widgets/location_picker_page.dart';
+import '../../widgets/review_card.dart';
+import 'merchant_reviews_page.dart';
 import 'order_detail_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
@@ -248,8 +250,16 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
       return;
     }
 
+    final active = _activeReviewFor(productId);
+    if (active != null && active.remainingEditAttempts <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Batas edit ulasan telah tercapai.')),
+      );
+      return;
+    }
+
     setState(() => _submittingReview = true);
-    final isUpdate = _activeReviewFor(productId) != null;
+    final isUpdate = active != null;
     final result = await UserRepository.submitMerchantRating(
       type: _merchant.type,
       merchantId: _merchantId,
@@ -1286,7 +1296,7 @@ class _CheckoutField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Icon(icon, size: 20, color: UserTheme.muted),
               const SizedBox(width: 8),
@@ -1305,7 +1315,7 @@ class _CheckoutField extends StatelessWidget {
             controller: controller,
             maxLines: maxLines,
             keyboardType: keyboardType,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
             textAlignVertical: TextAlignVertical.center,
             decoration: _checkoutDecoration(multiline: true),
           ),
@@ -1758,8 +1768,9 @@ class _ReviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final products = reviewState?.reviewableProducts ?? const [];
-    final myReviews = reviewState?.myReviews ?? const <MerchantReview>[];
+    final myReviews = reviewState?.myReviews.where((review) => !review.isDeleted).toList() ?? const <MerchantReview>[];
     final canReview = products.isNotEmpty;
+    final remainingEditAttempts = activeReview?.remainingEditAttempts ?? 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1844,13 +1855,27 @@ class _ReviewSection extends StatelessWidget {
                 Text(
                   activeReview == null
                       ? 'Belum ada ulasan aktif untuk produk ini.'
-                      : 'Ulasan produk ini sudah ada. Anda bisa mengedit atau menghapusnya.',
+                      : (remainingEditAttempts > 0
+                          ? 'Ulasan produk ini sudah ada. Anda bisa mengedit atau menghapusnya.'
+                          : 'Batas edit ulasan tercapai. Anda tidak dapat memperbarui lagi.'),
                   style: const TextStyle(
                     color: UserTheme.muted,
                     fontSize: 12,
                     height: 1.35,
                   ),
                 ),
+                if (remainingEditAttempts > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Sisa kesempatan edit: $remainingEditAttempts',
+                      style: const TextStyle(
+                        color: UserTheme.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
               const SizedBox(height: 10),
               Row(
@@ -1889,7 +1914,10 @@ class _ReviewSection extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: isSubmitting || !canReview ? null : onSubmit,
+                  onPressed: isSubmitting || !canReview ||
+                          (activeReview != null && remainingEditAttempts <= 0)
+                      ? null
+                      : onSubmit,
                   style: FilledButton.styleFrom(
                     backgroundColor: UserTheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -1935,7 +1963,7 @@ class _ReviewSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...myReviews.map((review) => _ReviewCard(review: review)),
+          ...myReviews.map((review) => ReviewCard(review: review, showProductName: true)),
         ],
         const SizedBox(height: 16),
         if (merchant.reviews.isNotEmpty)
@@ -1947,11 +1975,22 @@ class _ReviewSection extends StatelessWidget {
             ),
           ),
         if (merchant.reviews.isNotEmpty) const SizedBox(height: 10),
-        ...merchant.reviews.map((review) => _ReviewCard(review: review)),
+        ...merchant.reviews
+            .take(3)
+            .map((review) => ReviewCard(review: review, showProductName: true)),
         if (merchant.reviews.isNotEmpty)
           Center(
             child: TextButton(
-              onPressed: () {},
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MerchantReviewsPage(
+                      reviews: merchant.reviews,
+                      merchantName: merchant.name,
+                    ),
+                  ),
+                );
+              },
               child: const Text(
                 'Lihat Semua Ulasan',
                 style: TextStyle(
@@ -1966,117 +2005,3 @@ class _ReviewSection extends StatelessWidget {
   }
 }
 
-class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({required this.review});
-
-  final MerchantReview review;
-
-  @override
-  Widget build(BuildContext context) {
-    final deleted = review.isDeleted;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: deleted ? const Color(0xFFF4F5F7) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [UserTheme.softShadow(opacity: 0.04)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: UserTheme.softBlue,
-                child: Text(
-                  review.reviewer.isEmpty
-                      ? 'U'
-                      : review.reviewer[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: UserTheme.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      review.reviewer,
-                      style: const TextStyle(
-                        color: UserTheme.text,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (review.productName.isNotEmpty)
-                      Text(
-                        review.productName,
-                        style: const TextStyle(
-                          color: UserTheme.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    Text(
-                      _reviewTimeText(review),
-                      style: const TextStyle(
-                        color: UserTheme.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Row(
-                children: List.generate(5, (index) {
-                  return Icon(
-                    index < review.rating.round()
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    color: const Color(0xFFFFB300),
-                    size: 17,
-                  );
-                }),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            deleted ? 'Ulasan ini sudah dihapus.' : review.comment,
-            style: TextStyle(
-              color: deleted ? UserTheme.muted : UserTheme.text,
-              height: 1.45,
-              fontStyle: deleted ? FontStyle.italic : FontStyle.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _reviewTimeText(MerchantReview review) {
-    if (review.isDeleted && review.deletedAt.isNotEmpty) {
-      return 'Dihapus ${_formatReviewDate(review.deletedAt)}';
-    }
-    if (review.updatedAt.isNotEmpty &&
-        review.createdAt.isNotEmpty &&
-        review.updatedAt != review.createdAt) {
-      return 'Diedit ${_formatReviewDate(review.updatedAt)}';
-    }
-    if (review.createdAt.isNotEmpty) {
-      return 'Dikirim ${_formatReviewDate(review.createdAt)}';
-    }
-    return review.timeLabel;
-  }
-
-  String _formatReviewDate(String raw) {
-    final parsed = DateTime.tryParse(raw);
-    if (parsed == null) return raw;
-    final local = parsed.toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
-  }
-}

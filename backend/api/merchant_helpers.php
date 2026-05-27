@@ -281,6 +281,7 @@ function merchantEnsureSchema(mysqli $conn): void {
                 product_id BIGINT UNSIGNED DEFAULT NULL,
                 rating TINYINT UNSIGNED NOT NULL,
                 comment TEXT DEFAULT NULL,
+                edit_count INT NOT NULL DEFAULT 0,
                 deleted_at TIMESTAMP NULL DEFAULT NULL,
                 created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -293,6 +294,7 @@ function merchantEnsureSchema(mysqli $conn): void {
         ");
     }
     merchantAddColumn($conn, 'merchant_reviews', 'deleted_at', "`deleted_at` TIMESTAMP NULL DEFAULT NULL");
+    merchantAddColumn($conn, 'merchant_reviews', 'edit_count', "`edit_count` INT NOT NULL DEFAULT 0");
     merchantAddForeignKey(
         $conn,
         'merchant_reviews',

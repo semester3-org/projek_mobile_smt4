@@ -71,6 +71,7 @@ class MerchantRepository {
     bool nextStatus = false,
     double? laundryWeightKg,
     double? laundryTotalAmount,
+    String? deliveryLogId,
   }) async {
     final res = await ApiService.put('api/merchant_orders', {
       'id': id,
@@ -81,9 +82,52 @@ class MerchantRepository {
         'action': 'set_laundry_total',
       if (laundryWeightKg != null) 'weightKg': laundryWeightKg,
       if (laundryTotalAmount != null) 'totalAmount': laundryTotalAmount,
+      if (deliveryLogId != null) 'deliveryLogId': deliveryLogId,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui pesanan');
+    }
+    try {
+      return RepoResult.ok(
+        MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
+    }
+  }
+
+  static Future<RepoResult<MerchantOrder>> completeCateringDelivery({
+    required String orderId,
+    required String deliveryLogId,
+  }) async {
+    final res = await ApiService.put('api/merchant_orders', {
+      'id': orderId,
+      'action': 'complete_delivery',
+      'deliveryLogId': deliveryLogId,
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menyelesaikan pengantaran');
+    }
+    try {
+      return RepoResult.ok(
+        MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
+    }
+  }
+
+  static Future<RepoResult<MerchantOrder>> rejectOrder({
+    required String orderId,
+    required String reason,
+  }) async {
+    final res = await ApiService.put('api/merchant_orders', {
+      'id': orderId,
+      'action': 'reject_order',
+      'reason': reason,
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menolak pesanan');
     }
     try {
       return RepoResult.ok(
@@ -119,6 +163,9 @@ class MerchantRepository {
     required String unit,
     required String imageUrl,
     required bool isActive,
+    int mealDeliveryCount = 1,
+    String deliveryTime1 = '07:00',
+    String? deliveryTime2,
   }) async {
     final payload = {
       if (id != null && id.isNotEmpty) 'id': id,
@@ -130,6 +177,10 @@ class MerchantRepository {
       'unit': unit,
       'imageUrl': imageUrl,
       'isActive': isActive,
+      'mealDeliveryCount': mealDeliveryCount,
+      'deliveryTime1': deliveryTime1,
+      if (deliveryTime2 != null && deliveryTime2.isNotEmpty)
+        'deliveryTime2': deliveryTime2,
     };
     final res = id == null || id.isEmpty
         ? await ApiService.post('api/merchant_products', payload)
@@ -155,6 +206,31 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menghapus produk');
     }
     return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<List<MerchantProductReviewSummary>>>
+      getProductReviews({
+    int? rating,
+  }) async {
+    final params = <String, String>{};
+    if (rating != null && rating > 0) params['rating'] = rating.toString();
+    final res = await ApiService.get(
+      'api/merchant_product_reviews',
+      queryParams: params.isEmpty ? null : params,
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat ulasan produk');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((item) => MerchantProductReviewSummary.fromJson(
+                item as Map<String, dynamic>,
+              ))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca ulasan produk: $e');
+    }
   }
 
   static Future<RepoResult<List<MerchantPromo>>> getPromos() async {
@@ -250,7 +326,6 @@ class MerchantRepository {
     required String photoUrl,
     required String openTime,
     required String closeTime,
-    required List<String> categories,
   }) async {
     final res = await ApiService.put('api/merchant_profile', {
       'businessName': businessName,
@@ -262,7 +337,6 @@ class MerchantRepository {
       'photoUrl': photoUrl,
       'openTime': openTime,
       'closeTime': closeTime,
-      'categories': categories,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui profil');

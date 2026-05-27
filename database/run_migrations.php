@@ -13,6 +13,9 @@ $files = [
     '2026-05-28-products-price20-finish.sql',
     '2026-05-28-catering-package-category-admin-and-delivery-type.sql',
     '2026-05-29-product-review-per-purchase.sql',
+    '2026-05-30-drop-merchant-service-categories.sql',
+    '2026-05-30-catering-delivery-milestones.sql',
+    '2026-05-31-catering-extension-orders.sql',
 ];
 
 function runSqlFile(mysqli $conn, string $path): array {
@@ -59,6 +62,15 @@ foreach ($files as $file) {
         echo "WARN ({$result['error']}) — lanjut schema PHP\n";
     } else {
         echo "OK ({$result['executed']} executed, {$result['skipped']} skipped)\n";
+    }
+}
+
+if (merchantColumnExists($conn, 'merchants', 'service_categories')) {
+    echo "Dropping merchants.service_categories ... ";
+    if ($conn->query("ALTER TABLE merchants DROP COLUMN service_categories")) {
+        echo "OK\n";
+    } else {
+        echo "WARN ({$conn->error})\n";
     }
 }
 

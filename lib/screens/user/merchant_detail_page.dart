@@ -550,8 +550,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               if (_hasWeekdayPackage)
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
-                    ButtonSegment(value: 30, label: Text('Full Day')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
+                    ButtonSegment(value: 30, label: Text('Full Day 30 hari')),
                   ],
                   selected: {_cateringDays},
                   onSelectionChanged: (value) {
@@ -561,7 +561,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               const SizedBox(height: 8),
               Text(
                 _hasWeekdayPackage && _cateringDays == 20
-                    ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+                    ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
                     : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
                 style: const TextStyle(color: UserTheme.muted, fontSize: 12),
               ),
@@ -674,7 +674,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   @override
   void initState() {
     super.initState();
-    _paymentMethod = _isLaundry ? 'cod' : 'gopay';
+    _paymentMethod = _isLaundry ? 'cod' : '';
     _cateringDays = widget.initialCateringDays ?? 30;
     final initial = widget.initialItem ?? _items.first;
     if (_isLaundry) {
@@ -783,6 +783,14 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     return category;
   }
 
+  bool _isValidPhoneNumber(String value) {
+    final phone = value.trim();
+    if (phone.isEmpty) return false;
+    final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final hasValidPrefix = digits.startsWith('08') || digits.startsWith('628');
+    return hasValidPrefix && digits.length >= 10 && digits.length <= 15;
+  }
+
   void _submit() {
     final selectedItems = _selectedItems;
     if (selectedItems.isEmpty) {
@@ -803,6 +811,16 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       );
       return;
     }
+    if (!_isValidPhoneNumber(_phoneCtrl.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...',
+          ),
+        ),
+      );
+      return;
+    }
 
     final selectedCatering = _selectedCateringItem;
     final useWeekday = widget.merchant.type == 'catering' &&
@@ -810,7 +828,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         (selectedCatering?.hasWeekdayPrice ?? false);
     final cateringNote = widget.merchant.type == 'catering'
         ? (useWeekday
-            ? 'Paket Weekday: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
+            ? 'Paket Weekday 30 hari: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
             : 'Paket Full Day: dikirim setiap hari, termasuk Sabtu dan Minggu.')
         : '';
     final notes = [
@@ -830,9 +848,9 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
             ? _laundryServiceEstimateFor(selectedItems)
-            : (useWeekday ? 'Paket Weekday' : 'Paket Full Day'),
+            : (useWeekday ? 'Paket Weekday 30 Hari' : 'Paket Full Day'),
         paymentMethod: _paymentMethod,
-        subscriptionDays: _isLaundry ? null : (useWeekday ? 20 : 30),
+        subscriptionDays: _isLaundry ? null : 30,
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
         notes: notes,
@@ -880,7 +898,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
                     ButtonSegment(value: 30, label: Text('Full Day')),
                   ],
                   selected: {_cateringDays},
@@ -898,6 +916,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               controller: _nameCtrl,
               label: 'Nama Penerima',
               icon: Icons.person_outline_rounded,
+              readOnly: !_isLaundry,
             ),
             const SizedBox(height: 12),
             _CheckoutField(
@@ -907,29 +926,58 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _paymentOptions.contains(_paymentMethod)
-                  ? _paymentMethod
-                  : _paymentOptions.first,
-              decoration: _checkoutDecoration(
-                label: 'Metode Pembayaran',
-                icon: Icons.payments_outlined,
+            if (_isLaundry) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _paymentOptions.contains(_paymentMethod)
+                    ? _paymentMethod
+                    : _paymentOptions.first,
+                decoration: _checkoutDecoration(
+                  label: 'Metode Pembayaran',
+                  icon: Icons.payments_outlined,
+                ),
+                items: _paymentOptions
+                    .map(
+                      (method) => DropdownMenuItem(
+                        value: method,
+                        child: Text(
+                          '${PaymentMethodHelper.getDisplayName(method)} (${PaymentMethodHelper.getCategory(method)})',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _paymentMethod = value);
+                },
               ),
-              items: _paymentOptions
-                  .map(
-                    (method) => DropdownMenuItem(
-                      value: method,
+              const SizedBox(height: 18),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F8FD),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD8E5F4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.payments_outlined, color: UserTheme.primary),
+                    SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        '${PaymentMethodHelper.getDisplayName(method)} (${PaymentMethodHelper.getCategory(method)})',
+                        'Metode pembayaran dipilih setelah merchant menyetujui pesanan.',
+                        style: TextStyle(
+                          color: UserTheme.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => _paymentMethod = value);
-              },
-            ),
-            const SizedBox(height: 18),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             _CheckoutField(
               controller: _addressCtrl,
               label: 'Alamat Tujuan',
@@ -1076,7 +1124,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           if (!_isLaundry) ...[
             const SizedBox(height: 6),
             Text(
-              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
               style: const TextStyle(color: UserTheme.muted),
             ),
           ] else ...[
@@ -1216,13 +1264,13 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
                           style: const TextStyle(color: UserTheme.muted),
                         ),
                         if (item.hasWeekdayPrice) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Weekday tersedia: ${formatUserCurrency(item.price20Days!)}',
+                            'Weekday 30 hari tersedia: ${formatUserCurrency(item.price20Days!)}',
                             style: const TextStyle(
                               color: UserTheme.primary,
                               fontSize: 12,
@@ -1242,7 +1290,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         if (_selectedCateringItem?.hasWeekdayPrice ?? false)
           SegmentedButton<int>(
             segments: const [
-              ButtonSegment(value: 20, label: Text('Weekday')),
+              ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
               ButtonSegment(value: 30, label: Text('Full Day')),
             ],
             selected: {_cateringDays},
@@ -1254,7 +1302,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         Text(
           _cateringDays == 20 &&
                   (_selectedCateringItem?.hasWeekdayPrice ?? false)
-              ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+              ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
               : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
           style: const TextStyle(color: UserTheme.muted, fontSize: 12),
         ),
@@ -1270,6 +1318,7 @@ class _CheckoutField extends StatelessWidget {
     required this.icon,
     this.maxLines = 1,
     this.keyboardType,
+    this.readOnly = false,
   });
 
   final TextEditingController controller;
@@ -1277,6 +1326,7 @@ class _CheckoutField extends StatelessWidget {
   final IconData icon;
   final int maxLines;
   final TextInputType? keyboardType;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -1305,6 +1355,7 @@ class _CheckoutField extends StatelessWidget {
             controller: controller,
             maxLines: maxLines,
             keyboardType: keyboardType,
+            readOnly: readOnly,
             textAlign: TextAlign.center,
             textAlignVertical: TextAlignVertical.center,
             decoration: _checkoutDecoration(multiline: true),
@@ -1316,6 +1367,7 @@ class _CheckoutField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      readOnly: readOnly,
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,

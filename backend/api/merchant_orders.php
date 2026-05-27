@@ -21,7 +21,46 @@ try {
         $id = trim($_GET['id'] ?? '');
         $status = strtolower(trim($_GET['status'] ?? ''));
         $search = trim($_GET['search'] ?? '');
-        $status = in_array($status, ['pending', 'processing', 'done'], true) ? $status : null;
+        $status = in_array($status, ['pending', 'waiting_payment', 'today_delivery', 'processing', 'done'], true) ? $status : null;
+
+        $pendingActivation = $conn->prepare("
+            SELECT id
+            FROM orders
+            WHERE merchant_id = ?
+              AND service_type = 'catering'
+              AND status = 'accepted'
+              AND COALESCE(payment_status, '') IN ('paid','payment_submitted')
+              AND (subscription_start_date IS NULL OR subscription_end_date IS NULL)
+        ");
+        if ($pendingActivation) {
+            $pendingActivation->bind_param('s', $merchantId);
+            $pendingActivation->execute();
+            $rows = $pendingActivation->get_result()->fetch_all(MYSQLI_ASSOC);
+            $pendingActivation->close();
+            foreach ($rows as $row) {
+                merchantActivateCateringSubscription($conn, (int)($row['id'] ?? 0));
+            }
+        }
+
+        $activeToday = $conn->prepare("
+            SELECT id
+            FROM orders
+            WHERE merchant_id = ?
+              AND service_type = 'catering'
+              AND status = 'accepted'
+              AND COALESCE(payment_status, '') IN ('paid','payment_submitted')
+              AND subscription_start_date <= CURDATE()
+              AND subscription_end_date >= CURDATE()
+        ");
+        if ($activeToday) {
+            $activeToday->bind_param('s', $merchantId);
+            $activeToday->execute();
+            $rows = $activeToday->get_result()->fetch_all(MYSQLI_ASSOC);
+            $activeToday->close();
+            foreach ($rows as $row) {
+                merchantEnsureCateringDeliveryLogs($conn, (int)($row['id'] ?? 0));
+            }
+        }
 
         $orders = merchantOrderQuery(
             $conn,
@@ -58,6 +97,10 @@ try {
         }
 
         if ($action === 'next') {
+            if (strtolower((string)($current[0]['paymentStatus'] ?? '')) === 'cancelled' ||
+                strtolower((string)($current[0]['statusGroup'] ?? '')) === 'cancelled') {
+                merchantSendJson(false, null, 'Pesanan dibatalkan tidak bisa diproses', 400);
+            }
             $isCatering = strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering';
             $status = merchantNextStatus($current[0]['status'], $isCatering);
         }
@@ -75,6 +118,74 @@ try {
             );
             $updated = merchantOrderQuery($conn, $merchantId, $id);
             merchantSendJson(true, $updated[0] ?? $current[0], 'Total laundry berhasil disimpan');
+        }
+
+        if ($action === 'complete_delivery') {
+            $logId = (int)($body['deliveryLogId'] ?? 0);
+            if ($logId <= 0) {
+                merchantSendJson(false, null, 'ID pengantaran wajib diisi', 400);
+            }
+            if (!merchantTableExists($conn, 'catering_delivery_logs')) {
+                merchantSendJson(false, null, 'Tabel pengantaran catering belum tersedia', 500);
+            }
+            $stmt = $conn->prepare("
+                UPDATE catering_delivery_logs
+                SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
+                WHERE id = ? AND merchant_id = ? AND order_id = ?
+            ");
+            if (!$stmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $orderIdInt = (int)($current[0]['id'] ?? 0);
+            $stmt->bind_param('isi', $logId, $merchantId, $orderIdInt);
+            $stmt->execute();
+            $stmt->close();
+
+            $updated = merchantOrderQuery($conn, $merchantId, $id);
+            merchantSendJson(true, $updated[0] ?? $current[0], 'Pengantaran berhasil ditandai selesai');
+        }
+
+        if ($action === 'reject_order') {
+            $reason = trim((string)($body['reason'] ?? ''));
+            if ($reason === '') {
+                merchantSendJson(false, null, 'Alasan penolakan wajib diisi', 400);
+            }
+            if (($current[0]['status'] ?? '') !== 'pending') {
+                merchantSendJson(false, null, 'Hanya pesanan pending yang bisa ditolak', 400);
+            }
+            $orderIdInt = (int)($current[0]['id'] ?? 0);
+            $note = "\n[Ditolak merchant] " . $reason;
+            $stmt = $conn->prepare("
+                UPDATE orders
+                SET payment_status = 'cancelled',
+                    subscription_status = IF(service_type = 'catering', 'cancelled', subscription_status),
+                    cancellation_requested_at = IF(service_type = 'catering', NOW(), cancellation_requested_at),
+                    notes = CONCAT(COALESCE(notes, ''), ?),
+                    updated_at = NOW()
+                WHERE id = ? AND merchant_id = ?
+            ");
+            if (!$stmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $stmt->bind_param('sis', $note, $orderIdInt, $merchantId);
+            $stmt->execute();
+            $stmt->close();
+
+            $userId = merchantQueryValue($conn, 'SELECT user_id FROM orders WHERE id = ?', 'i', [$orderIdInt]);
+            if ($userId) {
+                merchantCreateNotification(
+                    $conn,
+                    (string)$userId,
+                    'Pesanan ditolak merchant',
+                    ($current[0]['code'] ?? ('#' . $orderIdInt)) . ' ditolak. Alasan: ' . $reason,
+                    'order',
+                    'Lihat Detail',
+                    'order:' . (string)$orderIdInt
+                );
+            }
+
+            $updated = merchantOrderQuery($conn, $merchantId, $id);
+            merchantSendJson(true, $updated[0] ?? $current[0], 'Pesanan berhasil ditolak');
         }
 
         if ($current[0]['status'] === 'pending' &&
@@ -132,7 +243,10 @@ try {
         if ($orderIdInt > 0 &&
             in_array($status, ['accepted', 'processing', 'delivered', 'done'], true) &&
             strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering') {
-            merchantActivateCateringSubscription($conn, $orderIdInt);
+            $payment = strtolower((string)($current[0]['paymentStatus'] ?? ''));
+            if (in_array($payment, ['paid', 'payment_submitted'], true)) {
+                merchantActivateCateringSubscription($conn, $orderIdInt);
+            }
         }
 
         $updated = merchantOrderQuery($conn, $merchantId, $id);

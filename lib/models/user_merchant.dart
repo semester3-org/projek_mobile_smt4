@@ -22,7 +22,7 @@ class MerchantMenuItem {
   final String category;
   final String unit;
 
-  /// Harga Weekday: dikirim Senin-Jumat, weekend libur.
+  /// Harga Weekday 30 hari: dikirim Senin-Jumat, weekend libur.
   final double? price20Days;
   final double? price30Days;
   final String? packageDeliveryType;

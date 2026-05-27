@@ -54,6 +54,7 @@ if ($path === 'api/laundry_service_estimates') { require_once __DIR__ . '/api/la
 if ($path === 'api/merchant_dashboard')     { require_once __DIR__ . '/api/merchant_dashboard.php';     exit; }
 if ($path === 'api/merchant_orders')        { require_once __DIR__ . '/api/merchant_orders.php';        exit; }
 if ($path === 'api/merchant_products')      { require_once __DIR__ . '/api/merchant_products.php';      exit; }
+if ($path === 'api/merchant_product_reviews') { require_once __DIR__ . '/api/merchant_product_reviews.php'; exit; }
 if ($path === 'api/merchant_promos')        { require_once __DIR__ . '/api/merchant_promos.php';        exit; }
 if ($path === 'api/merchant_profile')       { require_once __DIR__ . '/api/merchant_profile.php';       exit; }
 if ($path === 'api/merchant_notifications') { require_once __DIR__ . '/api/merchant_notifications.php'; exit; }
@@ -103,6 +104,7 @@ if (empty($path)) {
             'GET /api/merchant_dashboard',
             'GET|PUT /api/merchant_orders',
             'GET|POST|PUT|DELETE /api/merchant_products',
+            'GET /api/merchant_product_reviews',
             'GET|POST|PUT|DELETE /api/merchant_promos',
             'GET|PUT /api/merchant_profile',
             'GET /api/merchant_notifications',

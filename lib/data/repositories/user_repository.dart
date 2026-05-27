@@ -749,6 +749,29 @@ class UserRepository {
     }
   }
 
+  static Future<RepoResult<Order>> extendCateringSubscription(
+    String orderId, {
+    required int days,
+  }) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'extend_subscription',
+      'days': days,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperpanjang langganan');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status langganan terbaru');
+    }
+  }
+
   static Future<RepoResult<UserMerchantReviewState>> submitMerchantRating({
     required String type,
     required String merchantId,

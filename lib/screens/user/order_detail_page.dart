@@ -26,6 +26,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   bool _openingPayment = false;
   bool _syncingPayment = false;
   bool _cancellingSubscription = false;
+  bool _extendingSubscription = false;
   bool _cancellingOrder = false;
   bool _loadingReceipt = false;
 
@@ -33,7 +34,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   void initState() {
     super.initState();
     _order = widget.order;
-    
+
     // Use RealtimeService untuk real-time order updates
     RealtimeService().startUserOrderPolling();
     RealtimeService().addEventListener('order_status_updated', _refreshOrder);
@@ -42,7 +43,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
   @override
   void dispose() {
     // Stop real-time polling dan remove listeners
-    RealtimeService().removeEventListener('order_status_updated', _refreshOrder);
+    RealtimeService()
+        .removeEventListener('order_status_updated', _refreshOrder);
     RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
@@ -76,10 +78,13 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
 
   Future<void> _payWithMidtrans() async {
     final id = _order.databaseId ?? _order.id;
+    final paymentMethod = await _pickPaymentMethod();
+    if (paymentMethod == null) return;
+    if (!mounted) return;
     setState(() => _openingPayment = true);
     final result = await UserRepository.createOrderMidtransPayment(
       orderId: id,
-      paymentMethod: _order.paymentMethod ?? 'GoPay/QRIS',
+      paymentMethod: paymentMethod,
     );
     if (!mounted) return;
     setState(() => _openingPayment = false);
@@ -91,6 +96,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       return;
     }
 
+    final midtransOrderId = result.data!['midtrans_order_id'] as String? ?? '';
     final url = result.data!['payment_url'] as String? ?? '';
     final uri = Uri.tryParse(url);
     if (uri == null) {
@@ -114,7 +120,101 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       );
       return;
     }
-    await _refreshOrder();
+    if (midtransOrderId.isNotEmpty) {
+      await _pollOrderPaymentStatus(midtransOrderId);
+    } else {
+      await _refreshOrder();
+    }
+  }
+
+  Future<void> _pollOrderPaymentStatus(String midtransOrderId) async {
+    for (var attempt = 0; attempt < 6; attempt++) {
+      await Future.delayed(Duration(seconds: attempt == 0 ? 1 : 2));
+      if (!mounted) return;
+
+      await UserRepository.syncOrderMidtransStatus(
+        midtransOrderId: midtransOrderId,
+      );
+      await _refreshOrder();
+      if (!mounted) return;
+      if (_order.isPaid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pembayaran berhasil. Status pesanan diperbarui.'),
+          ),
+        );
+        return;
+      }
+    }
+  }
+
+  Future<String?> _pickPaymentMethod() {
+    final methods = PaymentMethodHelper.checkoutOptionKeys(isLaundry: false);
+    var selected = (_order.paymentMethod ?? '').toLowerCase();
+    if (!methods.contains(selected)) {
+      selected = 'qris';
+    }
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pilih Metode Pembayaran',
+                      style: TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...methods.map(
+                      (method) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          method == selected
+                              ? Icons.radio_button_checked_rounded
+                              : Icons.radio_button_off_rounded,
+                          color: method == selected
+                              ? UserTheme.primary
+                              : UserTheme.muted,
+                        ),
+                        title: Text(
+                          PaymentMethodHelper.getDisplayName(method),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(PaymentMethodHelper.getCategory(method)),
+                        onTap: () => Navigator.of(context).pop(method),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(selected),
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: const Text('Lanjut ke Pembayaran'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _syncPaymentStatus() async {
@@ -196,6 +296,34 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _extendSubscription() async {
+    final id = _order.databaseId ?? _order.id;
+    final days = _extensionDaysFor(_order);
+    setState(() => _extendingSubscription = true);
+    final result = await UserRepository.extendCateringSubscription(
+      id,
+      days: days,
+    );
+    if (!mounted) return;
+    setState(() {
+      _extendingSubscription = false;
+      if (result.data != null) _order = result.data!;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? 'Pengajuan perpanjangan dikirim. Tunggu persetujuan merchant sebelum membayar.'
+              : result.error ?? 'Gagal memperpanjang langganan',
+        ),
+      ),
+    );
+  }
+
+  int _extensionDaysFor(Order order) {
+    return 30;
   }
 
   @override
@@ -328,7 +456,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                     ),
                     child: Text(
                       order.paymentMethodLabel ??
-                          PaymentMethodHelper.getDisplayName(order.paymentMethod),
+                          PaymentMethodHelper.getDisplayName(
+                              order.paymentMethod),
                       style: const TextStyle(
                         color: UserTheme.primaryDark,
                         fontWeight: FontWeight.w900,
@@ -421,19 +550,40 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
             label: Text(_loadingReceipt ? 'Menyiapkan...' : 'Unduh Struk'),
           ),
           const SizedBox(height: 12),
+          if (order.canExtendCateringSubscription) ...[
+            OutlinedButton.icon(
+              onPressed: _extendingSubscription ? null : _extendSubscription,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: UserTheme.primaryDark,
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              icon: const Icon(Icons.update_rounded),
+              label: Text(
+                _extendingSubscription
+                    ? 'Mengirim pengajuan...'
+                    : 'Ajukan Perpanjangan ${_extensionDaysFor(order)} Hari',
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (order.canCancel)
             TextButton(
-              onPressed: order.isCateringSubscription
+              onPressed: order.shouldCancelAsSubscription
                   ? (_cancellingSubscription ? null : _cancelSubscription)
                   : (_cancellingOrder ? null : _cancelOrder),
               child: Text(
-                order.isCateringSubscription
+                order.shouldCancelAsSubscription
                     ? (_cancellingSubscription
                         ? 'Membatalkan...'
                         : 'Batalkan Langganan')
                     : (_cancellingOrder
                         ? 'Membatalkan...'
-                        : 'Batalkan Pesanan (5 detik)'),
+                        : order.isCateringSubscription
+                            ? 'Batalkan Pesanan'
+                            : 'Batalkan Pesanan (5 detik)'),
                 style: const TextStyle(
                   color: UserTheme.danger,
                   fontWeight: FontWeight.w800,
@@ -498,9 +648,11 @@ class _ReadyToPayBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Total laundry sudah ditetapkan',
-            style: TextStyle(
+          Text(
+            order.isCateringSubscription
+                ? 'Pesanan disetujui merchant'
+                : 'Total laundry sudah ditetapkan',
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,
               fontSize: 17,
@@ -508,7 +660,9 @@ class _ReadyToPayBanner extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Merchant selesai menimbang. Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran sekarang.',
+            order.isCateringSubscription
+                ? 'Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran untuk mengaktifkan jadwal catering.'
+                : 'Merchant selesai menimbang. Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran sekarang.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.92),
               height: 1.4,
@@ -561,7 +715,9 @@ class _CateringActiveCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            order.items.isNotEmpty ? order.items.first.name : 'Langganan catering',
+            order.items.isNotEmpty
+                ? order.items.first.name
+                : 'Langganan catering',
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           const SizedBox(height: 6),
@@ -954,6 +1110,11 @@ class _PaymentStatusNotice extends StatelessWidget {
     final label = order.paymentStatusLabel?.trim().isNotEmpty == true
         ? order.paymentStatusLabel!
         : 'Pembayaran tercatat';
+    final effectiveLabel = order.isCateringSubscription &&
+            (order.merchantStatus ?? '').toLowerCase() != 'accepted' &&
+            !order.isPaid
+        ? 'Menunggu persetujuan merchant. Tombol pembayaran akan muncul setelah pesanan disetujui.'
+        : label;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -968,7 +1129,7 @@ class _PaymentStatusNotice extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              label,
+              effectiveLabel,
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontWeight: FontWeight.w800,

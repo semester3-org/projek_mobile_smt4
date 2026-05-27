@@ -496,18 +496,26 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   }
 
   bool get _showPromo {
-    final hasPromo =
-        widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final hasPromo = widget.item.hasPromo &&
+        (widget.item.promoPrice ?? 0) > 0 &&
+        (widget.item.promoDiscountAmount ?? 0) > 0;
     if (!hasPromo) return false;
-    return !_isCatering || _cateringDays == 30;
+    return _promoPrice < _price;
+  }
+
+  double get _promoPrice {
+    final discountAmount = widget.item.promoDiscountAmount ?? 0;
+    if (discountAmount <= 0) return _price;
+    final promoPrice = _price - discountAmount;
+    return promoPrice.clamp(0, double.infinity);
   }
 
   double get _displayPrice {
-    if (_showPromo) {
-      return widget.item.promoPrice ?? _price;
-    }
-    return _price;
+    if (!_showPromo) return _price;
+    return _promoPrice;
   }
+
+  double get _discountAmount => (_price - _displayPrice).clamp(0, double.infinity);
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +610,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             ),
             if (_showPromo) ...[
               Text(
-                '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${_isCatering ? '' : widget.item.unit}',
+                '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
                 style: const TextStyle(
                   color: UserTheme.muted,
                   decoration: TextDecoration.lineThrough,
@@ -610,7 +618,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 ),
               ),
               Text(
-                'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                'Hemat ${formatUserCurrency(_discountAmount)}',
                 style: const TextStyle(
                   color: UserTheme.primary,
                   fontWeight: FontWeight.w800,

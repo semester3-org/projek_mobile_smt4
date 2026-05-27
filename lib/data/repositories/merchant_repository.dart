@@ -176,7 +176,8 @@ class MerchantRepository {
     String? id,
     required String name,
     required String description,
-    required String productId,
+    String productId = '',
+    List<String> productIds = const [],
     required String discountType,
     required double discountValue,
     required double minOrderAmount,
@@ -185,12 +186,14 @@ class MerchantRepository {
     required DateTime? endAt,
     required bool isActive,
     int? usageLimit,
+    int perUserUsageLimit = 1,
   }) async {
     final payload = {
       if (id != null && id.isNotEmpty) 'id': id,
       'name': name,
       'description': description,
-      'productId': productId,
+      if (productId.isNotEmpty) 'productId': productId,
+      if (productIds.isNotEmpty) 'productIds': productIds,
       'discountType': discountType,
       'discountValue': discountValue,
       'minOrderAmount': minOrderAmount,
@@ -198,6 +201,7 @@ class MerchantRepository {
       'startAt': startAt?.toIso8601String(),
       'endAt': endAt?.toIso8601String(),
       'isActive': isActive,
+      'perUserUsageLimit': perUserUsageLimit,
       if (usageLimit != null) 'usageLimit': usageLimit,
     };
     final res = id == null || id.isEmpty
@@ -224,6 +228,48 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menonaktifkan promo');
     }
     return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> previewPromo({
+    String? merchantId,
+    required double subtotal,
+    List<String> productIds = const [],
+    String? discountType,
+    double? discountValue,
+    double? minOrderAmount,
+    double? maxDiscountAmount,
+    String? name,
+  }) async {
+    final items = productIds
+        .where((id) => id.isNotEmpty)
+        .map((id) => {'productId': int.tryParse(id) ?? 0})
+        .where((item) => (item['productId'] ?? 0) > 0)
+        .toList();
+
+    final payload = <String, dynamic>{
+      'subtotal': subtotal,
+      if (items.isNotEmpty) 'items': items,
+      if (discountType != null && discountType.isNotEmpty)
+        'discountType': discountType,
+      if (discountValue != null && discountValue > 0)
+        'discountValue': discountValue,
+      if (minOrderAmount != null) 'minOrderAmount': minOrderAmount,
+      if (maxDiscountAmount != null) 'maxDiscountAmount': maxDiscountAmount,
+      if (name != null && name.isNotEmpty) 'name': name,
+    };
+    if (merchantId != null && merchantId.isNotEmpty) {
+      payload['merchantId'] = merchantId;
+    }
+
+    final res = await ApiService.post('api/promo_preview', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal preview promo');
+    }
+    try {
+      return RepoResult.ok(res.data!['data'] as Map<String, dynamic>);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca preview promo: $e');
+    }
   }
 
   static Future<RepoResult<MerchantProfile>> getProfile() async {

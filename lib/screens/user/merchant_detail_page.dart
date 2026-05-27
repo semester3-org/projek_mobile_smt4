@@ -410,6 +410,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     _HeaderCard(merchant: _merchant),
                     const SizedBox(height: 22),
                     _MerchantSummary(merchant: _merchant),
+                    const SizedBox(height: 18),
+                    _ActivePromoSection(merchant: _merchant),
                     const SizedBox(height: 30),
                     UserSectionHeader(
                       title: _merchant.type == 'laundry'
@@ -493,6 +495,20 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     return widget.item.cateringPriceForDays(_cateringDays);
   }
 
+  bool get _showPromo {
+    final hasPromo =
+        widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    if (!hasPromo) return false;
+    return !_isCatering || _cateringDays == 30;
+  }
+
+  double get _displayPrice {
+    if (_showPromo) {
+      return widget.item.promoPrice ?? _price;
+    }
+    return _price;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -546,15 +562,62 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 1.45,
               ),
             ),
+            if (_showPromo) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: UserTheme.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  widget.item.promoLabel ?? 'PROMO',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if ((widget.item.promoDescription ?? '').isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  widget.item.promoDescription!,
+                  style: const TextStyle(
+                    color: UserTheme.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 14),
             Text(
-              '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+              '${formatUserCurrency(_displayPrice)}${_isCatering ? '' : widget.item.unit}',
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
+            if (_showPromo) ...[
+              Text(
+                '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${_isCatering ? '' : widget.item.unit}',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  decoration: TextDecoration.lineThrough,
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                style: const TextStyle(
+                  color: UserTheme.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             if (_isCatering) ...[
               const SizedBox(height: 16),
               if (_hasWeekdayPackage)
@@ -734,7 +797,19 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
 
   double get _total {
     if (_isLaundry) return 0;
+    return (_subtotal - _promoDiscount).clamp(0, double.infinity);
+  }
+
+  double get _subtotal {
+    if (_isLaundry) return 0;
     return _adjustedCateringPrice(_selectedCateringItem);
+  }
+
+  double get _promoDiscount {
+    if (_isLaundry) return 0;
+    final selected = _selectedCateringItem;
+    if (selected == null || !selected.hasPromo) return 0;
+    return (selected.promoDiscountAmount ?? 0).clamp(0, _subtotal);
   }
 
   double _adjustedCateringPrice(MerchantMenuItem? item) {
@@ -1011,24 +1086,66 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                       ],
                     )
-                  : Row(
+                  : Column(
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Total Pesanan',
-                            style: TextStyle(
-                              color: UserTheme.text,
-                              fontWeight: FontWeight.w900,
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Subtotal',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
-                          ),
+                            Text(formatUserCurrency(_subtotal)),
+                          ],
                         ),
-                        Text(
-                          formatUserCurrency(_total),
-                          style: const TextStyle(
-                            color: UserTheme.primaryDark,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                        if (_promoDiscount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Promo (${_selectedCateringItem?.promoDescription ?? 'Promo aktif'})',
+                                  style: const TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '- ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Total Pesanan',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              formatUserCurrency(_total),
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1553,6 +1670,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 
   Widget _buildLaundryCard() {
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
     return GestureDetector(
       onTap: widget.onOrder,
       child: Container(
@@ -1576,6 +1694,26 @@ class _MenuItemCardState extends State<_MenuItemCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (hasPromo)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: UserTheme.primary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        widget.item.promoLabel ?? 'PROMO',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                   Text(
                     widget.item.name,
                     maxLines: 2,
@@ -1594,14 +1732,40 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                     style: const TextStyle(color: UserTheme.muted),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
-                    style: const TextStyle(
-                      color: UserTheme.primaryDark,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
+                  if (hasPromo) ...[
+                    Text(
+                      '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.muted,
+                        decoration: TextDecoration.lineThrough,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
+                    Text(
+                      '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                      style: const TextStyle(
+                        color: UserTheme.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ] else
+                    Text(
+                      '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1623,7 +1787,9 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 
   Widget _buildCateringCard() {
-    final basePrice = widget.item.price;
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final basePrice =
+        hasPromo ? (widget.item.promoPrice ?? widget.item.price) : widget.item.price;
 
     return GestureDetector(
       onTap: widget.onOrder,
@@ -1655,6 +1821,24 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 fontSize: 18,
               ),
             ),
+            if (hasPromo) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: UserTheme.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  widget.item.promoLabel ?? 'PROMO',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               widget.item.description,
@@ -1689,6 +1873,24 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                           fontSize: 18,
                         ),
                       ),
+                      if (hasPromo)
+                        Text(
+                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)} / bulan',
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            fontSize: 12,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      if (hasPromo)
+                        Text(
+                          'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                          style: const TextStyle(
+                            color: UserTheme.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1733,6 +1935,52 @@ class _EmptyMenu extends StatelessWidget {
             ? 'Layanan akan segera ditambahkan.'
             : 'Menu akan segera ditambahkan.',
         style: const TextStyle(color: UserTheme.muted),
+      ),
+    );
+  }
+}
+
+class _ActivePromoSection extends StatelessWidget {
+  const _ActivePromoSection({required this.merchant});
+
+  final UserMerchant merchant;
+
+  @override
+  Widget build(BuildContext context) {
+    final promoItems = merchant.menuItems.where((item) => item.hasPromo).toList();
+    if (promoItems.isEmpty) return const SizedBox.shrink();
+    final topPromo = promoItems.first;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: UserTheme.softBlue,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Promo Aktif',
+            style: TextStyle(
+              color: UserTheme.primaryDark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            topPromo.promoDescription ?? 'Diskon produk aktif',
+            style: const TextStyle(color: UserTheme.text),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Hemat ${formatUserCurrency(topPromo.promoDiscountAmount ?? 0)}',
+            style: const TextStyle(
+              color: UserTheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -132,6 +132,10 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'orderDate' => $order['createdAt'],
         'deliveryDate' => null,
         'totalAmount' => $order['totalAmount'],
+        'subtotalAmount' => (float)($row['subtotal_amount'] ?? $order['totalAmount'] ?? 0),
+        'promoDiscountAmount' => (float)($row['promo_discount_amount'] ?? 0),
+        'promoName' => $row['promo_name'] ?? null,
+        'hasPromo' => (float)($row['promo_discount_amount'] ?? 0) > 0,
         'status' => strtolower((string)($order['paymentStatus'] ?? '')) === 'cancelled'
             ? 'cancelled'
             : match ($order['status']) {
@@ -487,7 +491,11 @@ try {
     }
 
     $isLaundryRequest = $service === 'laundry';
+    $subtotal = 0.0;
     $total = 0.0;
+    $promoDiscountAmount = 0.0;
+    $promoId = null;
+    $promoName = null;
     $normalizedItems = [];
     foreach ($items as $item) {
         if (!is_array($item)) continue;
@@ -512,9 +520,9 @@ try {
         }
         if ($productId === null) continue;
 
-        $subtotal = $isLaundryRequest ? 0.0 : ($qty * $price);
+        $itemSubtotal = $isLaundryRequest ? 0.0 : ($qty * $price);
         if (!$isLaundryRequest) {
-            $total += $subtotal;
+            $subtotal += $itemSubtotal;
         }
         $normalizedItems[] = [
             'productId' => $productId,
@@ -527,7 +535,7 @@ try {
     if (empty($normalizedItems)) {
         merchantSendJson(false, null, 'Item pesanan tidak valid', 400);
     }
-    if (!$isLaundryRequest && $total <= 0) {
+    if (!$isLaundryRequest && $subtotal <= 0) {
         merchantSendJson(false, null, 'Item pesanan tidak valid', 400);
     }
     if ($isLaundryRequest) {
@@ -535,23 +543,53 @@ try {
         $paymentStatus = 'awaiting_weighing';
         $firstProductId = (int)($normalizedItems[0]['productId'] ?? 0);
         $estimatedTime = userOrderLaundryServiceEstimate($conn, $firstProductId, $estimatedTime);
+    } else {
+        $total = $subtotal;
     }
 
     $conn->begin_transaction();
     try {
+        if (!$isLaundryRequest) {
+            $bestPromo = merchantBestPromoForCheckout($conn, $merchantId, $userId, $subtotal, $normalizedItems);
+            if ($bestPromo !== null) {
+                $promoId = (int)$bestPromo['promo']['id'];
+                $promoName = (string)($bestPromo['promo']['name'] ?? '');
+                $promoDiscountAmount = (float)$bestPromo['discount'];
+                $total = max(0, (float)$bestPromo['total']);
+            }
+        }
+
+        if ($promoId !== null) {
+            $lock = $conn->prepare('SELECT id, usage_limit, used_count FROM merchant_promos WHERE id = ? FOR UPDATE');
+            if (!$lock) throw new Exception($conn->error);
+            $lock->bind_param('i', $promoId);
+            $lock->execute();
+            $lockedPromo = $lock->get_result()->fetch_assoc();
+            $lock->close();
+            if (!$lockedPromo || ((int)($lockedPromo['usage_limit'] ?? 0) > 0 &&
+                (int)($lockedPromo['used_count'] ?? 0) >= (int)($lockedPromo['usage_limit'] ?? 0))) {
+                $promoId = null;
+                $promoName = null;
+                $promoDiscountAmount = 0.0;
+                $total = $subtotal;
+            }
+        }
+
         $stmt = $conn->prepare("
             INSERT INTO orders
                 (user_id, merchant_id, total_harga, status, service_type, delivery_address,
                  delivery_latitude, delivery_longitude, estimated_time, payment_method,
                  payment_status, customer_name, customer_phone, notes, subscription_days,
                  subscription_start_date, subscription_end_date, subscription_status,
+                 promo_id, promo_name, promo_discount_amount, subtotal_amount,
                  cancellation_window_until, created_at, updated_at)
             VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
                     DATE_ADD(NOW(), INTERVAL 5 SECOND), NOW(), NOW())
         ");
         if (!$stmt) throw new Exception($conn->error);
         $stmt->bind_param(
-            'ssdssddssssssisss',
+            'ssdssddssssssisssissd',
             $userId,
             $merchantId,
             $total,
@@ -568,7 +606,11 @@ try {
             $subscriptionDays,
             $subscriptionStartDate,
             $subscriptionEndDate,
-            $subscriptionStatus
+            $subscriptionStatus,
+            $promoId,
+            $promoName,
+            $promoDiscountAmount,
+            $subtotal
         );
         $stmt->execute();
         $orderId = (int)$conn->insert_id;
@@ -591,6 +633,28 @@ try {
             $stmt->execute();
         }
         $stmt->close();
+
+        if ($promoId !== null) {
+            $stmt = $conn->prepare("
+                INSERT INTO promo_usages (promo_id, user_id, order_id, created_at)
+                VALUES (?, ?, ?, NOW())
+            ");
+            if (!$stmt) throw new Exception($conn->error);
+            $stmt->bind_param('isi', $promoId, $userId, $orderId);
+            $stmt->execute();
+            $stmt->close();
+
+            $stmt = $conn->prepare("
+                UPDATE merchant_promos
+                SET used_count = used_count + 1,
+                    updated_at = NOW()
+                WHERE id = ?
+            ");
+            if (!$stmt) throw new Exception($conn->error);
+            $stmt->bind_param('i', $promoId);
+            $stmt->execute();
+            $stmt->close();
+        }
 
         $merchantUserId = merchantQueryValue($conn, 'SELECT user_id FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
         if ($merchantUserId) {

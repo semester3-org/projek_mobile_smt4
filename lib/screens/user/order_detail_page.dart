@@ -793,10 +793,14 @@ class _OrderItemsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtotal =
+    final itemsSubtotal =
         order.items.fold<double>(0, (sum, item) => sum + item.subtotal);
-    final delivery =
-        (order.totalAmount - subtotal).clamp(0, double.infinity).toDouble();
+    final subtotal =
+        order.subtotalAmount > 0 ? order.subtotalAmount : itemsSubtotal;
+    final promoDiscount = order.promoDiscountAmount;
+    final delivery = (order.totalAmount - subtotal + promoDiscount)
+        .clamp(0, double.infinity)
+        .toDouble();
 
     return Container(
       decoration: BoxDecoration(
@@ -889,6 +893,16 @@ class _OrderItemsCard extends StatelessWidget {
                 Divider(color: Colors.blueGrey.shade100),
                 const SizedBox(height: 10),
                 _TotalRow(label: 'Subtotal', value: subtotal),
+                if (order.hasPromo && promoDiscount > 0) ...[
+                  const SizedBox(height: 10),
+                  _TotalRow(
+                    label: order.promoName?.isNotEmpty == true
+                        ? 'Promo (${order.promoName})'
+                        : 'Diskon Promo',
+                    value: -promoDiscount,
+                    valueColor: UserTheme.success,
+                  ),
+                ],
                 const SizedBox(height: 10),
                 _TotalRow(label: 'Biaya Antar-Jemput', value: delivery),
                 const SizedBox(height: 14),
@@ -911,11 +925,13 @@ class _TotalRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.strong = false,
+    this.valueColor,
   });
 
   final String label;
   final double value;
   final bool strong;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -934,7 +950,8 @@ class _TotalRow extends StatelessWidget {
         Text(
           formatUserCurrency(value),
           style: TextStyle(
-            color: strong ? UserTheme.primaryDark : UserTheme.text,
+            color: valueColor ??
+                (strong ? UserTheme.primaryDark : UserTheme.text),
             fontSize: strong ? 18 : 14,
             fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
           ),

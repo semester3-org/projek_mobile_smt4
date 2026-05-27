@@ -194,6 +194,10 @@ function merchantEnsureSchema(mysqli $conn): void {
         merchantAddColumn($conn, 'orders', 'subscription_end_date', "`subscription_end_date` DATE DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'subscription_status', "`subscription_status` VARCHAR(30) DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'cancellation_requested_at', "`cancellation_requested_at` DATETIME DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'promo_id', "`promo_id` BIGINT UNSIGNED DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'promo_name', "`promo_name` VARCHAR(255) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'promo_discount_amount', "`promo_discount_amount` DECIMAL(14,2) NOT NULL DEFAULT 0");
+        merchantAddColumn($conn, 'orders', 'subtotal_amount', "`subtotal_amount` DECIMAL(14,2) NOT NULL DEFAULT 0");
     } else {
         $conn->query("
             CREATE TABLE orders (
@@ -220,6 +224,10 @@ function merchantEnsureSchema(mysqli $conn): void {
                 subscription_end_date DATE DEFAULT NULL,
                 subscription_status VARCHAR(30) DEFAULT NULL,
                 cancellation_requested_at DATETIME DEFAULT NULL,
+                promo_id BIGINT UNSIGNED DEFAULT NULL,
+                promo_name VARCHAR(255) DEFAULT NULL,
+                promo_discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+                subtotal_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
@@ -268,6 +276,36 @@ function merchantEnsureSchema(mysqli $conn): void {
                 PRIMARY KEY (id),
                 KEY idx_merchant_promos_merchant (merchant_id),
                 KEY idx_merchant_promos_product (product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+
+    merchantAddColumn($conn, 'merchant_promos', 'per_user_usage_limit', "`per_user_usage_limit` INT DEFAULT 1");
+
+    if (!merchantTableExists($conn, 'merchant_promo_products')) {
+        $conn->query("
+            CREATE TABLE merchant_promo_products (
+                promo_id BIGINT UNSIGNED NOT NULL,
+                product_id BIGINT UNSIGNED NOT NULL,
+                created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (promo_id, product_id),
+                KEY idx_mpp_product (product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+
+    if (!merchantTableExists($conn, 'promo_usages')) {
+        $conn->query("
+            CREATE TABLE promo_usages (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                promo_id BIGINT UNSIGNED NOT NULL,
+                user_id VARCHAR(36) NOT NULL,
+                order_id BIGINT UNSIGNED NOT NULL,
+                created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uniq_promo_user_order (promo_id, user_id, order_id),
+                KEY idx_promo_usages_promo_user (promo_id, user_id),
+                KEY idx_promo_usages_order (order_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     }
@@ -1122,7 +1160,175 @@ function merchantPromoPayload(array $row): array {
         'status' => $status,
         'usageLimit' => isset($row['usage_limit']) ? (int)$row['usage_limit'] : null,
         'usedCount' => (int)($row['used_count'] ?? 0),
+        'perUserUsageLimit' => max(1, (int)($row['per_user_usage_limit'] ?? 1)),
     ];
+}
+
+function merchantPromoProductIds(mysqli $conn, int $promoId): array {
+    if ($promoId <= 0 || !merchantTableExists($conn, 'merchant_promo_products')) {
+        return [];
+    }
+    $stmt = $conn->prepare('SELECT product_id FROM merchant_promo_products WHERE promo_id = ?');
+    if (!$stmt) return [];
+    $stmt->bind_param('i', $promoId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return array_values(array_map(fn($row) => (string)($row['product_id'] ?? ''), $rows));
+}
+
+function merchantPromoSyncProducts(mysqli $conn, int $promoId, array $productIds): void {
+    if ($promoId <= 0 || !merchantTableExists($conn, 'merchant_promo_products')) {
+        return;
+    }
+    $conn->query('DELETE FROM merchant_promo_products WHERE promo_id = ' . (int)$promoId);
+    $stmt = $conn->prepare('INSERT INTO merchant_promo_products (promo_id, product_id, created_at) VALUES (?, ?, NOW())');
+    if (!$stmt) return;
+    foreach ($productIds as $productId) {
+        $pid = (int)$productId;
+        if ($pid <= 0) continue;
+        $stmt->bind_param('ii', $promoId, $pid);
+        $stmt->execute();
+    }
+    $stmt->close();
+}
+
+function merchantPromoMatchesProducts(mysqli $conn, array $promo, array $productIds): bool {
+    $productIds = array_values(array_filter(array_map('intval', $productIds), fn($id) => $id > 0));
+    if (empty($productIds)) return false;
+
+    $mainProductId = isset($promo['product_id']) ? (int)$promo['product_id'] : 0;
+    if ($mainProductId > 0) {
+        return in_array($mainProductId, $productIds, true);
+    }
+
+    $promoId = (int)($promo['id'] ?? 0);
+    $junctionIds = merchantPromoProductIds($conn, $promoId);
+    if (empty($junctionIds)) {
+        return true;
+    }
+    foreach ($junctionIds as $pid) {
+        if (in_array((int)$pid, $productIds, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function merchantPromoApply(float $subtotal, array $promo): array {
+    $discountType = (string)($promo['discount_type'] ?? 'percentage');
+    $discountValue = (float)($promo['discount_value'] ?? 0);
+    $maxDiscount = max(0, (float)($promo['max_discount_amount'] ?? 0));
+
+    if ($subtotal <= 0 || $discountValue <= 0) {
+        return ['discount' => 0.0, 'total' => max(0, $subtotal)];
+    }
+
+    $discount = 0.0;
+    if ($discountType === 'fixed') {
+        $discount = $discountValue;
+    } else {
+        $discount = ($subtotal * $discountValue) / 100;
+    }
+
+    if ($maxDiscount > 0) {
+        $discount = min($discount, $maxDiscount);
+    }
+    $discount = max(0, min($discount, $subtotal));
+    return [
+        'discount' => round($discount, 2),
+        'total' => round(max(0, $subtotal - $discount), 2),
+    ];
+}
+
+function merchantActivePromosForCheckout(mysqli $conn, string $merchantId, array $productIds): array {
+    if (empty($productIds)) {
+        return [];
+    }
+    $stmt = $conn->prepare("
+        SELECT *
+        FROM merchant_promos
+        WHERE merchant_id = ?
+          AND is_active = 1
+          AND (start_at IS NULL OR start_at <= NOW())
+          AND (end_at IS NULL OR end_at >= NOW())
+        ORDER BY end_at ASC, id DESC
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param('s', $merchantId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    return array_values(array_filter(
+        $rows,
+        fn($promo) => merchantPromoMatchesProducts($conn, $promo, $productIds)
+    ));
+}
+
+function merchantBestPromoForCheckout(
+    mysqli $conn,
+    string $merchantId,
+    string $userId,
+    float $subtotal,
+    array $items
+): ?array {
+    if ($subtotal <= 0 || empty($items)) {
+        return null;
+    }
+    $productIds = [];
+    foreach ($items as $item) {
+        $productIds[] = (int)($item['productId'] ?? 0);
+    }
+    $productIds = array_values(array_filter(array_unique($productIds), fn($id) => $id > 0));
+    if (empty($productIds)) return null;
+
+    $promos = merchantActivePromosForCheckout($conn, $merchantId, $productIds);
+    if (empty($promos)) return null;
+
+    $best = null;
+    foreach ($promos as $promo) {
+        $minOrder = max(0, (float)($promo['min_order_amount'] ?? 0));
+        if ($subtotal < $minOrder) {
+            continue;
+        }
+        $usageLimit = isset($promo['usage_limit']) ? (int)$promo['usage_limit'] : null;
+        $usedCount = (int)($promo['used_count'] ?? 0);
+        if ($usageLimit !== null && $usageLimit > 0 && $usedCount >= $usageLimit) {
+            continue;
+        }
+        $userUsageLimit = max(1, (int)($promo['per_user_usage_limit'] ?? 1));
+        if ($userId !== '') {
+            $userUsageCount = (int)merchantQueryValue(
+                $conn,
+                'SELECT COUNT(*) FROM promo_usages WHERE promo_id = ? AND user_id = ?',
+                'is',
+                [(int)$promo['id'], $userId]
+            );
+            if ($userUsageCount >= $userUsageLimit) {
+                continue;
+            }
+        }
+
+        $applied = merchantPromoApply($subtotal, $promo);
+        $discount = (float)$applied['discount'];
+        if ($discount <= 0) continue;
+
+        if ($best === null ||
+            $discount > (float)$best['discount'] ||
+            (
+                abs($discount - (float)$best['discount']) < 0.0001 &&
+                strtotime((string)($promo['end_at'] ?? '2999-12-31')) < strtotime((string)($best['promo']['end_at'] ?? '2999-12-31'))
+            )
+        ) {
+            $best = [
+                'promo' => $promo,
+                'discount' => $discount,
+                'total' => (float)$applied['total'],
+            ];
+        }
+    }
+    return $best;
 }
 
 function merchantRatingSummary(mysqli $conn, string $merchantId): array {

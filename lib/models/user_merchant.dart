@@ -10,6 +10,12 @@ class MerchantMenuItem {
     this.price20Days,
     this.price30Days,
     this.packageDeliveryType,
+    this.hasPromo = false,
+    this.originalPrice,
+    this.promoPrice,
+    this.promoDiscountAmount,
+    this.promoLabel,
+    this.promoDescription,
   });
 
   final String id;
@@ -26,6 +32,12 @@ class MerchantMenuItem {
   final double? price20Days;
   final double? price30Days;
   final String? packageDeliveryType;
+  final bool hasPromo;
+  final double? originalPrice;
+  final double? promoPrice;
+  final double? promoDiscountAmount;
+  final String? promoLabel;
+  final String? promoDescription;
 
   bool get hasWeekdayPrice => price20Days != null && price20Days! > 0;
 
@@ -58,6 +70,12 @@ class MerchantMenuItem {
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       price30Days: price30 > 0 ? price30 : null,
       packageDeliveryType: json['packageDeliveryType'] as String?,
+      hasPromo: json['hasPromo'] as bool? ?? false,
+      originalPrice: (json['originalPrice'] as num?)?.toDouble(),
+      promoPrice: (json['promoPrice'] as num?)?.toDouble(),
+      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
+      promoLabel: json['promoLabel'] as String?,
+      promoDescription: json['promoDescription'] as String?,
     );
   }
 
@@ -73,6 +91,12 @@ class MerchantMenuItem {
       'price20Days': price20Days,
       'price30Days': price30Days ?? price,
       'packageDeliveryType': packageDeliveryType,
+      'hasPromo': hasPromo,
+      'originalPrice': originalPrice,
+      'promoPrice': promoPrice,
+      'promoDiscountAmount': promoDiscountAmount,
+      'promoLabel': promoLabel,
+      'promoDescription': promoDescription,
     };
   }
 }
@@ -91,6 +115,8 @@ class MerchantReview {
     this.updatedAt = '',
     this.deletedAt = '',
     this.isDeleted = false,
+    this.editCount = 0,
+    this.remainingEditAttempts = 3,
   });
 
   final String id;
@@ -105,8 +131,11 @@ class MerchantReview {
   final String updatedAt;
   final String deletedAt;
   final bool isDeleted;
+  final int editCount;
+  final int remainingEditAttempts;
 
   factory MerchantReview.fromJson(Map<String, dynamic> json) {
+    final editCount = (json['editCount'] as num?)?.toInt() ?? 0;
     return MerchantReview(
       id: json['id'] as String? ?? '',
       productId: json['productId'] as String? ?? '',
@@ -120,6 +149,9 @@ class MerchantReview {
       updatedAt: json['updatedAt'] as String? ?? '',
       deletedAt: json['deletedAt'] as String? ?? '',
       isDeleted: json['isDeleted'] as bool? ?? false,
+      editCount: editCount,
+      remainingEditAttempts: (json['remainingEditAttempts'] as num?)?.toInt() ??
+          (editCount < 3 ? 3 - editCount : 0),
     );
   }
 }

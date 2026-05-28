@@ -59,6 +59,23 @@ class _MerchantListPageState extends State<MerchantListPage> {
         'Keduanya',
       ];
 
+  List<String> get _serviceCategoryFilters {
+    final categorySet = <String>{};
+    for (final merchant in _merchants) {
+      for (final tag in merchant.tags) {
+        final normalized = tag.trim();
+        if (normalized.isEmpty) continue;
+        if (widget.filters.any(
+            (filter) => filter.toLowerCase() == normalized.toLowerCase())) {
+          continue;
+        }
+        categorySet.add(normalized);
+      }
+    }
+    final categories = categorySet.toList()..sort();
+    return ['Semua', ...categories];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -299,6 +316,29 @@ class _MerchantListPageState extends State<MerchantListPage> {
                         if (value == null) return;
                         setState(() => _selectedDeliveryType = value);
                       },
+                    ),
+                  ] else if (_serviceCategoryFilters.length > 1) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Kategori Layanan',
+                      style: TextStyle(
+                        color: UserTheme.text,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _serviceCategoryFilters.map((filter) {
+                          return UserFilterChip(
+                            label: filter,
+                            selected: _selectedFilter == filter,
+                            onTap: () =>
+                                setState(() => _selectedFilter = filter),
+                          );
+                        }).toList(),
+                      ),
                     ),
                   ],
                   const SizedBox(height: 22),

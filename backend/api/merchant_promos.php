@@ -59,7 +59,14 @@ try {
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
-        $data = array_map('merchantPromoPayload', $rows);
+        $data = array_map(function ($row) use ($conn) {
+            $payload = merchantPromoPayload($row);
+            $payload['productIds'] = merchantPromoProductIds($conn, (int)($row['id'] ?? 0));
+            if (empty($payload['productIds']) && !empty($payload['productId'])) {
+                $payload['productIds'] = [(string)$payload['productId']];
+            }
+            return $payload;
+        }, $rows);
         if ($id !== '') {
             if (empty($data)) {
                 merchantSendJson(false, null, 'Promo tidak ditemukan', 404);
@@ -82,6 +89,17 @@ try {
     $endAt = merchantNormalizeDate($body['endAt'] ?? null);
     $isActive = !array_key_exists('isActive', $body) || !empty($body['isActive']) ? 1 : 0;
     $usageLimit = isset($body['usageLimit']) && $body['usageLimit'] !== '' ? (int)$body['usageLimit'] : null;
+    $perUserUsageLimit = max(1, (int)($body['perUserUsageLimit'] ?? 1));
+    $productIds = [];
+    $rawProductIds = $body['productIds'] ?? [];
+    if (is_array($rawProductIds)) {
+        foreach ($rawProductIds as $rawId) {
+            $pid = (int)(is_array($rawId) ? ($rawId['id'] ?? $rawId['productId'] ?? 0) : $rawId);
+            if ($pid > 0) {
+                $productIds[] = $pid;
+            }
+        }
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'PUT') {
         if ($name === '') {
@@ -112,28 +130,60 @@ try {
             merchantSendJson(false, null, 'Tanggal berakhir harus setelah tanggal mulai', 400);
         }
 
-        $product = merchantPromoProduct($conn, $merchantId, $productId !== '' ? $productId : null);
-        if ($productId !== '' && !$product) {
-            merchantSendJson(false, null, 'Produk promo tidak ditemukan', 404);
+        if (!empty($productIds)) {
+            foreach ($productIds as $pid) {
+                $validProduct = merchantPromoProduct($conn, $merchantId, (string)$pid);
+                if (!$validProduct) {
+                    merchantSendJson(false, null, 'Ada produk promo yang tidak valid', 400);
+                }
+            }
+            $nullableProductId = null;
+        } else {
+            $product = merchantPromoProduct($conn, $merchantId, $productId !== '' ? $productId : null);
+            if ($productId !== '' && !$product) {
+                merchantSendJson(false, null, 'Produk promo tidak ditemukan', 404);
+            }
+            if ($product && $minOrder < (float)$product['harga']) {
+                merchantSendJson(false, null, 'Minimal transaksi harus setidaknya sama dengan harga produk yang dipilih', 400);
+            }
+            $nullableProductId = $product ? (int)$product['id'] : null;
         }
-        if ($product && $minOrder < (float)$product['harga']) {
-            merchantSendJson(false, null, 'Minimal transaksi harus setidaknya sama dengan harga produk yang dipilih', 400);
+
+        $wasActiveBeforeUpdate = false;
+        if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+            $prev = $conn->prepare("
+                SELECT is_active, start_at, end_at
+                FROM merchant_promos
+                WHERE id = ? AND merchant_id = ?
+                LIMIT 1
+            ");
+            if ($prev) {
+                $prev->bind_param('ss', $id, $merchantId);
+                $prev->execute();
+                $prevRow = $prev->get_result()->fetch_assoc();
+                $prev->close();
+                if ($prevRow) {
+                    $now = time();
+                    $wasActiveBeforeUpdate = (int)($prevRow['is_active'] ?? 0) === 1
+                        && (!$prevRow['start_at'] || strtotime((string)$prevRow['start_at']) <= $now)
+                        && (!$prevRow['end_at'] || strtotime((string)$prevRow['end_at']) >= $now);
+                }
+            }
         }
-        $nullableProductId = $product ? (int)$product['id'] : null;
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("
                 INSERT INTO merchant_promos
                     (merchant_id, product_id, name, description, discount_type, discount_value,
                      min_order_amount, max_discount_amount, start_at, end_at, is_active, usage_limit,
-                     created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                     per_user_usage_limit, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ");
             if (!$stmt) {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $stmt->bind_param(
-                'sisssdddssii',
+                'sisssdddssiii',
                 $merchantId,
                 $nullableProductId,
                 $name,
@@ -145,7 +195,8 @@ try {
                 $startAt,
                 $endAt,
                 $isActive,
-                $usageLimit
+                $usageLimit,
+                $perUserUsageLimit
             );
             $stmt->execute();
             $id = (string)$conn->insert_id;
@@ -167,6 +218,7 @@ try {
                     end_at = ?,
                     is_active = ?,
                     usage_limit = ?,
+                    per_user_usage_limit = ?,
                     updated_at = NOW()
                 WHERE id = ? AND merchant_id = ?
             ");
@@ -174,7 +226,7 @@ try {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $stmt->bind_param(
-                'isssdddssiiss',
+                'isssdddssiiiss',
                 $nullableProductId,
                 $name,
                 $description,
@@ -186,12 +238,15 @@ try {
                 $endAt,
                 $isActive,
                 $usageLimit,
+                $perUserUsageLimit,
                 $id,
                 $merchantId
             );
             $stmt->execute();
             $stmt->close();
         }
+
+        merchantPromoSyncProducts($conn, (int)$id, $productIds);
 
         $stmt = $conn->prepare("
             SELECT mp.*, p.nama_produk
@@ -205,8 +260,15 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         $promo = merchantPromoPayload($row ?? []);
+        $promo['productIds'] = merchantPromoProductIds($conn, (int)$id);
+        if (empty($promo['productIds']) && !empty($promo['productId'])) {
+            $promo['productIds'] = [(string)$promo['productId']];
+        }
 
-        if ($promo['status'] === 'active') {
+        $shouldBroadcastPromo = $_SERVER['REQUEST_METHOD'] === 'POST'
+            ? $promo['status'] === 'active'
+            : (!$wasActiveBeforeUpdate && $promo['status'] === 'active');
+        if ($shouldBroadcastPromo) {
             $users = $conn->query("SELECT id FROM users WHERE role = 'user'");
             if ($users) {
                 while ($user = $users->fetch_assoc()) {
@@ -235,7 +297,11 @@ try {
         }
         $stmt->bind_param('ss', $id, $merchantId);
         $stmt->execute();
+        $affected = $stmt->affected_rows;
         $stmt->close();
+        if ($affected <= 0) {
+            merchantSendJson(false, null, 'Promo tidak ditemukan atau sudah nonaktif', 404);
+        }
         merchantSendJson(true, ['id' => $id], 'Promo berhasil dinonaktifkan');
     }
 

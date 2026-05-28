@@ -344,6 +344,7 @@ class MerchantPromo {
   const MerchantPromo({
     required this.id,
     required this.productId,
+    required this.productIds,
     required this.productName,
     required this.name,
     required this.description,
@@ -356,11 +357,13 @@ class MerchantPromo {
     required this.isActive,
     required this.status,
     required this.usageLimit,
+    required this.perUserUsageLimit,
     required this.usedCount,
   });
 
   final String id;
   final String productId;
+  final List<String> productIds;
   final String productName;
   final String name;
   final String description;
@@ -373,12 +376,29 @@ class MerchantPromo {
   final bool isActive;
   final String status;
   final int? usageLimit;
+  final int perUserUsageLimit;
   final int usedCount;
 
+  bool get targetsAllProducts => productIds.isEmpty && productId.isEmpty;
+
+  String get targetLabel {
+    if (targetsAllProducts) return 'Semua produk';
+    if (productIds.length > 1) return '${productIds.length} produk';
+    return productName;
+  }
+
   factory MerchantPromo.fromJson(Map<String, dynamic> json) {
+    final rawIds = json['productIds'];
+    final ids = rawIds is List
+        ? rawIds.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+        : <String>[];
+    final legacyId = json['productId'] as String? ?? '';
     return MerchantPromo(
       id: json['id'] as String? ?? '',
-      productId: json['productId'] as String? ?? '',
+      productId: legacyId,
+      productIds: ids.isNotEmpty
+          ? ids
+          : (legacyId.isNotEmpty ? <String>[legacyId] : <String>[]),
       productName: json['productName'] as String? ?? 'Semua produk',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
@@ -391,6 +411,7 @@ class MerchantPromo {
       isActive: json['isActive'] as bool? ?? true,
       status: json['status'] as String? ?? 'scheduled',
       usageLimit: (json['usageLimit'] as num?)?.toInt(),
+      perUserUsageLimit: (json['perUserUsageLimit'] as num?)?.toInt() ?? 1,
       usedCount: (json['usedCount'] as num?)?.toInt() ?? 0,
     );
   }

@@ -10,6 +10,12 @@ class MerchantMenuItem {
     this.price20Days,
     this.price30Days,
     this.packageDeliveryType,
+    this.hasPromo = false,
+    this.originalPrice,
+    this.promoPrice,
+    this.promoDiscountAmount,
+    this.promoLabel,
+    this.promoDescription,
   });
 
   final String id;
@@ -26,6 +32,12 @@ class MerchantMenuItem {
   final double? price20Days;
   final double? price30Days;
   final String? packageDeliveryType;
+  final bool hasPromo;
+  final double? originalPrice;
+  final double? promoPrice;
+  final double? promoDiscountAmount;
+  final String? promoLabel;
+  final String? promoDescription;
 
   bool get hasWeekdayPrice => price20Days != null && price20Days! > 0;
 
@@ -58,6 +70,12 @@ class MerchantMenuItem {
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       price30Days: price30 > 0 ? price30 : null,
       packageDeliveryType: json['packageDeliveryType'] as String?,
+      hasPromo: json['hasPromo'] as bool? ?? false,
+      originalPrice: (json['originalPrice'] as num?)?.toDouble(),
+      promoPrice: (json['promoPrice'] as num?)?.toDouble(),
+      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
+      promoLabel: json['promoLabel'] as String?,
+      promoDescription: json['promoDescription'] as String?,
     );
   }
 
@@ -73,6 +91,12 @@ class MerchantMenuItem {
       'price20Days': price20Days,
       'price30Days': price30Days ?? price,
       'packageDeliveryType': packageDeliveryType,
+      'hasPromo': hasPromo,
+      'originalPrice': originalPrice,
+      'promoPrice': promoPrice,
+      'promoDiscountAmount': promoDiscountAmount,
+      'promoLabel': promoLabel,
+      'promoDescription': promoDescription,
     };
   }
 }

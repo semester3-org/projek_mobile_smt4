@@ -68,6 +68,11 @@ class Order {
   final String? displayStatusLabel;
   final String? paymentMethodLabel;
   final String? serviceEstimateLabel;
+  final double subtotalAmount;
+  final double promoDiscountAmount;
+  final String? promoName;
+  final bool hasPromo;
+  final double? actualWeight;
 
   Order({
     required this.id,
@@ -100,6 +105,11 @@ class Order {
     this.displayStatusLabel,
     this.paymentMethodLabel,
     this.serviceEstimateLabel,
+    this.subtotalAmount = 0,
+    this.promoDiscountAmount = 0,
+    this.promoName,
+    this.hasPromo = false,
+    this.actualWeight,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -143,6 +153,11 @@ class Order {
       displayStatusLabel: json['displayStatusLabel'] as String?,
       paymentMethodLabel: json['paymentMethodLabel'] as String?,
       serviceEstimateLabel: json['serviceEstimateLabel'] as String?,
+      subtotalAmount: (json['subtotalAmount'] as num?)?.toDouble() ?? 0,
+      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble() ?? 0,
+      promoName: json['promoName'] as String?,
+      hasPromo: json['hasPromo'] as bool? ?? false,
+      actualWeight: (json['actualWeight'] as num?)?.toDouble(),
     );
   }
 
@@ -172,6 +187,11 @@ class Order {
       'subscriptionStatus': subscriptionStatus,
       'cancellationRequestedAt': cancellationRequestedAt?.toIso8601String(),
       'canCancel': canCancel,
+      'subtotalAmount': subtotalAmount,
+      'promoDiscountAmount': promoDiscountAmount,
+      'promoName': promoName,
+      'hasPromo': hasPromo,
+      'actualWeight': actualWeight,
     };
   }
 

@@ -132,6 +132,10 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'orderDate' => $order['createdAt'],
         'deliveryDate' => null,
         'totalAmount' => $order['totalAmount'],
+        'subtotalAmount' => (float)($row['subtotal_amount'] ?? $order['totalAmount'] ?? 0),
+        'promoDiscountAmount' => (float)($row['promo_discount_amount'] ?? 0),
+        'promoName' => $row['promo_name'] ?? null,
+        'hasPromo' => (float)($row['promo_discount_amount'] ?? 0) > 0,
         'status' => strtolower((string)($order['paymentStatus'] ?? '')) === 'cancelled'
             ? 'cancelled'
             : match ($order['status']) {
@@ -463,6 +467,13 @@ try {
     if ($deliveryAddress === '') {
         merchantSendJson(false, null, 'Alamat tujuan wajib diisi', 400);
     }
+    if ($customerName === '' || !preg_match("/^[A-Za-z .'-]{2,}$/", $customerName) || !preg_match('/[A-Za-z]/', $customerName)) {
+        merchantSendJson(false, null, 'Nama penerima hanya boleh huruf dan spasi', 400);
+    }
+    $customerPhone = preg_replace('/\D+/', '', $customerPhone);
+    if (strlen($customerPhone) < 8 || strlen($customerPhone) > 15) {
+        merchantSendJson(false, null, 'Nomor telepon harus 8-15 digit angka', 400);
+    }
 
     $merchantType = merchantQueryValue($conn, 'SELECT merchant_type FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
     if ($service === '') {
@@ -487,7 +498,11 @@ try {
     }
 
     $isLaundryRequest = $service === 'laundry';
+    $subtotal = 0.0;
     $total = 0.0;
+    $promoDiscountAmount = 0.0;
+    $promoId = null;
+    $promoName = null;
     $normalizedItems = [];
     foreach ($items as $item) {
         if (!is_array($item)) continue;
@@ -512,9 +527,9 @@ try {
         }
         if ($productId === null) continue;
 
-        $subtotal = $isLaundryRequest ? 0.0 : ($qty * $price);
+        $itemSubtotal = $isLaundryRequest ? 0.0 : ($qty * $price);
         if (!$isLaundryRequest) {
-            $total += $subtotal;
+            $subtotal += $itemSubtotal;
         }
         $normalizedItems[] = [
             'productId' => $productId,
@@ -527,7 +542,7 @@ try {
     if (empty($normalizedItems)) {
         merchantSendJson(false, null, 'Item pesanan tidak valid', 400);
     }
-    if (!$isLaundryRequest && $total <= 0) {
+    if (!$isLaundryRequest && $subtotal <= 0) {
         merchantSendJson(false, null, 'Item pesanan tidak valid', 400);
     }
     if ($isLaundryRequest) {
@@ -535,23 +550,105 @@ try {
         $paymentStatus = 'awaiting_weighing';
         $firstProductId = (int)($normalizedItems[0]['productId'] ?? 0);
         $estimatedTime = userOrderLaundryServiceEstimate($conn, $firstProductId, $estimatedTime);
+    } else {
+        $total = $subtotal;
     }
 
     $conn->begin_transaction();
     try {
+        if (!$isLaundryRequest) {
+            $bestPromo = merchantBestPromoForCheckout($conn, $merchantId, $userId, $subtotal, $normalizedItems);
+            if ($bestPromo !== null) {
+                $promoId = (int)$bestPromo['promo']['id'];
+                $promoName = (string)($bestPromo['promo']['name'] ?? '');
+                $promoDiscountAmount = (float)$bestPromo['discount'];
+                $total = max(0, (float)$bestPromo['total']);
+            }
+        }
+
+        if ($promoId !== null) {
+            $lock = $conn->prepare('SELECT * FROM merchant_promos WHERE id = ? AND merchant_id = ? FOR UPDATE');
+            if (!$lock) throw new Exception($conn->error);
+            $lock->bind_param('is', $promoId, $merchantId);
+            $lock->execute();
+            $lockedPromo = $lock->get_result()->fetch_assoc();
+            $lock->close();
+
+            $productIds = array_values(array_filter(array_map(
+                fn($it) => (int)($it['productId'] ?? 0),
+                $normalizedItems
+            ), fn($id) => $id > 0));
+
+            $now = time();
+            $lockedIsActive = (int)($lockedPromo['is_active'] ?? 0) === 1;
+            $lockedStartAt = $lockedPromo['start_at'] ?? null;
+            $lockedEndAt = $lockedPromo['end_at'] ?? null;
+            $lockedIsLive = $lockedIsActive &&
+                (!$lockedStartAt || strtotime((string)$lockedStartAt) <= $now) &&
+                (!$lockedEndAt || strtotime((string)$lockedEndAt) >= $now);
+
+            $lockedUsageLimit = isset($lockedPromo['usage_limit']) ? (int)$lockedPromo['usage_limit'] : null;
+            $lockedUsedCount = (int)($lockedPromo['used_count'] ?? 0);
+            $lockedGlobalOk = $lockedUsageLimit === null || $lockedUsageLimit <= 0 || $lockedUsedCount < $lockedUsageLimit;
+
+            $lockedPerUserLimit = max(1, (int)($lockedPromo['per_user_usage_limit'] ?? 1));
+            $lockedUserUsageCount = 0;
+            if ($userId !== '') {
+                $lockedUserUsageCount = (int)merchantQueryValue(
+                    $conn,
+                    'SELECT COUNT(*) FROM promo_usages WHERE promo_id = ? AND user_id = ?',
+                    'is',
+                    [(int)($lockedPromo['id'] ?? 0), $userId]
+                );
+            }
+            $lockedUserOk = $userId === '' || $lockedUserUsageCount < $lockedPerUserLimit;
+
+            $lockedMinOrder = max(0, (float)($lockedPromo['min_order_amount'] ?? 0));
+            $lockedMinOk = $subtotal >= $lockedMinOrder;
+
+            $lockedMatchOk = !empty($productIds) && merchantPromoMatchesProducts($conn, $lockedPromo, $productIds);
+
+            if (!$lockedPromo ||
+                !$lockedIsLive ||
+                !$lockedGlobalOk ||
+                !$lockedUserOk ||
+                !$lockedMinOk ||
+                !$lockedMatchOk) {
+                $promoId = null;
+                $promoName = null;
+                $promoDiscountAmount = 0.0;
+                $total = $subtotal;
+            } else {
+                $applied = merchantPromoApply($subtotal, $lockedPromo);
+                $promoDiscountAmount = (float)($applied['discount'] ?? 0);
+                if ($promoDiscountAmount <= 0) {
+                    $promoId = null;
+                    $promoName = null;
+                    $promoDiscountAmount = 0.0;
+                    $total = $subtotal;
+                } else {
+                    $promoName = (string)($lockedPromo['name'] ?? '');
+                    $total = (float)($applied['total'] ?? $subtotal);
+                    $total = max(0, $total);
+                }
+            }
+        }
+
         $stmt = $conn->prepare("
             INSERT INTO orders
                 (user_id, merchant_id, total_harga, status, service_type, delivery_address,
                  delivery_latitude, delivery_longitude, estimated_time, payment_method,
                  payment_status, customer_name, customer_phone, notes, subscription_days,
                  subscription_start_date, subscription_end_date, subscription_status,
+                 promo_id, promo_name, promo_discount_amount, subtotal_amount,
                  cancellation_window_until, created_at, updated_at)
             VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
                     DATE_ADD(NOW(), INTERVAL 5 SECOND), NOW(), NOW())
         ");
         if (!$stmt) throw new Exception($conn->error);
         $stmt->bind_param(
-            'ssdssddssssssisss',
+            'ssdssddssssssisssissd',
             $userId,
             $merchantId,
             $total,
@@ -568,7 +665,11 @@ try {
             $subscriptionDays,
             $subscriptionStartDate,
             $subscriptionEndDate,
-            $subscriptionStatus
+            $subscriptionStatus,
+            $promoId,
+            $promoName,
+            $promoDiscountAmount,
+            $subtotal
         );
         $stmt->execute();
         $orderId = (int)$conn->insert_id;
@@ -591,6 +692,28 @@ try {
             $stmt->execute();
         }
         $stmt->close();
+
+        if ($promoId !== null) {
+            $stmt = $conn->prepare("
+                INSERT INTO promo_usages (promo_id, user_id, order_id, created_at)
+                VALUES (?, ?, ?, NOW())
+            ");
+            if (!$stmt) throw new Exception($conn->error);
+            $stmt->bind_param('isi', $promoId, $userId, $orderId);
+            $stmt->execute();
+            $stmt->close();
+
+            $stmt = $conn->prepare("
+                UPDATE merchant_promos
+                SET used_count = used_count + 1,
+                    updated_at = NOW()
+                WHERE id = ?
+            ");
+            if (!$stmt) throw new Exception($conn->error);
+            $stmt->bind_param('i', $promoId);
+            $stmt->execute();
+            $stmt->close();
+        }
 
         $merchantUserId = merchantQueryValue($conn, 'SELECT user_id FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
         if ($merchantUserId) {
@@ -621,7 +744,7 @@ try {
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
-        merchantSendJson(false, null, 'Gagal membuat pesanan: ' . $e->getMessage(), 500);
+        merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
     }
 
     $stmt = $conn->prepare("
@@ -638,7 +761,7 @@ try {
 
     merchantSendJson(true, userOrderPayload($conn, $row), 'Pesanan berhasil dibuat', 201);
 } catch (Throwable $e) {
-    merchantSendJson(false, null, $e->getMessage(), 500);
+    merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
 }
 
 ?>

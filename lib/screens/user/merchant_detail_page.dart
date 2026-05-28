@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/payment_methods.dart';
@@ -410,6 +411,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     _HeaderCard(merchant: _merchant),
                     const SizedBox(height: 22),
                     _MerchantSummary(merchant: _merchant),
+                    const SizedBox(height: 18),
+                    _ActivePromoSection(merchant: _merchant),
                     const SizedBox(height: 30),
                     UserSectionHeader(
                       title: _merchant.type == 'laundry'
@@ -493,6 +496,29 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     return widget.item.cateringPriceForDays(_cateringDays);
   }
 
+  bool get _showPromo {
+    final hasPromo = widget.item.hasPromo &&
+        (widget.item.promoPrice ?? 0) > 0 &&
+        (widget.item.promoDiscountAmount ?? 0) > 0;
+    if (!hasPromo) return false;
+    return _promoPrice < _price;
+  }
+
+  double get _promoPrice {
+    final discountAmount = widget.item.promoDiscountAmount ?? 0;
+    if (discountAmount <= 0) return _price;
+    final promoPrice = _price - discountAmount;
+    return promoPrice.clamp(0, double.infinity);
+  }
+
+  double get _displayPrice {
+    if (!_showPromo) return _price;
+    return _promoPrice;
+  }
+
+  double get _discountAmount =>
+      (_price - _displayPrice).clamp(0, double.infinity);
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -546,15 +572,73 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 1.45,
               ),
             ),
+            if (_showPromo) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: UserTheme.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  widget.item.promoLabel ?? 'PROMO',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if ((widget.item.promoDescription ?? '').isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  widget.item.promoDescription!,
+                  style: const TextStyle(
+                    color: UserTheme.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              if (_isCatering && _hasWeekdayPackage && _cateringDays == 20) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Catatan: promo dihitung berdasarkan paket Full Day (30 hari).',
+                  style: TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 14),
             Text(
-              '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+              '${formatUserCurrency(_displayPrice)}${_isCatering ? '' : widget.item.unit}',
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
+            if (_showPromo) ...[
+              Text(
+                '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  decoration: TextDecoration.lineThrough,
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                'Hemat ${formatUserCurrency(_discountAmount)}',
+                style: const TextStyle(
+                  color: UserTheme.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             if (_isCatering) ...[
               const SizedBox(height: 16),
               if (_hasWeekdayPackage)
@@ -734,7 +818,19 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
 
   double get _total {
     if (_isLaundry) return 0;
+    return (_subtotal - _promoDiscount).clamp(0, double.infinity);
+  }
+
+  double get _subtotal {
+    if (_isLaundry) return 0;
     return _adjustedCateringPrice(_selectedCateringItem);
+  }
+
+  double get _promoDiscount {
+    if (_isLaundry) return 0;
+    final selected = _selectedCateringItem;
+    if (selected == null || !selected.hasPromo) return 0;
+    return (selected.promoDiscountAmount ?? 0).clamp(0, _subtotal);
   }
 
   double _adjustedCateringPrice(MerchantMenuItem? item) {
@@ -743,10 +839,37 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     return item.cateringPriceForDays(_cateringDays);
   }
 
+  double _displayLaundryPrice(MerchantMenuItem item) {
+    if (item.hasPromo && (item.promoPrice ?? 0) > 0) {
+      return item.promoPrice!;
+    }
+    return item.price;
+  }
+
   List<MerchantMenuItem> get _selectedItems {
     if (_isLaundry) {
       return _items
           .where((item) => _selectedLaundryIds.contains(item.id))
+          .map(
+            (item) => MerchantMenuItem(
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              price: _displayLaundryPrice(item),
+              imageUrl: item.imageUrl,
+              category: item.category,
+              unit: item.unit,
+              price20Days: item.price20Days,
+              price30Days: item.price30Days,
+              packageDeliveryType: item.packageDeliveryType,
+              hasPromo: item.hasPromo,
+              originalPrice: item.originalPrice,
+              promoPrice: item.promoPrice,
+              promoDiscountAmount: item.promoDiscountAmount,
+              promoLabel: item.promoLabel,
+              promoDescription: item.promoDescription,
+            ),
+          )
           .toList();
     }
     final selected = _selectedCateringItem;
@@ -813,6 +936,23 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       );
       return;
     }
+    final customerName = _nameCtrl.text.trim();
+    final phoneDigits = _phoneCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final validName = RegExp(r"^[A-Za-z .'-]{2,}$").hasMatch(customerName) &&
+        RegExp(r'[A-Za-z]').hasMatch(customerName);
+    if (!validName) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Nama penerima hanya boleh huruf dan spasi')),
+      );
+      return;
+    }
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nomor telepon harus 8-15 digit angka')),
+      );
+      return;
+    }
 
     final selectedCatering = _selectedCateringItem;
     final useWeekday = widget.merchant.type == 'catering' &&
@@ -843,8 +983,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
             : (useWeekday ? 'Paket Weekday' : 'Paket Full Day'),
         paymentMethod: _paymentMethod,
         subscriptionDays: _isLaundry ? null : (useWeekday ? 20 : 30),
-        customerName: _nameCtrl.text.trim(),
-        customerPhone: _phoneCtrl.text.trim(),
+        customerName: customerName,
+        customerPhone: phoneDigits,
         notes: notes,
       ),
     );
@@ -908,6 +1048,10 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               controller: _nameCtrl,
               label: 'Nama Penerima',
               icon: Icons.person_outline_rounded,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.allow(RegExp(r"[A-Za-z .'-]")),
+                LengthLimitingTextInputFormatter(60),
+              ],
             ),
             const SizedBox(height: 12),
             _CheckoutField(
@@ -915,6 +1059,10 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               label: 'Nomor Telepon',
               icon: Icons.phone_outlined,
               keyboardType: TextInputType.phone,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(15),
+              ],
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -1011,24 +1159,109 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                       ],
                     )
-                  : Row(
+                  : Column(
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Total Pesanan',
-                            style: TextStyle(
-                              color: UserTheme.text,
-                              fontWeight: FontWeight.w900,
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Subtotal',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
-                          ),
+                            Text(formatUserCurrency(_subtotal)),
+                          ],
                         ),
-                        Text(
-                          formatUserCurrency(_total),
-                          style: const TextStyle(
-                            color: UserTheme.primaryDark,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                        if (_promoDiscount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Promo dipakai',
+                                  style: TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _selectedCateringItem?.promoDescription ??
+                                    'Promo aktif',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Potongan Promo',
+                                  style: TextStyle(
+                                    color: UserTheme.muted,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '- ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Total Penghematan',
+                                  style: TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '+ ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.success,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Total Pesanan',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              formatUserCurrency(_total),
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1056,6 +1289,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
 
   Widget _lockedItemSummary(MerchantMenuItem item) {
     final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+    final hasLaundryPromo =
+        _isLaundry && item.hasPromo && (item.promoPrice ?? 0) > 0;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1091,10 +1326,29 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
             ),
           ] else ...[
             const SizedBox(height: 6),
-            Text(
-              'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
-              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
-            ),
+            if (hasLaundryPromo) ...[
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 13,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Harga promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ] else
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
+                style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+              ),
           ],
         ],
       ),
@@ -1102,17 +1356,50 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   }
 
   Widget _laundryItemPicker() {
+    final mainServiceItems = _items.where((item) {
+      final normalized = item.name.toLowerCase();
+      return normalized.contains('cuci') || item.unit.contains('kg');
+    }).toList();
+    final addonItems = _items.where((item) => !mainServiceItems.contains(item)).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Pilih layanan laundry (tanpa jumlah kg). Merchant akan menimbang dan menetapkan total setelah selesai.',
+          'Pilih layanan utama dan tambahan service opsional. Merchant akan menimbang dan menetapkan total setelah selesai.',
           style: TextStyle(color: UserTheme.muted, fontSize: 12, height: 1.4),
         ),
-        const SizedBox(height: 10),
-        ..._items.map((item) {
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF4D6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE1A3)),
+          ),
+          child: const Text(
+            'Referensi harga ditampilkan per satuan. Total akhir akan ditentukan merchant setelah penimbangan.',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.3,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Layanan Utama',
+          style: TextStyle(
+            color: UserTheme.text,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...((mainServiceItems.isNotEmpty ? mainServiceItems : _items).map((item) {
           final selected = _selectedLaundryIds.contains(item.id);
           final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+          final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
           return InkWell(
             onTap: () {
               setState(() {
@@ -1155,10 +1442,26 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
-                          style: const TextStyle(color: UserTheme.muted),
-                        ),
+                        if (hasPromo) ...[
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.muted,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          Text(
+                            'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.primaryDark,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ] else
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                            style: const TextStyle(color: UserTheme.muted),
+                          ),
                         if (item.description.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
@@ -1178,7 +1481,104 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
           );
-        }),
+        })),
+        if (addonItems.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text(
+            'Tambahan Layanan (opsional)',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...addonItems.map((item) {
+            final selected = _selectedLaundryIds.contains(item.id);
+            final unitLabel = item.unit.isNotEmpty ? item.unit : item.category.isNotEmpty ? item.category : '/item';
+            final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
+            return InkWell(
+              onTap: () {
+                setState(() {
+                  if (selected) {
+                    _selectedLaundryIds.remove(item.id);
+                  } else {
+                    _selectedLaundryIds.add(item.id);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: selected ? UserTheme.softBlue : const Color(0xFFF7F9FC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? UserTheme.primary : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_box_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      color: selected ? UserTheme.primary : UserTheme.muted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              color: UserTheme.text,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (hasPromo) ...[
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            Text(
+                              'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                              style: const TextStyle(color: UserTheme.muted),
+                            ),
+                          if (item.description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              item.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ],
       ],
     );
   }
@@ -1280,6 +1680,7 @@ class _CheckoutField extends StatelessWidget {
     required this.icon,
     this.maxLines = 1,
     this.keyboardType,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -1287,6 +1688,7 @@ class _CheckoutField extends StatelessWidget {
   final IconData icon;
   final int maxLines;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -1315,6 +1717,7 @@ class _CheckoutField extends StatelessWidget {
             controller: controller,
             maxLines: maxLines,
             keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
             textAlign: TextAlign.start,
             textAlignVertical: TextAlignVertical.center,
             decoration: _checkoutDecoration(multiline: true),
@@ -1326,6 +1729,7 @@ class _CheckoutField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,
@@ -1553,6 +1957,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 
   Widget _buildLaundryCard() {
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
     return GestureDetector(
       onTap: widget.onOrder,
       child: Container(
@@ -1576,6 +1981,26 @@ class _MenuItemCardState extends State<_MenuItemCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (hasPromo)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: UserTheme.primary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        widget.item.promoLabel ?? 'PROMO',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                   Text(
                     widget.item.name,
                     maxLines: 2,
@@ -1594,14 +2019,40 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                     style: const TextStyle(color: UserTheme.muted),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
-                    style: const TextStyle(
-                      color: UserTheme.primaryDark,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
+                  if (hasPromo) ...[
+                    Text(
+                      '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.muted,
+                        decoration: TextDecoration.lineThrough,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
+                    Text(
+                      '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                      style: const TextStyle(
+                        color: UserTheme.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ] else
+                    Text(
+                      '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
+                      style: const TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1623,7 +2074,10 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 
   Widget _buildCateringCard() {
-    final basePrice = widget.item.price;
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final basePrice = hasPromo
+        ? (widget.item.promoPrice ?? widget.item.price)
+        : widget.item.price;
 
     return GestureDetector(
       onTap: widget.onOrder,
@@ -1655,6 +2109,24 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 fontSize: 18,
               ),
             ),
+            if (hasPromo) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: UserTheme.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  widget.item.promoLabel ?? 'PROMO',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               widget.item.description,
@@ -1689,6 +2161,24 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                           fontSize: 18,
                         ),
                       ),
+                      if (hasPromo)
+                        Text(
+                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)} / bulan',
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            fontSize: 12,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      if (hasPromo)
+                        Text(
+                          'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                          style: const TextStyle(
+                            color: UserTheme.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1738,6 +2228,53 @@ class _EmptyMenu extends StatelessWidget {
   }
 }
 
+class _ActivePromoSection extends StatelessWidget {
+  const _ActivePromoSection({required this.merchant});
+
+  final UserMerchant merchant;
+
+  @override
+  Widget build(BuildContext context) {
+    final promoItems =
+        merchant.menuItems.where((item) => item.hasPromo).toList();
+    if (promoItems.isEmpty) return const SizedBox.shrink();
+    final topPromo = promoItems.first;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: UserTheme.softBlue,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Promo Aktif',
+            style: TextStyle(
+              color: UserTheme.primaryDark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            topPromo.promoDescription ?? 'Diskon produk aktif',
+            style: const TextStyle(color: UserTheme.text),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Hemat ${formatUserCurrency(topPromo.promoDiscountAmount ?? 0)}',
+            style: const TextStyle(
+              color: UserTheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReviewSection extends StatelessWidget {
   const _ReviewSection({
     required this.merchant,
@@ -1768,7 +2305,9 @@ class _ReviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final products = reviewState?.reviewableProducts ?? const [];
-    final myReviews = reviewState?.myReviews.where((review) => !review.isDeleted).toList() ?? const <MerchantReview>[];
+    final myReviews =
+        reviewState?.myReviews.where((review) => !review.isDeleted).toList() ??
+            const <MerchantReview>[];
     final canReview = products.isNotEmpty;
     final remainingEditAttempts = activeReview?.remainingEditAttempts ?? 0;
 
@@ -1914,7 +2453,8 @@ class _ReviewSection extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: isSubmitting || !canReview ||
+                  onPressed: isSubmitting ||
+                          !canReview ||
                           (activeReview != null && remainingEditAttempts <= 0)
                       ? null
                       : onSubmit,
@@ -1963,7 +2503,8 @@ class _ReviewSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...myReviews.map((review) => ReviewCard(review: review, showProductName: true)),
+          ...myReviews.map(
+              (review) => ReviewCard(review: review, showProductName: true)),
         ],
         const SizedBox(height: 16),
         if (merchant.reviews.isNotEmpty)
@@ -2004,4 +2545,3 @@ class _ReviewSection extends StatelessWidget {
     );
   }
 }
-

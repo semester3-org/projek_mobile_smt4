@@ -110,17 +110,40 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     if (empty($rows)) return [];
-    return array_map(function ($row) use ($type) {
+    return array_map(function ($row) use ($type, $conn, $merchantId) {
         $price30 = (float)($row['harga'] ?? 0);
+        $productId = (int)($row['id'] ?? 0);
+        $promoDiscount = 0.0;
+        $promoRow = null;
+        if (merchantTableExists($conn, 'merchant_promos') && $productId > 0 && $price30 > 0) {
+            $best = merchantBestPromoForCheckout(
+                $conn,
+                $merchantId,
+                '',
+                $price30,
+                [['productId' => $productId]]
+            );
+            if ($best !== null) {
+                $promoRow = $best['promo'];
+                $promoDiscount = (float)($best['discount'] ?? 0);
+            }
+        }
+        $promoPrice = max(0, $price30 - $promoDiscount);
         $payload = [
             'id' => (string)$row['id'],
             'name' => $row['nama_produk'],
             'description' => $row['deskripsi'] ?? '',
             'price' => $price30,
+            'originalPrice' => $price30,
             'imageUrl' => $row['image_url'] ?? '',
             'category' => $row['category'] ?? '',
             'unit' => $row['unit'] ?? '',
             'packageDeliveryType' => $row['package_delivery_type'] ?? null,
+            'hasPromo' => $promoDiscount > 0,
+            'promoPrice' => $promoDiscount > 0 ? $promoPrice : null,
+            'promoDiscountAmount' => $promoDiscount > 0 ? $promoDiscount : null,
+            'promoLabel' => $promoDiscount > 0 ? 'PROMO' : null,
+            'promoDescription' => $promoDiscount > 0 ? (string)($promoRow['name'] ?? 'Promo aktif') : null,
         ];
         if ($type === 'catering') {
             $payload['price20Days'] = isset($row['price_20_days']) ? (float)$row['price_20_days'] : null;

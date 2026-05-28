@@ -46,7 +46,7 @@ try {
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
-        $data = array_map('merchantProductPayload', $rows);
+        $data = array_map(fn($row) => merchantProductPayload($row, $conn), $rows);
         if ($id !== '') {
             if (empty($data)) {
                 merchantSendJson(false, null, 'Produk tidak ditemukan', 404);
@@ -63,7 +63,13 @@ try {
     $price = (float)($body['price'] ?? 0);
     $price20Days = (float)($body['price20Days'] ?? 0);
     $category = trim((string)($body['category'] ?? ''));
-    $unit = trim((string)($body['unit'] ?? ($merchantType === 'laundry' ? '/kg' : '')));
+    $pricingType = merchantNormalizePricingType($body['pricingType'] ?? $body['pricing_type'] ?? 'per_kg');
+    $unit = $merchantType === 'laundry'
+        ? merchantPricingUnit($pricingType)
+        : trim((string)($body['unit'] ?? ''));
+    $durationValue = isset($body['durationValue']) ? (int)$body['durationValue'] : null;
+    $durationUnit = merchantNormalizeDurationUnit($body['durationUnit'] ?? 'day');
+    $addons = is_array($body['addons'] ?? null) ? $body['addons'] : [];
     $packageDeliveryType = null;
     $imageUrl = trim((string)($body['imageUrl'] ?? ''));
     $isActive = !array_key_exists('isActive', $body) || !empty($body['isActive']) ? 1 : 0;
@@ -75,19 +81,24 @@ try {
         if ($price <= 0) {
             merchantSendJson(false, null, 'Harga wajib lebih dari 0', 400);
         }
+        if ($merchantType === 'laundry' && ($durationValue === null || $durationValue <= 0)) {
+            merchantSendJson(false, null, 'Estimasi durasi layanan wajib diisi', 400);
+        }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("
                 INSERT INTO products
-                    (merchant_id, nama_produk, harga, price_20_days, deskripsi, category, unit, image_url, is_active, service_type, package_delivery_type, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    (merchant_id, nama_produk, harga, price_20_days, deskripsi, category, unit, image_url,
+                     is_active, service_type, package_delivery_type, pricing_type, duration_value, duration_unit,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ");
             if (!$stmt) {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $price20Value = $merchantType === 'catering' ? $price20Days : 0.0;
             $stmt->bind_param(
-                'ssddssssiss',
+                'ssddssssisssis',
                 $merchantId,
                 $name,
                 $price,
@@ -98,7 +109,10 @@ try {
                 $imageUrl,
                 $isActive,
                 $merchantType,
-                $packageDeliveryType
+                $packageDeliveryType,
+                $pricingType,
+                $durationValue,
+                $durationUnit
             );
             $stmt->execute();
             $id = (string)$conn->insert_id;
@@ -120,6 +134,9 @@ try {
                     is_active = ?,
                     service_type = ?,
                     package_delivery_type = ?,
+                    pricing_type = ?,
+                    duration_value = ?,
+                    duration_unit = ?,
                     updated_at = NOW()
                 WHERE id = ? AND merchant_id = ?
             ");
@@ -127,7 +144,7 @@ try {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $stmt->bind_param(
-                'sddssssissss',
+                'sddssssisssiss',
                 $name,
                 $price,
                 $price20Value,
@@ -138,11 +155,18 @@ try {
                 $isActive,
                 $merchantType,
                 $packageDeliveryType,
+                $pricingType,
+                $durationValue,
+                $durationUnit,
                 $id,
                 $merchantId
             );
             $stmt->execute();
             $stmt->close();
+        }
+
+        if ($merchantType === 'laundry') {
+            merchantSyncProductAddons($conn, $merchantId, (int)$id, $addons);
         }
 
         $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND merchant_id = ? LIMIT 1");
@@ -151,7 +175,7 @@ try {
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         merchantSyncPlace($conn, $merchant);
-        merchantSendJson(true, merchantProductPayload($row ?? []), 'Produk berhasil disimpan');
+        merchantSendJson(true, merchantProductPayload($row ?? [], $conn), 'Produk berhasil disimpan');
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {

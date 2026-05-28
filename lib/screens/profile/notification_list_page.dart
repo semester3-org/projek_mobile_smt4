@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/notification.dart';
 import '../../models/order.dart';
+import '../user/merchant_detail_page.dart';
 import '../user/order_detail_page.dart';
 import '../user/user_theme.dart';
 import '../user/user_widgets.dart';
@@ -92,6 +93,23 @@ class _NotificationListPageState extends State<NotificationListPage> {
     final actionUrl = notification.actionUrl ?? '';
     if (actionUrl.startsWith('order:')) {
       _openOrderDetailById(actionUrl.substring('order:'.length));
+      return;
+    }
+    
+    if (actionUrl.startsWith('merchant:')) {
+      final merchantId = actionUrl.substring('merchant:'.length);
+      final result = await UserRepository.getMerchantDetail(type: 'laundry', id: merchantId);
+      if (mounted && result.data != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MerchantDetailPage(merchant: result.data!),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Toko tidak ditemukan')),
+        );
+      }
       return;
     }
 

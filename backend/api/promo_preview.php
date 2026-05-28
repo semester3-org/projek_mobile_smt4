@@ -60,16 +60,6 @@ try {
     }
 
     if ($isDraftPreview) {
-        if ($draftMinOrder > 0 && $subtotal < $draftMinOrder) {
-            merchantSendJson(true, [
-                'subtotal' => round($subtotal, 2),
-                'discountAmount' => 0,
-                'total' => round($subtotal, 2),
-                'eligible' => false,
-                'message' => 'Minimum transaksi belum terpenuhi untuk preview ini',
-            ], 'Preview promo tidak memenuhi syarat');
-        }
-
         $draftPromo = [
             'discount_type' => in_array($draftType, ['percentage', 'fixed'], true) ? $draftType : 'percentage',
             'discount_value' => $draftValue,
@@ -133,7 +123,7 @@ try {
         ],
     ], 'Preview promo berhasil');
 } catch (Throwable $e) {
-    merchantSendJson(false, null, $e->getMessage(), 500);
+    merchantSendJson(false, null, 'Gagal memproses preview promo. Silakan coba lagi.', 500);
 }
 
 ?>

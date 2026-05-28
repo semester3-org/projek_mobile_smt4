@@ -72,6 +72,7 @@ class Order {
   final double promoDiscountAmount;
   final String? promoName;
   final bool hasPromo;
+  final double? actualWeight;
 
   Order({
     required this.id,
@@ -108,6 +109,7 @@ class Order {
     this.promoDiscountAmount = 0,
     this.promoName,
     this.hasPromo = false,
+    this.actualWeight,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -155,6 +157,7 @@ class Order {
       promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble() ?? 0,
       promoName: json['promoName'] as String?,
       hasPromo: json['hasPromo'] as bool? ?? false,
+      actualWeight: (json['actualWeight'] as num?)?.toDouble(),
     );
   }
 
@@ -188,6 +191,7 @@ class Order {
       'promoDiscountAmount': promoDiscountAmount,
       'promoName': promoName,
       'hasPromo': hasPromo,
+      'actualWeight': actualWeight,
     };
   }
 

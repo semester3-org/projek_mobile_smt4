@@ -395,6 +395,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           const SizedBox(height: 18),
           _OrderItemsCard(order: order),
           const SizedBox(height: 18),
+          if (order.isLaundry) _LaundryServiceInfoCard(order: order),
+          const SizedBox(height: 18),
           _InfoCard(
             icon: Icons.local_shipping_outlined,
             title: 'Informasi Pengiriman',
@@ -412,18 +414,6 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
                     'Kos Sentra Ruang, Kamar S302\nJl. Melati No. 45, Jakarta Selatan',
                 style: const TextStyle(color: UserTheme.muted, height: 1.35),
               ),
-              if (order.isLaundry &&
-                  (order.serviceEstimateLabel ?? order.estimatedTime ?? '')
-                      .isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Estimasi layanan: ${order.serviceEstimateLabel ?? order.estimatedTime}',
-                  style: const TextStyle(
-                    color: UserTheme.primaryDark,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
               if (order.deliveryLatitude != null &&
                   order.deliveryLongitude != null) ...[
                 const SizedBox(height: 12),
@@ -441,39 +431,29 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           const SizedBox(height: 18),
           _InfoCard(
             icon: Icons.account_balance_wallet_outlined,
-            title: 'Metode Pembayaran',
+            title: 'Pembayaran',
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8EEF8),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      order.paymentMethodLabel ??
-                          PaymentMethodHelper.getDisplayName(
-                              order.paymentMethod),
-                      style: const TextStyle(
-                        color: UserTheme.primaryDark,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      order.needsPaymentConfirmation
-                          ? 'Pembayaran cashless diproses melalui Midtrans'
-                          : 'Pembayaran tercatat di sistem pesanan',
-                      style: const TextStyle(color: UserTheme.muted),
-                    ),
-                  ),
-                ],
+              _SubscriptionLine(
+                label: 'Metode Pembayaran',
+                value: order.paymentMethodLabel ??
+                    PaymentMethodHelper.getDisplayName(order.paymentMethod),
+              ),
+              const SizedBox(height: 10),
+              _SubscriptionLine(
+                label: 'Status Pembayaran',
+                value: order.paymentStatusLabel?.isNotEmpty == true
+                    ? order.paymentStatusLabel!
+                    : order.isCashOnDelivery
+                        ? 'Belum Dibayar'
+                        : 'Menunggu pembayaran',
+                strong: true,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                order.needsPaymentConfirmation
+                    ? 'Pastikan pembayaran dikonfirmasi agar laundry dapat diproses.'
+                    : 'Status pembayaran tercatat di sistem pesanan.',
+                style: const TextStyle(color: UserTheme.muted, height: 1.4),
               ),
             ],
           ),
@@ -759,6 +739,26 @@ class _OrderStatusCard extends StatelessWidget {
 
   final Order order;
 
+  String get _statusBadge {
+    if (order.awaitingWeighing) return 'Menunggu Penimbangan';
+    if (order.needsPaymentConfirmation) return 'Menunggu Pembayaran';
+    switch ((order.merchantStatus ?? order.status).toLowerCase()) {
+      case 'accepted':
+      case 'confirmed':
+        return 'Diterima';
+      case 'processing':
+      case 'in_progress':
+        return 'Diproses';
+      case 'delivered':
+        return 'Siap Diantar';
+      case 'done':
+      case 'completed':
+        return 'Selesai';
+      default:
+        return order.statusLabel;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -813,14 +813,14 @@ class _OrderStatusCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF6DF),
+                  color: const Color(0xFFE8F4FF),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: const Color(0xFFFFD88A)),
+                  border: Border.all(color: const Color(0xFFD2EAFF)),
                 ),
                 child: Text(
-                  order.statusLabel.toUpperCase(),
+                  _statusBadge.toUpperCase(),
                   style: const TextStyle(
-                    color: Color(0xFFB55B00),
+                    color: UserTheme.primaryDark,
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),
@@ -838,7 +838,7 @@ class _OrderStatusCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
-                'Total bayar akan ditetapkan merchant setelah cucian selesai ditimbang.',
+                'Menunggu merchant menentukan total akhir laundry.',
                 style: TextStyle(
                   color: UserTheme.primaryDark,
                   fontSize: 13,
@@ -869,10 +869,10 @@ class _OrderProgressBar extends StatelessWidget {
   final String? merchantStatus;
 
   static const _steps = [
-    ('pending', 'Penimbangan'),
+    ('pending', 'Menunggu Konfirmasi'),
     ('accepted', 'Diterima'),
     ('processing', 'Diproses'),
-    ('delivered', 'Antar'),
+    ('delivered', 'Siap Diantar'),
     ('done', 'Selesai'),
   ];
 
@@ -880,17 +880,14 @@ class _OrderProgressBar extends StatelessWidget {
     if (status == 'cancelled') return -1;
     switch ((merchantStatus ?? status).toLowerCase()) {
       case 'accepted':
+      case 'confirmed':
         return 1;
       case 'processing':
+      case 'in_progress':
         return 2;
       case 'delivered':
         return 3;
       case 'done':
-        return 4;
-      case 'confirmed':
-        return 1;
-      case 'in_progress':
-        return 2;
       case 'completed':
         return 4;
       default:
@@ -942,6 +939,55 @@ class _OrderProgressBar extends StatelessWidget {
   }
 }
 
+class _LaundryServiceInfoCard extends StatelessWidget {
+  const _LaundryServiceInfoCard({required this.order});
+
+  final Order order;
+
+  String get _estimatedLabel {
+    if (order.deliveryDate != null) {
+      return formatShortDate(order.deliveryDate!);
+    }
+    if (order.serviceEstimateLabel?.trim().isNotEmpty == true) {
+      return order.serviceEstimateLabel!;
+    }
+    if (order.estimatedTime?.trim().isNotEmpty == true) {
+      return order.estimatedTime!;
+    }
+    return 'Estimasi selesai akan diinformasikan merchant';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final serviceLabel = order.serviceEstimateLabel?.trim().isNotEmpty == true
+        ? order.serviceEstimateLabel!
+        : order.items.isNotEmpty
+            ? order.items.first.name
+            : 'Layanan Laundry';
+
+    return _InfoCard(
+      icon: Icons.local_laundry_service_outlined,
+      title: 'Detail Laundry',
+      children: [
+        _SubscriptionLine(label: 'Layanan', value: serviceLabel),
+        const SizedBox(height: 10),
+        _SubscriptionLine(
+          label: 'Estimasi Selesai',
+          value: _estimatedLabel,
+          strong: true,
+        ),
+        if (order.actualWeight != null) ...[
+          const SizedBox(height: 10),
+          _SubscriptionLine(
+            label: 'Berat Aktual',
+            value: '${order.actualWeight!.toStringAsFixed(1)}kg',
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _OrderItemsCard extends StatelessWidget {
   const _OrderItemsCard({required this.order});
 
@@ -954,9 +1000,13 @@ class _OrderItemsCard extends StatelessWidget {
     final subtotal =
         order.subtotalAmount > 0 ? order.subtotalAmount : itemsSubtotal;
     final promoDiscount = order.promoDiscountAmount;
-    final delivery = (order.totalAmount - subtotal + promoDiscount)
-        .clamp(0, double.infinity)
-        .toDouble();
+    final additionalItems =
+        order.items.length > 1 ? order.items.sublist(1) : const <OrderItem>[];
+    final additionalTotal =
+        additionalItems.fold<double>(0, (sum, item) => sum + item.subtotal);
+    final showSingleItemPromo =
+        order.hasPromo && promoDiscount > 0 && order.items.length == 1;
+    final isWaitingFinalPrice = order.awaitingWeighing && subtotal == 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -983,72 +1033,150 @@ class _OrderItemsCard extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                ...order.items.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 18),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: UserTheme.softBlue,
-                            borderRadius: BorderRadius.circular(12),
+                ...order.items.asMap().entries.map(
+                  (entry) {
+                    final index = entry.key;
+                    final item = entry.value;
+                    final displaySubtotal = showSingleItemPromo
+                        ? (item.subtotal - promoDiscount)
+                            .clamp(0, double.infinity)
+                            .toDouble()
+                        : item.subtotal;
+                    final displayUnit = item.quantity > 0
+                        ? displaySubtotal / item.quantity
+                        : displaySubtotal;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 18),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: UserTheme.softBlue,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.shopping_bag_outlined,
+                              color: UserTheme.primary,
+                            ),
                           ),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: UserTheme.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: UserTheme.text,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item.name,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          color: UserTheme.text,
+                                        ),
+                                      ),
+                                    ),
+                                    if (index > 0) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEFF7ED),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Text(
+                                          'Tambahan',
+                                          style: TextStyle(
+                                            color: Color(0xFF2E7D32),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${item.quantity} pcs x ${formatUserCurrency(item.price)}',
-                                style: const TextStyle(color: UserTheme.muted),
-                              ),
-                              if ((item.description ?? '').isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
-                                  item.description!,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: UserTheme.muted,
-                                    fontSize: 12,
-                                  ),
+                                  showSingleItemPromo
+                                      ? '${item.quantity} pcs x ${formatUserCurrency(displayUnit)} (promo)'
+                                      : '${item.quantity} pcs x ${formatUserCurrency(item.price)}',
+                                  style:
+                                      const TextStyle(color: UserTheme.muted),
                                 ),
+                                if (showSingleItemPromo) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Normal ${formatUserCurrency(item.price)}',
+                                    style: const TextStyle(
+                                      color: UserTheme.muted,
+                                      fontSize: 12,
+                                      decoration: TextDecoration.lineThrough,
+                                    ),
+                                  ),
+                                ],
+                                if ((item.description ?? '').isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.description!,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: UserTheme.muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                        Text(
-                          formatUserCurrency(item.subtotal),
-                          style: const TextStyle(
-                            color: UserTheme.text,
-                            fontWeight: FontWeight.w800,
+                          Text(
+                            formatUserCurrency(displaySubtotal),
+                            style: const TextStyle(
+                              color: UserTheme.text,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                if (isWaitingFinalPrice) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F3E6),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Text(
+                      'Menunggu merchant menentukan total akhir laundry.',
+                      style: TextStyle(
+                        color: UserTheme.primaryDark,
+                        fontWeight: FontWeight.w700,
+                        height: 1.4,
+                      ),
                     ),
                   ),
-                ),
-                Divider(color: Colors.blueGrey.shade100),
+                ],
                 const SizedBox(height: 10),
-                _TotalRow(label: 'Subtotal', value: subtotal),
+                _TotalRow(label: 'Subtotal Layanan', value: subtotal),
+                if (additionalItems.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _TotalRow(
+                    label: 'Tambahan Layanan',
+                    value: additionalTotal,
+                  ),
+                ],
                 if (order.hasPromo && promoDiscount > 0) ...[
                   const SizedBox(height: 10),
                   _TotalRow(
@@ -1059,12 +1187,12 @@ class _OrderItemsCard extends StatelessWidget {
                     valueColor: UserTheme.success,
                   ),
                 ],
-                const SizedBox(height: 10),
-                _TotalRow(label: 'Biaya Antar-Jemput', value: delivery),
                 const SizedBox(height: 14),
                 _TotalRow(
                   label: 'Total Pembayaran',
                   value: order.totalAmount,
+                  valueText:
+                      isWaitingFinalPrice ? 'Menunggu penimbangan' : null,
                   strong: true,
                 ),
               ],
@@ -1080,12 +1208,14 @@ class _TotalRow extends StatelessWidget {
   const _TotalRow({
     required this.label,
     required this.value,
+    this.valueText,
     this.strong = false,
     this.valueColor,
   });
 
   final String label;
   final double value;
+  final String? valueText;
   final bool strong;
   final Color? valueColor;
 
@@ -1104,10 +1234,10 @@ class _TotalRow extends StatelessWidget {
           ),
         ),
         Text(
-          formatUserCurrency(value),
+          valueText ?? formatUserCurrency(value),
           style: TextStyle(
-            color: valueColor ??
-                (strong ? UserTheme.primaryDark : UserTheme.text),
+            color:
+                valueColor ?? (strong ? UserTheme.primaryDark : UserTheme.text),
             fontSize: strong ? 18 : 14,
             fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
           ),

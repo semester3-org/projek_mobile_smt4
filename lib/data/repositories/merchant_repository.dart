@@ -261,6 +261,7 @@ class MerchantRepository {
     required DateTime? startAt,
     required DateTime? endAt,
     required bool isActive,
+    String? status,
     int? usageLimit,
     int perUserUsageLimit = 1,
   }) async {
@@ -277,6 +278,7 @@ class MerchantRepository {
       'startAt': startAt?.toIso8601String(),
       'endAt': endAt?.toIso8601String(),
       'isActive': isActive,
+      if (status != null && status.isNotEmpty) 'status': status,
       'perUserUsageLimit': perUserUsageLimit,
       if (usageLimit != null) 'usageLimit': usageLimit,
     };

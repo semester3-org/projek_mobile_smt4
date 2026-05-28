@@ -798,18 +798,70 @@ try {
         }
 
         if ($promoId !== null) {
-            $lock = $conn->prepare('SELECT id, usage_limit, used_count FROM merchant_promos WHERE id = ? FOR UPDATE');
+            $lock = $conn->prepare('SELECT * FROM merchant_promos WHERE id = ? AND merchant_id = ? FOR UPDATE');
             if (!$lock) throw new Exception($conn->error);
-            $lock->bind_param('i', $promoId);
+            $lock->bind_param('is', $promoId, $merchantId);
             $lock->execute();
             $lockedPromo = $lock->get_result()->fetch_assoc();
             $lock->close();
-            if (!$lockedPromo || ((int)($lockedPromo['usage_limit'] ?? 0) > 0 &&
-                (int)($lockedPromo['used_count'] ?? 0) >= (int)($lockedPromo['usage_limit'] ?? 0))) {
+
+            $productIds = array_values(array_filter(array_map(
+                fn($it) => (int)($it['productId'] ?? 0),
+                $normalizedItems
+            ), fn($id) => $id > 0));
+
+            $now = time();
+            $lockedIsActive = (int)($lockedPromo['is_active'] ?? 0) === 1;
+            $lockedStartAt = $lockedPromo['start_at'] ?? null;
+            $lockedEndAt = $lockedPromo['end_at'] ?? null;
+            $lockedIsLive = $lockedIsActive &&
+                (!$lockedStartAt || strtotime((string)$lockedStartAt) <= $now) &&
+                (!$lockedEndAt || strtotime((string)$lockedEndAt) >= $now);
+
+            $lockedUsageLimit = isset($lockedPromo['usage_limit']) ? (int)$lockedPromo['usage_limit'] : null;
+            $lockedUsedCount = (int)($lockedPromo['used_count'] ?? 0);
+            $lockedGlobalOk = $lockedUsageLimit === null || $lockedUsageLimit <= 0 || $lockedUsedCount < $lockedUsageLimit;
+
+            $lockedPerUserLimit = max(1, (int)($lockedPromo['per_user_usage_limit'] ?? 1));
+            $lockedUserUsageCount = 0;
+            if ($userId !== '') {
+                $lockedUserUsageCount = (int)merchantQueryValue(
+                    $conn,
+                    'SELECT COUNT(*) FROM promo_usages WHERE promo_id = ? AND user_id = ?',
+                    'is',
+                    [(int)($lockedPromo['id'] ?? 0), $userId]
+                );
+            }
+            $lockedUserOk = $userId === '' || $lockedUserUsageCount < $lockedPerUserLimit;
+
+            $lockedMinOrder = max(0, (float)($lockedPromo['min_order_amount'] ?? 0));
+            $lockedMinOk = $subtotal >= $lockedMinOrder;
+
+            $lockedMatchOk = !empty($productIds) && merchantPromoMatchesProducts($conn, $lockedPromo, $productIds);
+
+            if (!$lockedPromo ||
+                !$lockedIsLive ||
+                !$lockedGlobalOk ||
+                !$lockedUserOk ||
+                !$lockedMinOk ||
+                !$lockedMatchOk) {
                 $promoId = null;
                 $promoName = null;
                 $promoDiscountAmount = 0.0;
                 $total = $subtotal;
+            } else {
+                $applied = merchantPromoApply($subtotal, $lockedPromo);
+                $promoDiscountAmount = (float)($applied['discount'] ?? 0);
+                if ($promoDiscountAmount <= 0) {
+                    $promoId = null;
+                    $promoName = null;
+                    $promoDiscountAmount = 0.0;
+                    $total = $subtotal;
+                } else {
+                    $promoName = (string)($lockedPromo['name'] ?? '');
+                    $total = (float)($applied['total'] ?? $subtotal);
+                    $total = max(0, $total);
+                }
             }
         }
 
@@ -923,7 +975,7 @@ try {
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
-        merchantSendJson(false, null, 'Gagal membuat pesanan: ' . $e->getMessage(), 500);
+        merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
     }
 
     $stmt = $conn->prepare("
@@ -940,7 +992,7 @@ try {
 
     merchantSendJson(true, userOrderPayload($conn, $row), 'Pesanan berhasil dibuat', 201);
 } catch (Throwable $e) {
-    merchantSendJson(false, null, $e->getMessage(), 500);
+    merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
 }
 
 ?>

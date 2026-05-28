@@ -1,0 +1,33 @@
+{
+  "project_info": {
+    "project_number": "46013103292",
+    "project_id": "ngekos-fffbe",
+    "storage_bucket": "ngekos-fffbe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:46013103292:android:fe09962a25f1cbeb6064b9",
+        "android_client_info": {
+          "package_name": "com.projek.kos"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "46013103292-7160o05og2hdl114s5n1i7j6tq4ujq61.apps.googleusercontent.com"
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDXJIeMz1HnNe1I8SUaw4yFf3lPj4C7o-M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

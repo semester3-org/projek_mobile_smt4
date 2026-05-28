@@ -158,6 +158,9 @@ try {
             if ($productId !== '' && !$product) {
                 merchantSendJson(false, null, 'Produk promo tidak ditemukan', 404);
             }
+            if ($product && $minOrder < (float)$product['harga']) {
+                merchantSendJson(false, null, 'Minimal transaksi harus setidaknya sama dengan harga produk yang dipilih', 400);
+            }
             $nullableProductId = $product ? (int)$product['id'] : null;
         }
 

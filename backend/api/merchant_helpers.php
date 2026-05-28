@@ -1701,6 +1701,7 @@ function merchantPromoPayload(array $row): array {
     ];
 }
 
+
 function merchantExpirePromos(mysqli $conn, ?string $merchantId = null): void {
     if (!merchantTableExists($conn, 'merchant_promos') ||
         !merchantColumnExists($conn, 'merchant_promos', 'status')) {
@@ -1769,6 +1770,7 @@ function merchantExpirePromos(mysqli $conn, ?string $merchantId = null): void {
           AND name != '' AND name != 'Draft Promo'
     ");
 }
+
 
 function merchantPromoProductIds(mysqli $conn, int $promoId): array {
     if ($promoId <= 0 || !merchantTableExists($conn, 'merchant_promo_products')) {
@@ -1894,6 +1896,10 @@ function merchantBestPromoForCheckout(
 
     $best = null;
     foreach ($promos as $promo) {
+        $minOrder = max(0, (float)($promo['min_order_amount'] ?? 0));
+        if ($subtotal < $minOrder) {
+            continue;
+        }
         $usageLimit = isset($promo['usage_limit']) ? (int)$promo['usage_limit'] : null;
         $usedCount = (int)($promo['used_count'] ?? 0);
         if ($usageLimit !== null && $usageLimit > 0 && $usedCount >= $usageLimit) {

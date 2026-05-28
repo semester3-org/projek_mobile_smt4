@@ -191,6 +191,17 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     }
 
     if (!mounted) return;
+    if (_merchant.type == 'catering') {
+      final existingMessage = await _existingCateringOrderMessage();
+      if (!mounted) return;
+      if (existingMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(existingMessage)),
+        );
+        return;
+      }
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Mengirim pesanan ke merchant...')),
     );
@@ -223,6 +234,25 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.error ?? 'Gagal membuat pesanan')),
     );
+  }
+
+  Future<String?> _existingCateringOrderMessage() async {
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
+    if (!result.isSuccess) return null;
+    final active = (result.data ?? const []).where((subscription) {
+      final status = subscription.subscriptionStatus.toLowerCase();
+      return subscription.isActive ||
+          status == 'pending' ||
+          status == 'pending_payment';
+    }).toList();
+    if (active.isEmpty) return null;
+    final item = active.first;
+    final product = item.productName.isNotEmpty
+        ? item.productName
+        : item.packageLabel.isNotEmpty
+            ? item.packageLabel
+            : 'catering';
+    return 'Kamu masih punya pesanan/langganan $product. Gunakan menu perpanjang di detail langganan agar jadwal tidak bentrok.';
   }
 
   Future<void> _submitReview() async {
@@ -572,6 +602,30 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 1.45,
               ),
             ),
+            if (_isCatering) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _ProductInfoChip(
+                    icon: Icons.star_rounded,
+                    label:
+                        '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                    color: const Color(0xFFFFB300),
+                  ),
+                  _ProductInfoChip(
+                    icon: Icons.delivery_dining_rounded,
+                    label: widget.item.mealDeliveryCount >= 2
+                        ? '2x makan/hari'
+                        : '1x makan/hari',
+                    color: UserTheme.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _CateringDeliveryInfoBox(item: widget.item),
+            ],
             if (_showPromo) ...[
               const SizedBox(height: 10),
               Container(
@@ -744,6 +798,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   double? _deliveryLatitude;
   double? _deliveryLongitude;
   bool _didLoadProfile = false;
+  String? _sheetError;
 
   bool get _isLaundry => widget.merchant.type == 'laundry';
 
@@ -906,7 +961,12 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       _addressCtrl.text = result.address;
       _deliveryLatitude = result.latitude;
       _deliveryLongitude = result.longitude;
+      _sheetError = null;
     });
+  }
+
+  void _showSheetError(String message) {
+    setState(() => _sheetError = message);
   }
 
   String _laundryServiceEstimateFor(List<MerchantMenuItem> items) {
@@ -927,41 +987,27 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   void _submit() {
     final selectedItems = _selectedItems;
     if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih minimal satu layanan laundry')),
-      );
+      _showSheetError('Pilih minimal satu layanan laundry');
       return;
     }
     if (!_isLaundry && _total <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih paket catering terlebih dahulu')),
-      );
+      _showSheetError('Pilih paket catering terlebih dahulu');
       return;
     }
     if (_addressCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alamat tujuan wajib diisi')),
-      );
+      _showSheetError('Alamat tujuan wajib diisi');
       return;
     }
     final customerName = _nameCtrl.text.trim();
     final validName = RegExp(r"^[A-Za-z .'-]{2,}$").hasMatch(customerName) &&
         RegExp(r'[A-Za-z]').hasMatch(customerName);
     if (_isLaundry && !validName) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nama penerima hanya boleh huruf dan spasi'),
-        ),
-      );
+      _showSheetError('Nama penerima hanya boleh huruf dan spasi');
       return;
     }
     if (!_isValidPhoneNumber(_phoneCtrl.text)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...',
-          ),
-        ),
+      _showSheetError(
+        'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...',
       );
       return;
     }
@@ -1036,6 +1082,10 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
             const SizedBox(height: 14),
+            if (_sheetError != null) ...[
+              _SheetErrorBanner(message: _sheetError!),
+              const SizedBox(height: 14),
+            ],
             if (widget.initialItem != null) ...[
               lockedItemSummary(widget.initialItem!),
               if (!_isLaundry && widget.initialItem!.hasWeekdayPrice) ...[
@@ -1366,6 +1416,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
               style: const TextStyle(color: UserTheme.muted),
             ),
+            const SizedBox(height: 8),
+            _CateringDeliveryInfoBox(item: item, compact: true),
           ] else ...[
             const SizedBox(height: 6),
             if (hasLaundryPromo) ...[
@@ -1678,6 +1730,33 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                           '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
                           style: const TextStyle(color: UserTheme.muted),
                         ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _ProductInfoChip(
+                              icon: Icons.star_rounded,
+                              label:
+                                  '${item.rating.toStringAsFixed(1)} (${item.reviewCount})',
+                              color: const Color(0xFFFFB300),
+                            ),
+                            _ProductInfoChip(
+                              icon: Icons.delivery_dining_rounded,
+                              label: _cateringDeliveryFrequency(item),
+                              color: UserTheme.primary,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _cateringDeliverySchedule(item),
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                         if (item.hasWeekdayPrice) ...[
                           const SizedBox(height: 4),
                           Text(
@@ -1786,6 +1865,46 @@ class _CheckoutField extends StatelessWidget {
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,
+      ),
+    );
+  }
+}
+
+class _SheetErrorBanner extends StatelessWidget {
+  const _SheetErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC9C9)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFD82121),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF8F1A1A),
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2162,6 +2281,26 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 fontSize: 18,
               ),
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _ProductInfoChip(
+                  icon: Icons.star_rounded,
+                  label:
+                      '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                  color: const Color(0xFFFFB300),
+                ),
+                _ProductInfoChip(
+                  icon: Icons.delivery_dining_rounded,
+                  label: _cateringDeliveryFrequency(widget.item),
+                  color: UserTheme.primary,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _CateringDeliveryInfoBox(item: widget.item),
             if (hasPromo) ...[
               const SizedBox(height: 8),
               Container(
@@ -2256,6 +2395,124 @@ class _MenuItemCardState extends State<_MenuItemCard> {
       ),
     );
   }
+}
+
+class _ProductInfoChip extends StatelessWidget {
+  const _ProductInfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CateringDeliveryInfoBox extends StatelessWidget {
+  const _CateringDeliveryInfoBox({
+    required this.item,
+    this.compact = false,
+  });
+
+  final MerchantMenuItem item;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3EAF4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: UserTheme.softBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.delivery_dining_rounded,
+              color: UserTheme.primary,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _cateringDeliveryFrequency(item),
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _cateringDeliverySchedule(item),
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _cateringDeliveryFrequency(MerchantMenuItem item) {
+  return item.mealDeliveryCount >= 2 ? '2x makan/hari' : '1x makan/hari';
+}
+
+String _cateringDeliverySchedule(MerchantMenuItem item) {
+  if (item.mealDeliveryCount >= 2) {
+    final second = (item.deliveryTime2 ?? '').trim().isEmpty
+        ? '15:00'
+        : item.deliveryTime2!.trim();
+    return 'Gelombang pengantaran mulai ${item.deliveryTime1} dan $second.';
+  }
+  return 'Gelombang pengantaran mulai ${item.deliveryTime1}.';
 }
 
 class _EmptyMenu extends StatelessWidget {

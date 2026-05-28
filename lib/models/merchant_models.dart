@@ -1,3 +1,5 @@
+import '../core/indonesia_time.dart';
+
 class MerchantOrderItem {
   const MerchantOrderItem({
     required this.id,
@@ -40,6 +42,8 @@ class MerchantDeliveryMilestone {
     required this.slotNumber,
     required this.scheduledTime,
     required this.status,
+    this.deliveryNote = '',
+    this.deliveryPhotoUrl = '',
     this.deliveredAt,
   });
 
@@ -48,6 +52,8 @@ class MerchantDeliveryMilestone {
   final int slotNumber;
   final String scheduledTime;
   final String status;
+  final String deliveryNote;
+  final String deliveryPhotoUrl;
   final DateTime? deliveredAt;
 
   factory MerchantDeliveryMilestone.fromJson(Map<String, dynamic> json) {
@@ -57,7 +63,9 @@ class MerchantDeliveryMilestone {
       slotNumber: (json['slotNumber'] as num?)?.toInt() ?? 1,
       scheduledTime: json['scheduledTime'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
-      deliveredAt: DateTime.tryParse(json['deliveredAt'] as String? ?? ''),
+      deliveryNote: json['deliveryNote'] as String? ?? '',
+      deliveryPhotoUrl: json['deliveryPhotoUrl'] as String? ?? '',
+      deliveredAt: IndonesiaTime.tryParse(json['deliveredAt']),
     );
   }
 
@@ -135,6 +143,8 @@ class MerchantOrder {
     final rawItems = json['items'] as List<dynamic>? ?? const [];
     final rawMilestones =
         json['deliveryMilestones'] as List<dynamic>? ?? const [];
+    final deliveryAddress = json['deliveryAddress'] as String? ?? '';
+    final deliveryLongitude = (json['deliveryLongitude'] as num?)?.toDouble();
     return MerchantOrder(
       id: json['id'] as String? ?? '',
       code: json['code'] as String? ?? '',
@@ -143,13 +153,16 @@ class MerchantOrder {
       customerEmail: json['customerEmail'] as String? ?? '',
       serviceType: json['serviceType'] as String? ?? '',
       serviceName: json['serviceName'] as String? ?? '',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-          DateTime.now(),
+      createdAt: IndonesiaTime.parse(
+        json['createdAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       estimatedTime: json['estimatedTime'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       statusLabel: json['statusLabel'] as String? ?? 'Pending',
       statusGroup: json['statusGroup'] as String? ?? 'pending',
-      deliveryAddress: json['deliveryAddress'] as String? ?? '',
+      deliveryAddress: deliveryAddress,
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
       paymentMethod: json['paymentMethod'] as String? ?? '',
       paymentMethodLabel: json['paymentMethodLabel'] as String? ?? '',
@@ -168,16 +181,25 @@ class MerchantOrder {
               ))
           .toList(),
       deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
-      deliveryLongitude: (json['deliveryLongitude'] as num?)?.toDouble(),
+      deliveryLongitude: deliveryLongitude,
       midtransOrderId: json['midtransOrderId'] as String?,
       subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
-      subscriptionStartDate:
-          DateTime.tryParse(json['subscriptionStartDate'] as String? ?? ''),
-      subscriptionEndDate:
-          DateTime.tryParse(json['subscriptionEndDate'] as String? ?? ''),
+      subscriptionStartDate: IndonesiaTime.tryParse(
+        json['subscriptionStartDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
+      subscriptionEndDate: IndonesiaTime.tryParse(
+        json['subscriptionEndDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       subscriptionStatus: json['subscriptionStatus'] as String?,
-      cancellationRequestedAt:
-          DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
+      cancellationRequestedAt: IndonesiaTime.tryParse(
+        json['cancellationRequestedAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
     );
   }
 

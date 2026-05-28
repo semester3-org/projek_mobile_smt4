@@ -10,6 +10,11 @@ class MerchantMenuItem {
     this.price20Days,
     this.price30Days,
     this.packageDeliveryType,
+    this.mealDeliveryCount = 1,
+    this.deliveryTime1 = '07:00',
+    this.deliveryTime2,
+    this.rating = 0,
+    this.reviewCount = 0,
     this.hasPromo = false,
     this.originalPrice,
     this.promoPrice,
@@ -32,6 +37,11 @@ class MerchantMenuItem {
   final double? price20Days;
   final double? price30Days;
   final String? packageDeliveryType;
+  final int mealDeliveryCount;
+  final String deliveryTime1;
+  final String? deliveryTime2;
+  final double rating;
+  final int reviewCount;
   final bool hasPromo;
   final double? originalPrice;
   final double? promoPrice;
@@ -70,6 +80,11 @@ class MerchantMenuItem {
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       price30Days: price30 > 0 ? price30 : null,
       packageDeliveryType: json['packageDeliveryType'] as String?,
+      mealDeliveryCount: (json['mealDeliveryCount'] as num?)?.toInt() ?? 1,
+      deliveryTime1: json['deliveryTime1'] as String? ?? '07:00',
+      deliveryTime2: json['deliveryTime2'] as String?,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       hasPromo: json['hasPromo'] as bool? ?? false,
       originalPrice: (json['originalPrice'] as num?)?.toDouble(),
       promoPrice: (json['promoPrice'] as num?)?.toDouble(),
@@ -91,6 +106,11 @@ class MerchantMenuItem {
       'price20Days': price20Days,
       'price30Days': price30Days ?? price,
       'packageDeliveryType': packageDeliveryType,
+      'mealDeliveryCount': mealDeliveryCount,
+      'deliveryTime1': deliveryTime1,
+      'deliveryTime2': deliveryTime2,
+      'rating': rating,
+      'reviewCount': reviewCount,
       'hasPromo': hasPromo,
       'originalPrice': originalPrice,
       'promoPrice': promoPrice,

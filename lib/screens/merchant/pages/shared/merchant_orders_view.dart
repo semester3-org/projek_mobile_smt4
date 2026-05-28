@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/payment_methods.dart';
 import '../../../../core/realtime_service.dart';
@@ -131,9 +133,42 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
     MerchantOrder order,
     MerchantDeliveryMilestone milestone,
   ) async {
+    final hasPendingEarlier = order.deliveryMilestones.any(
+      (item) => item.slotNumber < milestone.slotNumber && !item.isDelivered,
+    );
+    if (hasPendingEarlier) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Selesaikan pengantaran sebelumnya dulu agar urutan pengiriman tetap valid.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (_isMilestoneTooEarly(milestone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pengantaran belum masuk waktunya. Selesaikan maksimal 15 menit sebelum jadwal.',
+          ),
+        ),
+      );
+      return;
+    }
+    final proof = await showDialog<_DeliveryProof>(
+      context: context,
+      builder: (context) => _CompleteDeliveryDialog(
+        order: order,
+        milestone: milestone,
+      ),
+    );
+    if (proof == null || !mounted) return;
     final result = await MerchantRepository.completeCateringDelivery(
       orderId: order.id,
       deliveryLogId: milestone.id,
+      deliveryNote: proof.note,
+      deliveryPhotoUrl: proof.photoUrl,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -482,44 +517,276 @@ class _DeliveryMilestones extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: milestones
-          .map(
-            (item) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF4F6FA),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    item.isDelivered
-                        ? Icons.check_circle_rounded
-                        : Icons.delivery_dining_rounded,
-                    color: item.isDelivered
-                        ? MerchantPalette.success
-                        : MerchantPalette.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Pengantaran ${item.scheduledTime}',
-                      style: const TextStyle(
-                        color: MerchantPalette.text,
-                        fontWeight: FontWeight.w800,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (milestones.length > 1) ...[
+          const Text(
+            'Pengantaran harus diselesaikan berurutan. Pengantaran berikutnya terkunci sampai jadwal sebelumnya selesai.',
+            style: TextStyle(
+              color: MerchantPalette.muted,
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        ...milestones.map((item) {
+          final hasPendingEarlier = milestones.any(
+            (other) => other.slotNumber < item.slotNumber && !other.isDelivered,
+          );
+          final canComplete = !item.isDelivered && !hasPendingEarlier;
+          final isOverdue = _isMilestoneOverdue(item);
+          final iconColor = item.isDelivered
+              ? MerchantPalette.success
+              : isOverdue
+                  ? MerchantPalette.danger
+                  : MerchantPalette.primary;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F6FA),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  item.isDelivered
+                      ? Icons.check_circle_rounded
+                      : Icons.delivery_dining_rounded,
+                  color: iconColor,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pengantaran ${item.scheduledTime}',
+                        style: const TextStyle(
+                          color: MerchantPalette.text,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
+                      if (isOverdue || hasPendingEarlier) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          isOverdue
+                              ? 'Terlambat dari jadwal'
+                              : 'Menunggu pengantaran sebelumnya',
+                          style: TextStyle(
+                            color: isOverdue
+                                ? MerchantPalette.danger
+                                : MerchantPalette.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                      if (item.isDelivered &&
+                          (item.deliveryNote.isNotEmpty ||
+                              item.deliveryPhotoUrl.isNotEmpty)) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          [
+                            if (item.deliveryPhotoUrl.isNotEmpty) 'Foto bukti',
+                            if (item.deliveryNote.isNotEmpty) 'Catatan',
+                          ].join(' + '),
+                          style: const TextStyle(
+                            color: MerchantPalette.success,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  TextButton(
-                    onPressed: item.isDelivered ? null : () => onComplete(item),
-                    child: Text(item.isDelivered ? 'Selesai' : 'Selesaikan'),
+                ),
+                TextButton(
+                  onPressed: canComplete ? () => onComplete(item) : null,
+                  child: Text(
+                    item.isDelivered
+                        ? 'Selesai'
+                        : hasPendingEarlier
+                            ? 'Terkunci'
+                            : 'Selesaikan',
                   ),
-                ],
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+bool _isMilestoneOverdue(MerchantDeliveryMilestone milestone) {
+  if (milestone.isDelivered) return false;
+  final scheduledAt = _milestoneScheduledAt(milestone);
+  if (scheduledAt == null) return false;
+  return DateTime.now().isAfter(scheduledAt.add(const Duration(hours: 1)));
+}
+
+bool _isMilestoneTooEarly(MerchantDeliveryMilestone milestone) {
+  if (milestone.isDelivered) return false;
+  final scheduledAt = _milestoneScheduledAt(milestone);
+  if (scheduledAt == null) return false;
+  return DateTime.now().isBefore(
+    scheduledAt.subtract(const Duration(minutes: 15)),
+  );
+}
+
+DateTime? _milestoneScheduledAt(MerchantDeliveryMilestone milestone) {
+  final dateParts = milestone.date.split('-');
+  final timeParts = milestone.scheduledTime.split(':');
+  if (dateParts.length != 3 || timeParts.length < 2) return null;
+  final year = int.tryParse(dateParts[0]);
+  final month = int.tryParse(dateParts[1]);
+  final day = int.tryParse(dateParts[2]);
+  final hour = int.tryParse(timeParts[0]);
+  final minute = int.tryParse(timeParts[1]);
+  if ([year, month, day, hour, minute].any((value) => value == null)) {
+    return null;
+  }
+  return DateTime(year!, month!, day!, hour!, minute!);
+}
+
+class _DeliveryProof {
+  const _DeliveryProof({
+    required this.note,
+    required this.photoUrl,
+  });
+
+  final String note;
+  final String photoUrl;
+}
+
+class _CompleteDeliveryDialog extends StatefulWidget {
+  const _CompleteDeliveryDialog({
+    required this.order,
+    required this.milestone,
+  });
+
+  final MerchantOrder order;
+  final MerchantDeliveryMilestone milestone;
+
+  @override
+  State<_CompleteDeliveryDialog> createState() =>
+      _CompleteDeliveryDialogState();
+}
+
+class _CompleteDeliveryDialogState extends State<_CompleteDeliveryDialog> {
+  final _noteCtrl = TextEditingController();
+  final _picker = ImagePicker();
+  String _photoUrl = '';
+  bool _picking = false;
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_picking) return;
+    setState(() => _picking = true);
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final ext = file.name.toLowerCase().endsWith('.png')
+          ? 'png'
+          : file.name.toLowerCase().endsWith('.webp')
+              ? 'webp'
+              : 'jpeg';
+      if (!mounted) return;
+      setState(() {
+        _photoUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+      });
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Selesaikan Pengantaran?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pastikan makanan untuk ${widget.order.customerName} pada jadwal ${widget.milestone.scheduledTime} sudah benar-benar dikirim. Aksi ini akan dicatat sebagai bukti pengantaran.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _noteCtrl,
+              maxLines: 2,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Catatan opsional',
+                hintText: 'Contoh: diterima penjaga kos',
+                border: OutlineInputBorder(),
               ),
             ),
-          )
-          .toList(),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _picking ? null : _pickPhoto,
+              icon: Icon(
+                _photoUrl.isEmpty
+                    ? Icons.camera_alt_outlined
+                    : Icons.check_circle_outline_rounded,
+              ),
+              label: Text(
+                _photoUrl.isEmpty
+                    ? 'Tambah foto bukti opsional'
+                    : 'Foto bukti ditambahkan',
+              ),
+            ),
+            if (_photoUrl.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  base64Decode(_photoUrl.split(',').last),
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() => _photoUrl = ''),
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Hapus foto'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _DeliveryProof(
+              note: _noteCtrl.text.trim(),
+              photoUrl: _photoUrl,
+            ),
+          ),
+          child: const Text('Ya, sudah dikirim'),
+        ),
+      ],
     );
   }
 }

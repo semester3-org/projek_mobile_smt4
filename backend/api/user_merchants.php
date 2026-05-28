@@ -77,6 +77,11 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
                 'imageUrl' => 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400',
                 'category' => 'Paket Bulanan',
                 'unit' => '/bulan',
+                'mealDeliveryCount' => 1,
+                'deliveryTime1' => '07:00',
+                'deliveryTime2' => null,
+                'rating' => 0,
+                'reviewCount' => 0,
             ],
             [
                 'id' => $merchantId . '-diet',
@@ -86,6 +91,11 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
                 'imageUrl' => 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400',
                 'category' => 'Menu Sehat',
                 'unit' => '/bulan',
+                'mealDeliveryCount' => 2,
+                'deliveryTime1' => '07:00',
+                'deliveryTime2' => '15:00',
+                'rating' => 0,
+                'reviewCount' => 0,
             ],
         ];
     }
@@ -93,15 +103,25 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
     return [];
 }
 
-function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array {
+function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true): array {
     if (!merchantTableExists($conn, 'products')) {
         return userMerchantFallbackMenu($type, $merchantId);
     }
     $stmt = $conn->prepare("
-        SELECT *
-        FROM products
-        WHERE merchant_id = ? AND is_active = 1
-        ORDER BY updated_at DESC, id DESC
+        SELECT p.*,
+               COALESCE((
+                   SELECT AVG(mr.rating)
+                   FROM merchant_reviews mr
+                   WHERE mr.product_id = p.id AND mr.deleted_at IS NULL
+               ), 0) AS product_rating,
+               (
+                   SELECT COUNT(*)
+                   FROM merchant_reviews mr
+                   WHERE mr.product_id = p.id AND mr.deleted_at IS NULL
+               ) AS product_review_count
+        FROM products p
+        WHERE p.merchant_id = ? AND p.is_active = 1
+        ORDER BY p.updated_at DESC, p.id DESC
         LIMIT 20
     ");
     if (!$stmt) return userMerchantFallbackMenu($type, $merchantId);
@@ -110,12 +130,13 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     if (empty($rows)) return [];
-    return array_map(function ($row) use ($type, $conn, $merchantId) {
+    $hasPromoTable = $includePromos && merchantTableExists($conn, 'merchant_promos');
+    return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable) {
         $price30 = (float)($row['harga'] ?? 0);
         $productId = (int)($row['id'] ?? 0);
         $promoDiscount = 0.0;
         $promoRow = null;
-        if (merchantTableExists($conn, 'merchant_promos') && $productId > 0 && $price30 > 0) {
+        if ($hasPromoTable && $productId > 0 && $price30 > 0) {
             $best = merchantBestPromoForCheckout(
                 $conn,
                 $merchantId,
@@ -139,6 +160,11 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId): array
             'category' => $row['category'] ?? '',
             'unit' => $row['unit'] ?? '',
             'packageDeliveryType' => $row['package_delivery_type'] ?? null,
+            'mealDeliveryCount' => isset($row['meal_delivery_count']) ? (int)$row['meal_delivery_count'] : 1,
+            'deliveryTime1' => $row['delivery_time_1'] ?? '07:00',
+            'deliveryTime2' => $row['delivery_time_2'] ?? null,
+            'rating' => round((float)($row['product_rating'] ?? 0), 1),
+            'reviewCount' => (int)($row['product_review_count'] ?? 0),
             'hasPromo' => $promoDiscount > 0,
             'promoPrice' => $promoDiscount > 0 ? $promoPrice : null,
             'promoDiscountAmount' => $promoDiscount > 0 ? $promoDiscount : null,
@@ -251,13 +277,21 @@ function userMerchantRowCoords(array $row): array {
     return [$lat, $lng];
 }
 
-function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng): array {
+function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng, bool $includeDetail = false): array {
     $merchantId = (string)($row['merchant_id'] ?? $row['id']);
     $placeId = (string)($row['place_id'] ?? $merchantId);
-    $summary = $merchantId !== '' ? merchantRatingSummary($conn, $merchantId) : ['rating' => 0, 'reviewCount' => 0];
+    $summary = [
+        'rating' => isset($row['merchant_rating']) ? round((float)$row['merchant_rating'], 1) : 0,
+        'reviewCount' => (int)($row['merchant_review_count'] ?? 0),
+    ];
+    if ($merchantId !== '' && !array_key_exists('merchant_review_count', $row)) {
+        $summary = merchantRatingSummary($conn, $merchantId);
+    }
     $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : (float)($row['place_rating'] ?? 0);
     $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
-    $menu = $merchantId !== '' ? userMerchantMenu($conn, $type, $merchantId) : userMerchantFallbackMenu($type, $placeId);
+    $menu = $merchantId !== ''
+        ? userMerchantMenu($conn, $type, $merchantId, $includeDetail)
+        : userMerchantFallbackMenu($type, $placeId);
     $minPrice = 0;
     foreach ($menu as $item) {
         $price = (float)$item['price'];
@@ -328,7 +362,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         'phone' => $row['phone'] ?? '',
         'email' => $row['email'] ?? '',
         'menuItems' => $menu,
-        'reviews' => $merchantId !== '' ? userMerchantReviews($conn, $merchantId) : [],
+        'reviews' => $includeDetail && $merchantId !== '' ? userMerchantReviews($conn, $merchantId) : [],
     ];
 }
 
@@ -409,6 +443,19 @@ try {
         $placeJoin = $type === 'laundry'
             ? "LEFT JOIN laundry_places p ON p.merchant_id = m.id OR p.id = m.id"
             : "LEFT JOIN catering_places p ON p.merchant_id = m.id OR p.id = m.id";
+        $reviewJoin = merchantTableExists($conn, 'merchant_reviews')
+            ? "LEFT JOIN (
+                   SELECT merchant_id, AVG(rating) AS merchant_rating, COUNT(*) AS merchant_review_count
+                   FROM merchant_reviews
+                   WHERE deleted_at IS NULL
+                   GROUP BY merchant_id
+               ) rs ON rs.merchant_id = m.id"
+            : "";
+        $reviewSelect = merchantTableExists($conn, 'merchant_reviews')
+            ? "COALESCE(rs.merchant_rating, 0) AS merchant_rating,
+               COALESCE(rs.merchant_review_count, 0) AS merchant_review_count,"
+            : "0 AS merchant_rating,
+               0 AS merchant_review_count,";
         $specialtySelect = $type === 'catering' && merchantColumnExists($conn, 'catering_places', 'specialty')
             ? "p.specialty"
             : "NULL";
@@ -416,10 +463,20 @@ try {
             ? 'p.latitude' : 'NULL';
         $placeLng = merchantColumnExists($conn, $type === 'laundry' ? 'laundry_places' : 'catering_places', 'longitude')
             ? 'p.longitude' : 'NULL';
+        $where = "m.merchant_type = ?";
+        $types = 's';
+        $params = [$type];
+        if ($id !== '') {
+            $where .= " AND (m.id = ? OR p.id = ?)";
+            $types .= 'ss';
+            $params[] = $id;
+            $params[] = $id;
+        }
         $stmt = $conn->prepare("
             SELECT m.id AS merchant_id, m.business_name, m.merchant_type, m.phone, m.address,
                    m.description, m.photo_url, m.open_time, m.close_time,
                    m.status, u.email,
+                   $reviewSelect
                    COALESCE(NULLIF(m.latitude, 0), $placeLat) AS latitude,
                    COALESCE(NULLIF(m.longitude, 0), $placeLng) AS longitude,
                    p.id AS place_id,
@@ -432,11 +489,12 @@ try {
             FROM merchants m
             INNER JOIN users u ON u.id = m.user_id
             $placeJoin
-            WHERE m.merchant_type = ?
+            $reviewJoin
+            WHERE $where
             ORDER BY COALESCE(p.distance_km, 999), m.updated_at DESC
         ");
         if ($stmt) {
-            $stmt->bind_param('s', $type);
+            $stmt->bind_param($types, ...$params);
             $stmt->execute();
             $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
@@ -455,7 +513,7 @@ try {
         if ($dedupeKey !== '') {
             $seenMerchantIds[$dedupeKey] = true;
         }
-        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng);
+        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '');
     }
     if (empty($data)) {
         $data = userMerchantFallback($type);

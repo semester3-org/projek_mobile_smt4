@@ -122,22 +122,96 @@ try {
 
         if ($action === 'complete_delivery') {
             $logId = (int)($body['deliveryLogId'] ?? 0);
+            $deliveryNote = trim((string)($body['deliveryNote'] ?? ''));
+            $deliveryPhotoUrl = trim((string)($body['deliveryPhotoUrl'] ?? ''));
             if ($logId <= 0) {
                 merchantSendJson(false, null, 'ID pengantaran wajib diisi', 400);
+            }
+            if (mb_strlen($deliveryNote) > 500) {
+                merchantSendJson(false, null, 'Catatan pengantaran maksimal 500 karakter', 400);
+            }
+            if ($deliveryPhotoUrl !== '' && !preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,/', $deliveryPhotoUrl)) {
+                merchantSendJson(false, null, 'Foto bukti harus berupa gambar JPG, PNG, atau WEBP', 400);
+            }
+            if (strtolower((string)($current[0]['serviceType'] ?? '')) !== 'catering') {
+                merchantSendJson(false, null, 'Validasi pengantaran hanya untuk pesanan catering', 400);
+            }
+            if (strtolower((string)($current[0]['status'] ?? '')) !== 'accepted') {
+                merchantSendJson(false, null, 'Pesanan belum aktif untuk pengantaran', 400);
+            }
+            if (!in_array(strtolower((string)($current[0]['paymentStatus'] ?? '')), ['paid', 'payment_submitted'], true)) {
+                merchantSendJson(false, null, 'Pengantaran hanya bisa diselesaikan setelah pembayaran masuk', 400);
             }
             if (!merchantTableExists($conn, 'catering_delivery_logs')) {
                 merchantSendJson(false, null, 'Tabel pengantaran catering belum tersedia', 500);
             }
+            $orderIdInt = (int)($current[0]['id'] ?? 0);
+            $logStmt = $conn->prepare("
+                SELECT id, delivery_date, scheduled_time, slot_number, status
+                FROM catering_delivery_logs
+                WHERE id = ? AND merchant_id = ? AND order_id = ?
+                LIMIT 1
+            ");
+            if (!$logStmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $logStmt->bind_param('isi', $logId, $merchantId, $orderIdInt);
+            $logStmt->execute();
+            $logRow = $logStmt->get_result()->fetch_assoc();
+            $logStmt->close();
+            if (!$logRow) {
+                merchantSendJson(false, null, 'Data pengantaran tidak ditemukan', 404);
+            }
+            if (($logRow['status'] ?? '') === 'delivered') {
+                $updated = merchantOrderQuery($conn, $merchantId, $id);
+                merchantSendJson(true, $updated[0] ?? $current[0], 'Pengantaran sudah selesai');
+            }
+            $deliveryDate = (string)($logRow['delivery_date'] ?? date('Y-m-d'));
+            if ($deliveryDate !== date('Y-m-d')) {
+                merchantSendJson(false, null, 'Hanya pengantaran hari ini yang bisa diselesaikan', 400);
+            }
+            $scheduledTime = trim((string)($logRow['scheduled_time'] ?? ''));
+            if (preg_match('/^\d{2}:\d{2}$/', $scheduledTime)) {
+                $scheduledAt = strtotime($deliveryDate . ' ' . $scheduledTime . ':00');
+                if ($scheduledAt !== false && time() < ($scheduledAt - (15 * 60))) {
+                    merchantSendJson(false, null, 'Pengantaran belum masuk waktunya. Tombol selesai aktif maksimal 15 menit sebelum jadwal.', 400);
+                }
+            }
+            $slotNumber = (int)($logRow['slot_number'] ?? 1);
+            if ($slotNumber > 1) {
+                $previousStmt = $conn->prepare("
+                    SELECT COUNT(*) AS total
+                    FROM catering_delivery_logs
+                    WHERE merchant_id = ?
+                      AND order_id = ?
+                      AND delivery_date = ?
+                      AND slot_number < ?
+                      AND status <> 'delivered'
+                ");
+                if (!$previousStmt) {
+                    merchantSendJson(false, null, 'Database error', 500);
+                }
+                $previousStmt->bind_param('sisi', $merchantId, $orderIdInt, $deliveryDate, $slotNumber);
+                $previousStmt->execute();
+                $previousRow = $previousStmt->get_result()->fetch_assoc();
+                $previousStmt->close();
+                if ((int)($previousRow['total'] ?? 0) > 0) {
+                    merchantSendJson(false, null, 'Pengantaran sebelumnya belum selesai. Selesaikan berurutan agar tidak ada pengiriman yang terlewat.', 400);
+                }
+            }
             $stmt = $conn->prepare("
                 UPDATE catering_delivery_logs
-                SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
+                SET status = 'delivered',
+                    delivered_at = NOW(),
+                    delivery_note = NULLIF(?, ''),
+                    delivery_photo_url = NULLIF(?, ''),
+                    updated_at = NOW()
                 WHERE id = ? AND merchant_id = ? AND order_id = ?
             ");
             if (!$stmt) {
                 merchantSendJson(false, null, 'Database error', 500);
             }
-            $orderIdInt = (int)($current[0]['id'] ?? 0);
-            $stmt->bind_param('isi', $logId, $merchantId, $orderIdInt);
+            $stmt->bind_param('ssisi', $deliveryNote, $deliveryPhotoUrl, $logId, $merchantId, $orderIdInt);
             $stmt->execute();
             $stmt->close();
 

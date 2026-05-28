@@ -587,14 +587,6 @@ class _MerchantCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    )
-                  else
-                    Positioned(
-                      top: 14,
-                      right: 14,
-                      child: RatingBadge(
-                        rating: merchant.rating,
-                      ),
                     ),
                 ],
               ),
@@ -625,6 +617,8 @@ class _MerchantCard extends StatelessWidget {
                         _DistanceSummary(merchant: merchant),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    _MerchantRatingSummary(merchant: merchant),
                     if (closed && merchant.openHours.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Row(
@@ -786,6 +780,34 @@ class _MerchantCard extends StatelessWidget {
       default:
         return Icons.storefront_rounded;
     }
+  }
+}
+
+class _MerchantRatingSummary extends StatelessWidget {
+  const _MerchantRatingSummary({required this.merchant});
+
+  final UserMerchant merchant;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 18),
+        const SizedBox(width: 4),
+        Text(
+          merchant.rating.toStringAsFixed(1),
+          style: const TextStyle(
+            color: UserTheme.text,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '(${merchant.reviewCount} ulasan merchant)',
+          style: const TextStyle(color: UserTheme.muted, fontSize: 12),
+        ),
+      ],
+    );
   }
 }
 

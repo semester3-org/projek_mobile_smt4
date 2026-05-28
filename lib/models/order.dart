@@ -1,3 +1,5 @@
+import '../core/indonesia_time.dart';
+
 /// Model untuk item dalam pesanan
 class OrderItem {
   final String name;
@@ -117,15 +119,24 @@ class Order {
     final items = itemsRaw
         .map((item) => OrderItem.fromJson(item as Map<String, dynamic>))
         .toList();
+    final deliveryAddress = json['deliveryAddress'] as String?;
+    final deliveryLongitude = (json['deliveryLongitude'] as num?)?.toDouble();
 
     return Order(
       id: json['id'] as String? ?? '',
       databaseId: json['databaseId'] as String?,
       merchantName: json['merchantName'] as String? ?? '',
       service: json['service'] as String? ?? '',
-      orderDate: DateTime.tryParse(json['orderDate'] as String? ?? '') ??
-          DateTime.now(),
-      deliveryDate: DateTime.tryParse(json['deliveryDate'] as String? ?? ''),
+      orderDate: IndonesiaTime.parse(
+        json['orderDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
+      deliveryDate: IndonesiaTime.tryParse(
+        json['deliveryDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0.0,
       status: json['status'] as String? ?? 'pending',
       items: items,
@@ -133,19 +144,28 @@ class Order {
       paymentMethod: json['paymentMethod'] as String?,
       paymentStatus: json['paymentStatus'] as String?,
       paymentStatusLabel: json['paymentStatusLabel'] as String?,
-      deliveryAddress: json['deliveryAddress'] as String?,
+      deliveryAddress: deliveryAddress,
       deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
-      deliveryLongitude: (json['deliveryLongitude'] as num?)?.toDouble(),
+      deliveryLongitude: deliveryLongitude,
       estimatedTime: json['estimatedTime'] as String?,
       midtransOrderId: json['midtransOrderId'] as String?,
       subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
-      subscriptionStartDate:
-          DateTime.tryParse(json['subscriptionStartDate'] as String? ?? ''),
-      subscriptionEndDate:
-          DateTime.tryParse(json['subscriptionEndDate'] as String? ?? ''),
+      subscriptionStartDate: IndonesiaTime.tryParse(
+        json['subscriptionStartDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
+      subscriptionEndDate: IndonesiaTime.tryParse(
+        json['subscriptionEndDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       subscriptionStatus: json['subscriptionStatus'] as String?,
-      cancellationRequestedAt:
-          DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
+      cancellationRequestedAt: IndonesiaTime.tryParse(
+        json['cancellationRequestedAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       canCancel: json['canCancel'] as bool? ?? true,
       merchantStatus: json['merchantStatus'] as String?,
       awaitingWeighing: json['awaitingWeighing'] as bool? ?? false,
@@ -154,7 +174,8 @@ class Order {
       paymentMethodLabel: json['paymentMethodLabel'] as String?,
       serviceEstimateLabel: json['serviceEstimateLabel'] as String?,
       subtotalAmount: (json['subtotalAmount'] as num?)?.toDouble() ?? 0,
-      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble() ?? 0,
+      promoDiscountAmount:
+          (json['promoDiscountAmount'] as num?)?.toDouble() ?? 0,
       promoName: json['promoName'] as String?,
       hasPromo: json['hasPromo'] as bool? ?? false,
       actualWeight: (json['actualWeight'] as num?)?.toDouble(),

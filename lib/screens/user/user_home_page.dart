@@ -7,9 +7,9 @@ import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/catering_subscriber.dart';
 import '../../models/user_dashboard.dart';
-import '../../widgets/catering_subscription_card.dart';
 import '../profile/billing_list_page.dart';
 import '../profile/notification_list_page.dart';
+import 'order_detail_page.dart';
 import 'user_catering_subscriptions_page.dart';
 import 'user_recommendations_page.dart';
 import 'user_theme.dart';
@@ -157,18 +157,17 @@ class _UserHomePageState extends State<UserHomePage> {
                   ),
                   const SizedBox(height: 22),
                   _BillingHero(dashboard: _dashboard!),
+                  const SizedBox(height: 14),
+                  const _HomeCateringSubscriptions(),
                   const SizedBox(height: 28),
                   const UserSectionHeader(title: 'Layanan Utama'),
                   const SizedBox(height: 14),
                   _ServiceGrid(onSelectTab: widget.onSelectTab),
                   const SizedBox(height: 22),
-                  if (_dashboard!.announcementTitle.trim().isNotEmpty)
-                    ...[
-                      _AnnouncementCard(dashboard: _dashboard!),
-                      const SizedBox(height: 28),
-                    ],
-                  const _HomeCateringSubscriptions(),
-                  const SizedBox(height: 28),
+                  if (_dashboard!.announcementTitle.trim().isNotEmpty) ...[
+                    _AnnouncementCard(dashboard: _dashboard!),
+                    const SizedBox(height: 28),
+                  ],
                   UserSectionHeader(
                     title: 'Rekomendasi Menu',
                     actionLabel: 'Lihat Semua',
@@ -223,7 +222,7 @@ class _BillingHero extends StatelessWidget {
                 child: Text(
                   'TAGIHAN AKTIF',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.76),
+                    color: Colors.white.withValues(alpha: 0.76),
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.7,
                   ),
@@ -231,7 +230,7 @@ class _BillingHero extends StatelessWidget {
               ),
               Icon(
                 Icons.account_balance_wallet_outlined,
-                color: Colors.white.withOpacity(0.68),
+                color: Colors.white.withValues(alpha: 0.68),
               ),
             ],
           ),
@@ -264,7 +263,7 @@ class _BillingHero extends StatelessWidget {
             child: LinearProgressIndicator(
               value: dashboard.billProgress.clamp(0, 1).toDouble(),
               minHeight: 4,
-              backgroundColor: Colors.white.withOpacity(0.22),
+              backgroundColor: Colors.white.withValues(alpha: 0.22),
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
             ),
           ),
@@ -275,10 +274,10 @@ class _BillingHero extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context)
                     .push<bool>(
-                      MaterialPageRoute<bool>(
-                        builder: (_) => const BillingListPage(),
-                      ),
-                    )
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const BillingListPage(),
+                  ),
+                )
                     .then((changed) {
                   if (changed == true) {
                     UserRepository.requestProfileRefresh();
@@ -329,10 +328,10 @@ class _ServiceGrid extends StatelessWidget {
           onTap: () {
             Navigator.of(context)
                 .push<bool>(
-                  MaterialPageRoute<bool>(
-                    builder: (_) => const BillingListPage(),
-                  ),
-                )
+              MaterialPageRoute<bool>(
+                builder: (_) => const BillingListPage(),
+              ),
+            )
                 .then((changed) {
               if (changed == true) {
                 UserRepository.requestProfileRefresh();
@@ -553,7 +552,8 @@ class _HomeCateringSubscriptions extends StatefulWidget {
       _HomeCateringSubscriptionsState();
 }
 
-class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> {
+class _HomeCateringSubscriptionsState
+    extends State<_HomeCateringSubscriptions> {
   List<CateringSubscriber> _active = [];
 
   @override
@@ -563,8 +563,7 @@ class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> 
   }
 
   Future<void> _load() async {
-    final result =
-        await UserRepository.getCateringSubscriptions(status: 'all');
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
     if (!mounted) return;
     final items = (result.data ?? [])
         .where((s) =>
@@ -581,25 +580,210 @@ class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        UserSectionHeader(
-          title: 'Paket Catering Aktif',
-          actionLabel: 'Lihat Semua',
-          onAction: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const UserCateringSubscriptionsPage(),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
         ..._active.map(
           (s) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: CateringSubscriptionCard(subscription: s, compact: true),
+            child: _CateringActiveHero(subscription: s),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CateringActiveHero extends StatelessWidget {
+  const _CateringActiveHero({required this.subscription});
+
+  final CateringSubscriber subscription;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = subscription.productName.isNotEmpty
+        ? subscription.productName
+        : subscription.packageLabel;
+    final status = subscription.subscriptionStatus.toLowerCase();
+    final statusLabel = switch (status) {
+      'active' => 'AKTIF',
+      'pending' => 'MENUNGGU PERSETUJUAN',
+      'pending_payment' => 'MENUNGGU BAYAR',
+      'cancel_requested' => 'AKTIF - BATAL BULAN DEPAN',
+      _ => status.toUpperCase(),
+    };
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: subscription.orderId.isEmpty
+            ? null
+            : () async {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
+                final result =
+                    await UserRepository.getOrderDetail(subscription.orderId);
+                if (!context.mounted) return;
+                if (!result.isSuccess || result.data == null) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result.error ?? 'Gagal memuat detail langganan',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                navigator.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => UserOrderDetailPage(order: result.data!),
+                  ),
+                );
+              },
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBF6),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFFFD8B8)),
+            boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'PAKET CATERING AKTIF',
+                      style: TextStyle(
+                        color: Color(0xFFB85F00),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const UserCateringSubscriptionsPage(),
+                        ),
+                      );
+                    },
+                    child: const Text('Lihat Semua'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: UserTheme.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subscription.merchantName,
+                style: const TextStyle(color: UserTheme.muted),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _CateringHeroPill(
+                    icon: Icons.restaurant_rounded,
+                    text: subscription.packageLabel,
+                  ),
+                  const SizedBox(width: 8),
+                  _CateringHeroPill(
+                    icon: Icons.verified_rounded,
+                    text: statusLabel,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.date_range_outlined,
+                    size: 17,
+                    color: Color(0xFFB85F00),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_fmt(subscription.startDate)} - ${_fmt(subscription.endDate)}',
+                      style: const TextStyle(
+                        color: UserTheme.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatUserCurrency(subscription.totalAmount),
+                    style: const TextStyle(
+                      color: Color(0xFFB85F00),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmt(String? raw) {
+    if (raw == null || raw.isEmpty) return '-';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return raw;
+    return formatShortDate(date);
+  }
+}
+
+class _CateringHeroPill extends StatelessWidget {
+  const _CateringHeroPill({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFFFE3C7)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: const Color(0xFFB85F00)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF8A4A00),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -54,6 +54,18 @@ function merchantConstraintExists(mysqli $conn, string $table, string $constrain
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function merchantIndexExists(mysqli $conn, string $table, string $index): bool {
+    $stmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?'
+    );
+    if (!$stmt) return false;
+    $stmt->bind_param('ss', $table, $index);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
 function merchantAddForeignKey(mysqli $conn, string $table, string $constraint, string $definition): void {
     if (!merchantTableExists($conn, $table) || merchantConstraintExists($conn, $table, $constraint)) {
         return;
@@ -63,6 +75,18 @@ function merchantAddForeignKey(mysqli $conn, string $table, string $constraint, 
         @$conn->query("ALTER TABLE `$table` ADD CONSTRAINT `$constraint` $definition");
     } catch (Throwable $e) {
         // Existing installs may contain older data; schema setup should keep the app usable.
+    }
+}
+
+function merchantAddIndex(mysqli $conn, string $table, string $index, string $definition): void {
+    if (!merchantTableExists($conn, $table) || merchantIndexExists($conn, $table, $index)) {
+        return;
+    }
+
+    try {
+        @$conn->query("ALTER TABLE `$table` ADD INDEX `$index` ($definition)");
+    } catch (Throwable $e) {
+        // Index setup must not block app usage on older MySQL installs.
     }
 }
 
@@ -112,6 +136,27 @@ function merchantAddColumn(mysqli $conn, string $table, string $column, string $
             throw new Exception("Gagal menyiapkan kolom $table.$column: " . $conn->error);
         }
     }
+}
+
+function merchantEnsurePerformanceIndexes(mysqli $conn): void {
+    merchantAddIndex($conn, 'merchants', 'idx_merchants_type_status_updated', '`merchant_type`, `status`, `updated_at`');
+    merchantAddIndex($conn, 'laundry_places', 'idx_laundry_places_merchant', '`merchant_id`');
+    merchantAddIndex($conn, 'catering_places', 'idx_catering_places_merchant', '`merchant_id`');
+    merchantAddIndex($conn, 'products', 'idx_products_merchant_active_updated', '`merchant_id`, `is_active`, `updated_at`, `id`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_merchant_status_payment', '`merchant_id`, `status`, `payment_status`, `created_at`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_merchant_service_subs', '`merchant_id`, `service_type`, `subscription_start_date`, `subscription_end_date`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_user_service_status_payment', '`user_id`, `service_type`, `status`, `payment_status`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_extension_status', '`extension_parent_order_id`, `status`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_midtrans', '`midtrans_order_id`');
+    merchantAddIndex($conn, 'order_items', 'idx_order_items_order_product', '`order_id`, `product_id`');
+    merchantAddIndex($conn, 'catering_subscribers', 'idx_subscribers_user_status_dates', '`user_id`, `subscription_status`, `start_date`, `end_date`');
+    merchantAddIndex($conn, 'catering_subscribers', 'idx_subscribers_merchant_status_dates', '`merchant_id`, `subscription_status`, `start_date`, `end_date`');
+    merchantAddIndex($conn, 'merchant_reviews', 'idx_reviews_merchant_deleted_rating', '`merchant_id`, `deleted_at`, `rating`');
+    merchantAddIndex($conn, 'merchant_reviews', 'idx_reviews_product_deleted_rating', '`product_id`, `deleted_at`, `rating`');
+    merchantAddIndex($conn, 'merchant_promos', 'idx_promos_merchant_active_window', '`merchant_id`, `is_active`, `start_at`, `end_at`');
+    merchantAddIndex($conn, 'catering_delivery_logs', 'idx_delivery_merchant_date_status', '`merchant_id`, `delivery_date`, `status`');
+    merchantAddIndex($conn, 'catering_delivery_logs', 'idx_delivery_order_date_status', '`order_id`, `delivery_date`, `status`');
+    merchantAddIndex($conn, 'app_notifications', 'idx_notifications_user_created', '`user_id`, `created_at`');
 }
 
 function merchantEnsureSchema(mysqli $conn): void {
@@ -480,6 +525,8 @@ function merchantEnsureSchema(mysqli $conn): void {
                 scheduled_time VARCHAR(5) NOT NULL,
                 status ENUM('pending','delivered') NOT NULL DEFAULT 'pending',
                 delivered_at DATETIME DEFAULT NULL,
+                delivery_note TEXT DEFAULT NULL,
+                delivery_photo_url LONGTEXT DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
@@ -489,6 +536,10 @@ function merchantEnsureSchema(mysqli $conn): void {
                 KEY idx_catering_delivery_status (status)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+    }
+    if (merchantTableExists($conn, 'catering_delivery_logs')) {
+        merchantAddColumn($conn, 'catering_delivery_logs', 'delivery_note', "`delivery_note` TEXT DEFAULT NULL");
+        merchantAddColumn($conn, 'catering_delivery_logs', 'delivery_photo_url', "`delivery_photo_url` LONGTEXT DEFAULT NULL");
     }
     merchantRepairCateringDeliveryLogDates($conn);
 
@@ -596,6 +647,8 @@ function merchantEnsureSchema(mysqli $conn): void {
         SET order_code = CONCAT('SR-', UPPER(COALESCE(service_type, 'ORDER')), '-', LPAD(id, 6, '0'))
         WHERE order_code IS NULL OR order_code = ''
     ");
+
+    merchantEnsurePerformanceIndexes($conn);
 }
 
 function merchantExpireFinishedCateringSubscriptions(mysqli $conn): void {
@@ -951,7 +1004,8 @@ function merchantCateringDeliveryMilestones(mysqli $conn, int $orderId, ?string 
     if (!merchantTableExists($conn, 'catering_delivery_logs')) return [];
     $deliveryDate = $date ?: date('Y-m-d');
     $stmt = $conn->prepare("
-        SELECT id, delivery_date, slot_number, scheduled_time, status, delivered_at
+        SELECT id, delivery_date, slot_number, scheduled_time, status, delivered_at,
+               delivery_note, delivery_photo_url
         FROM catering_delivery_logs
         WHERE order_id = ? AND delivery_date = ?
         ORDER BY slot_number ASC
@@ -968,6 +1022,8 @@ function merchantCateringDeliveryMilestones(mysqli $conn, int $orderId, ?string 
         'scheduledTime' => $row['scheduled_time'] ?? '',
         'status' => $row['status'] ?? 'pending',
         'deliveredAt' => !empty($row['delivered_at']) ? date(DATE_ATOM, strtotime($row['delivered_at'])) : null,
+        'deliveryNote' => $row['delivery_note'] ?? '',
+        'deliveryPhotoUrl' => $row['delivery_photo_url'] ?? '',
     ], $rows);
 }
 
@@ -1837,7 +1893,8 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
     $code = $row['order_code'] ?? ('SR-ORDER-' . str_pad((string)$orderId, 6, '0', STR_PAD_LEFT));
     $status = $row['status'] ?? 'pending';
     $serviceType = $row['service_type'] ?? $row['merchant_type'] ?? 'laundry';
-    $firstItem = $items[0]['name'] ?? ($serviceType === 'laundry' ? 'Layanan Laundry' : 'Paket Catering');
+    $firstItem = $items[0]['name'] ??
+        ($row['first_product_name'] ?? ($serviceType === 'laundry' ? 'Layanan Laundry' : 'Paket Catering'));
     $deliveryMilestones = $serviceType === 'catering'
         ? merchantCateringDeliveryMilestones($conn, $orderId)
         : [];
@@ -1993,7 +2050,15 @@ function merchantOrderQuery(mysqli $conn, string $merchantId, ?string $id = null
     $sql = "
         SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), u.display_name) AS customer_name, u.email AS customer_email,
                COALESCE(NULLIF(o.customer_phone, ''), " . ($hasUserPhone ? "u.phone" : "NULL") . ") AS customer_phone,
-               m.merchant_type
+               m.merchant_type,
+               (
+                   SELECT p.nama_produk
+                   FROM order_items oi
+                   LEFT JOIN products p ON p.id = oi.product_id
+                   WHERE oi.order_id = o.id
+                   ORDER BY oi.id ASC
+                   LIMIT 1
+               ) AS first_product_name
         FROM orders o
         INNER JOIN users u ON u.id = o.user_id
         INNER JOIN merchants m ON m.id = o.merchant_id
@@ -2011,7 +2076,8 @@ function merchantOrderQuery(mysqli $conn, string $merchantId, ?string $id = null
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 
-    return array_map(fn($row) => merchantOrderPayload($conn, $row), $rows);
+    $withItems = $id !== null && $id !== '';
+    return array_map(fn($row) => merchantOrderPayload($conn, $row, $withItems), $rows);
 }
 
 function merchantPromoPayload(array $row): array {

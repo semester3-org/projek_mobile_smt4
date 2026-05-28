@@ -8,15 +8,27 @@ import 'kos_repository.dart' show RepoResult;
 class MerchantRepository {
   MerchantRepository._();
 
+  static const Duration _shortCacheTtl = Duration(seconds: 3);
+  static _DashboardCacheEntry? _dashboardCache;
+  static final Map<String, _MerchantOrdersCacheEntry> _ordersCache = {};
+
   static Future<RepoResult<MerchantDashboard>> getDashboard() async {
+    final cached = _dashboardCache;
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) < _shortCacheTtl) {
+      return RepoResult.ok(cached.dashboard);
+    }
+
     final res = await ApiService.get('api/merchant_dashboard');
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memuat dashboard');
     }
     try {
-      return RepoResult.ok(
-        MerchantDashboard.fromJson(res.data!['data'] as Map<String, dynamic>),
+      final dashboard = MerchantDashboard.fromJson(
+        res.data!['data'] as Map<String, dynamic>,
       );
+      _dashboardCache = _DashboardCacheEntry(dashboard, DateTime.now());
+      return RepoResult.ok(dashboard);
     } catch (e) {
       return RepoResult.fail('Gagal membaca dashboard: $e');
     }
@@ -29,6 +41,12 @@ class MerchantRepository {
     final params = <String, String>{};
     if (status != null && status.isNotEmpty) params['status'] = status;
     if (search != null && search.isNotEmpty) params['search'] = search;
+    final cacheKey = '${status ?? ''}:${search ?? ''}';
+    final cached = _ordersCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) < _shortCacheTtl) {
+      return RepoResult.ok(List<MerchantOrder>.of(cached.orders));
+    }
 
     final res = await ApiService.get(
       'api/merchant_orders',
@@ -41,6 +59,10 @@ class MerchantRepository {
       final data = (res.data!['data'] as List)
           .map((item) => MerchantOrder.fromJson(item as Map<String, dynamic>))
           .toList();
+      _ordersCache[cacheKey] = _MerchantOrdersCacheEntry(
+        List<MerchantOrder>.of(data),
+        DateTime.now(),
+      );
       return RepoResult.ok(data);
     } catch (e) {
       return RepoResult.fail('Gagal membaca pesanan: $e');
@@ -73,6 +95,7 @@ class MerchantRepository {
     double? laundryTotalAmount,
     String? deliveryLogId,
   }) async {
+    _clearOrderCaches();
     final res = await ApiService.put('api/merchant_orders', {
       'id': id,
       if (status != null) 'status': status,
@@ -88,6 +111,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui pesanan');
     }
     try {
+      _clearOrderCaches();
       return RepoResult.ok(
         MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -99,16 +123,22 @@ class MerchantRepository {
   static Future<RepoResult<MerchantOrder>> completeCateringDelivery({
     required String orderId,
     required String deliveryLogId,
+    String deliveryNote = '',
+    String deliveryPhotoUrl = '',
   }) async {
+    _clearOrderCaches();
     final res = await ApiService.put('api/merchant_orders', {
       'id': orderId,
       'action': 'complete_delivery',
       'deliveryLogId': deliveryLogId,
+      'deliveryNote': deliveryNote,
+      'deliveryPhotoUrl': deliveryPhotoUrl,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menyelesaikan pengantaran');
     }
     try {
+      _clearOrderCaches();
       return RepoResult.ok(
         MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -121,6 +151,7 @@ class MerchantRepository {
     required String orderId,
     required String reason,
   }) async {
+    _clearOrderCaches();
     final res = await ApiService.put('api/merchant_orders', {
       'id': orderId,
       'action': 'reject_order',
@@ -130,12 +161,18 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menolak pesanan');
     }
     try {
+      _clearOrderCaches();
       return RepoResult.ok(
         MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
     } catch (e) {
       return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
     }
+  }
+
+  static void _clearOrderCaches() {
+    _ordersCache.clear();
+    _dashboardCache = null;
   }
 
   static Future<RepoResult<List<MerchantProduct>>> getProducts() async {
@@ -189,6 +226,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menyimpan produk');
     }
     try {
+      _dashboardCache = null;
       return RepoResult.ok(
         MerchantProduct.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -205,6 +243,7 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menghapus produk');
     }
+    _dashboardCache = null;
     return const RepoResult.ok(true);
   }
 
@@ -289,6 +328,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menyimpan promo');
     }
     try {
+      _dashboardCache = null;
       return RepoResult.ok(
         MerchantPromo.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -305,6 +345,7 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menonaktifkan promo');
     }
+    _dashboardCache = null;
     return const RepoResult.ok(true);
   }
 
@@ -390,6 +431,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui profil');
     }
     try {
+      _dashboardCache = null;
       return RepoResult.ok(
         MerchantProfile.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -577,4 +619,18 @@ class MerchantRepository {
     }
     return const RepoResult.ok(true);
   }
+}
+
+class _DashboardCacheEntry {
+  const _DashboardCacheEntry(this.dashboard, this.createdAt);
+
+  final MerchantDashboard dashboard;
+  final DateTime createdAt;
+}
+
+class _MerchantOrdersCacheEntry {
+  const _MerchantOrdersCacheEntry(this.orders, this.createdAt);
+
+  final List<MerchantOrder> orders;
+  final DateTime createdAt;
 }

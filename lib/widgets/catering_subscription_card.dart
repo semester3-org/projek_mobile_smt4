@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../data/repositories/user_repository.dart';
 import '../models/catering_subscriber.dart';
-import '../models/order.dart';
 import '../screens/user/order_detail_page.dart';
 import '../screens/user/user_theme.dart';
 import '../screens/user/user_widgets.dart';
@@ -39,43 +39,28 @@ class CateringSubscriptionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: subscription.orderId.isEmpty
             ? null
-            : () {
-                Navigator.of(context).push(
+            : () async {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
+                final result =
+                    await UserRepository.getOrderDetail(subscription.orderId);
+                if (!context.mounted) return;
+
+                if (!result.isSuccess || result.data == null) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result.error ?? 'Gagal memuat detail pesanan',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                navigator.push(
                   MaterialPageRoute<void>(
                     builder: (_) => UserOrderDetailPage(
-                      order: Order(
-                        id: subscription.orderCode.isNotEmpty
-                            ? subscription.orderCode
-                            : subscription.orderId,
-                        databaseId: subscription.orderId,
-                        merchantName: subscription.merchantName,
-                        service: 'catering',
-                        orderDate: DateTime.tryParse(
-                                subscription.startDate ?? '') ??
-                            DateTime.now(),
-                        totalAmount: subscription.totalAmount,
-                        status: isActive ? 'confirmed' : 'completed',
-                        items: [
-                          OrderItem(
-                            name: subscription.productName.isNotEmpty
-                                ? subscription.productName
-                                : subscription.packageLabel,
-                            description: subscription.productDescription,
-                            quantity: 1,
-                            price: subscription.totalAmount,
-                            subtotal: subscription.totalAmount,
-                          ),
-                        ],
-                        subscriptionDays: subscription.packageType
-                                .contains('20')
-                            ? 20
-                            : 30,
-                        subscriptionStartDate: DateTime.tryParse(
-                            subscription.startDate ?? ''),
-                        subscriptionEndDate:
-                            DateTime.tryParse(subscription.endDate ?? ''),
-                        subscriptionStatus: subscription.subscriptionStatus,
-                      ),
+                      order: result.data!,
                     ),
                   ),
                 );

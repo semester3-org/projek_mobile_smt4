@@ -78,7 +78,7 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     if (!mounted) return;
     if (result.isSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Status promo diperbarui')),
+        const SnackBar(content: Text('Status promo diperbarui')),
       );
       _load();
     } else {
@@ -744,8 +744,11 @@ class _PromoFormState extends State<_PromoForm> {
                           value: checked,
                           onChanged: (value) {
                             setModalState(() {
-                              if (value == true) draft.add(product.id);
-                              else draft.remove(product.id);
+                              if (value == true) {
+                                draft.add(product.id);
+                              } else {
+                                draft.remove(product.id);
+                              }
                             });
                           },
                           title: Text(product.name),
@@ -867,7 +870,7 @@ class _PromoFormState extends State<_PromoForm> {
             ),
             const SizedBox(height: 18),
             
-            _SectionTitle('SECTION 1 — INFORMASI PROMO'),
+            const _SectionTitle('SECTION 1 — INFORMASI PROMO'),
             _Input(
               controller: _nameCtrl, 
               label: 'Nama Promo', 
@@ -881,7 +884,7 @@ class _PromoFormState extends State<_PromoForm> {
             ),
             const SizedBox(height: 24),
             
-            _SectionTitle('SECTION 2 — TARGET PRODUK'),
+            const _SectionTitle('SECTION 2 — TARGET PRODUK'),
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(value: true, label: Text('Semua Produk')),
@@ -912,7 +915,7 @@ class _PromoFormState extends State<_PromoForm> {
             ],
             const SizedBox(height: 24),
             
-            _SectionTitle('SECTION 3 — JENIS DISKON'),
+            const _SectionTitle('SECTION 3 — JENIS DISKON'),
             DropdownButtonFormField<String>(
               initialValue: _discountType,
               items: const [
@@ -986,7 +989,7 @@ class _PromoFormState extends State<_PromoForm> {
               ),
             const SizedBox(height: 24),
             
-            _SectionTitle('SECTION 4 — USAGE SETTINGS'),
+            const _SectionTitle('SECTION 4 — USAGE SETTINGS'),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1016,7 +1019,7 @@ class _PromoFormState extends State<_PromoForm> {
             ),
             const SizedBox(height: 24),
             
-            _SectionTitle('SECTION 5 — PERIODE PROMO'),
+            const _SectionTitle('SECTION 5 — PERIODE PROMO'),
             Row(
               children: [
                 Expanded(
@@ -1043,7 +1046,7 @@ class _PromoFormState extends State<_PromoForm> {
               ),
             const SizedBox(height: 24),
             
-            _SectionTitle('SECTION 6 — PREVIEW OTOMATIS'),
+            const _SectionTitle('SECTION 6 — PREVIEW OTOMATIS'),
             _PromoRealtimePreview(
               discountType: _discountType,
               discountValue: _discountValue,
@@ -1171,7 +1174,7 @@ class _PromoRealtimePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtotal = 150000.0; // Fixed default per requirements
+    const subtotal = 150000.0; // Fixed default per requirements
     double discount = 0;
     
     if (previewData != null) {
@@ -1187,9 +1190,9 @@ class _PromoRealtimePreview extends StatelessWidget {
     final total = subtotal - discount;
 
     if (discountValue <= 0) {
-      return MerchantCard(
+      return const MerchantCard(
         color: MerchantPalette.softBlue,
-        child: const Center(
+        child: Center(
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text(
@@ -1211,7 +1214,7 @@ class _PromoRealtimePreview extends StatelessWidget {
             const LinearProgressIndicator(minHeight: 3),
             const SizedBox(height: 10),
           ],
-          Text('Total Belanja: Rp150.000'),
+          const Text('Total Belanja: Rp150.000'),
           Text('Potongan Promo: ${formatMerchantCurrency(discount)}'),
           const Divider(height: 16),
           Text(

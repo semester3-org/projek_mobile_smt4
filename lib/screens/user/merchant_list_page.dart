@@ -33,7 +33,31 @@ class _MerchantListPageState extends State<MerchantListPage> {
   Set<String> _favoriteKeys = {};
   bool _loading = true;
   String _selectedFilter = 'Semua';
+  String _selectedPackageCategory = 'Semua kategori';
+  String _selectedDeliveryType = 'Semua tipe';
   bool _locationUnavailable = false;
+
+  bool get _isCatering => widget.type == 'catering';
+
+  List<String> get _packageCategoryOptions {
+    final categories = <String>{};
+    for (final merchant in _merchants) {
+      for (final item in merchant.menuItems) {
+        final category = item.category.trim();
+        if (category.isNotEmpty) categories.add(category);
+      }
+    }
+    final sorted = categories.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return ['Semua kategori', ...sorted];
+  }
+
+  List<String> get _deliveryTypeOptions => const [
+        'Semua tipe',
+        'Full Day',
+        'Weekday',
+        'Keduanya',
+      ];
 
   List<String> get _serviceCategoryFilters {
     final categorySet = <String>{};
@@ -95,6 +119,11 @@ class _MerchantListPageState extends State<MerchantListPage> {
 
   List<UserMerchant> get _filteredMerchants {
     final keyword = _searchCtrl.text.trim().toLowerCase();
+    final effectiveCategory = _packageCategoryOptions.contains(
+      _selectedPackageCategory,
+    )
+        ? _selectedPackageCategory
+        : 'Semua kategori';
     final items = _merchants.where((merchant) {
       final matchesSearch = keyword.isEmpty ||
           merchant.name.toLowerCase().contains(keyword) ||
@@ -102,9 +131,25 @@ class _MerchantListPageState extends State<MerchantListPage> {
           merchant.tags.any((tag) => tag.toLowerCase().contains(keyword));
 
       if (!matchesSearch) return false;
+
+      if (_isCatering) {
+        if (effectiveCategory != 'Semua kategori' &&
+            !merchant.menuItems.any(
+              (item) =>
+                  item.category.toLowerCase() ==
+                  effectiveCategory.toLowerCase(),
+            )) {
+          return false;
+        }
+        if (!_matchesDeliveryType(merchant)) {
+          return false;
+        }
+      }
+
       if (_selectedFilter == 'Semua' ||
           _selectedFilter == 'Terdekat' ||
-          _selectedFilter == 'Terpopuler') {
+          _selectedFilter == 'Terpopuler' ||
+          _selectedFilter == 'Rating Tertinggi') {
         return true;
       }
       return merchant.tags.any(
@@ -121,13 +166,35 @@ class _MerchantListPageState extends State<MerchantListPage> {
       });
     } else if (_selectedFilter == 'Terpopuler') {
       items.sort((a, b) {
+        final reviews = b.reviewCount.compareTo(a.reviewCount);
+        if (reviews != 0) return reviews;
         final rating = b.rating.compareTo(a.rating);
         if (rating != 0) return rating;
+        return a.distanceKm.compareTo(b.distanceKm);
+      });
+    } else if (_selectedFilter == 'Rating Tertinggi') {
+      items.sort((a, b) {
+        final rating = b.rating.compareTo(a.rating);
+        if (rating != 0) return rating;
+        final reviews = b.reviewCount.compareTo(a.reviewCount);
+        if (reviews != 0) return reviews;
         return a.distanceKm.compareTo(b.distanceKm);
       });
     }
 
     return items;
+  }
+
+  bool _matchesDeliveryType(UserMerchant merchant) {
+    if (_selectedDeliveryType == 'Semua tipe') return true;
+    final hasFullDay = merchant.menuItems.any((item) => item.price > 0);
+    final hasWeekday = merchant.menuItems.any((item) => item.hasWeekdayPrice);
+    return switch (_selectedDeliveryType) {
+      'Full Day' => hasFullDay,
+      'Weekday' => hasWeekday,
+      'Keduanya' => hasFullDay && hasWeekday,
+      _ => true,
+    };
   }
 
   Future<void> _openDetail(UserMerchant merchant) async {
@@ -230,8 +297,28 @@ class _MerchantListPageState extends State<MerchantListPage> {
                       }).toList(),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (_serviceCategoryFilters.length > 1) ...[
+                  if (_isCatering) ...[
+                    const SizedBox(height: 14),
+                    _CateringPackageFilters(
+                      categories: _packageCategoryOptions,
+                      deliveryTypes: _deliveryTypeOptions,
+                      selectedCategory: _packageCategoryOptions.contains(
+                        _selectedPackageCategory,
+                      )
+                          ? _selectedPackageCategory
+                          : 'Semua kategori',
+                      selectedDeliveryType: _selectedDeliveryType,
+                      onCategoryChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _selectedPackageCategory = value);
+                      },
+                      onDeliveryTypeChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _selectedDeliveryType = value);
+                      },
+                    ),
+                  ] else if (_serviceCategoryFilters.length > 1) ...[
+                    const SizedBox(height: 12),
                     const Text(
                       'Kategori Layanan',
                       style: TextStyle(
@@ -247,14 +334,14 @@ class _MerchantListPageState extends State<MerchantListPage> {
                           return UserFilterChip(
                             label: filter,
                             selected: _selectedFilter == filter,
-                            onTap: () => setState(() => _selectedFilter = filter),
+                            onTap: () =>
+                                setState(() => _selectedFilter = filter),
                           );
                         }).toList(),
                       ),
                     ),
-                    const SizedBox(height: 22),
-                  ] else
-                    const SizedBox(height: 22),
+                  ],
+                  const SizedBox(height: 22),
                   if (filtered.isEmpty)
                     _EmptyMerchantState(type: widget.type)
                   else
@@ -275,6 +362,134 @@ class _MerchantListPageState extends State<MerchantListPage> {
                 ],
               ),
       ),
+    );
+  }
+}
+
+class _CateringPackageFilters extends StatelessWidget {
+  const _CateringPackageFilters({
+    required this.categories,
+    required this.deliveryTypes,
+    required this.selectedCategory,
+    required this.selectedDeliveryType,
+    required this.onCategoryChanged,
+    required this.onDeliveryTypeChanged,
+  });
+
+  final List<String> categories;
+  final List<String> deliveryTypes;
+  final String selectedCategory;
+  final String selectedDeliveryType;
+  final ValueChanged<String?> onCategoryChanged;
+  final ValueChanged<String?> onDeliveryTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8F2)),
+        boxShadow: [UserTheme.softShadow(opacity: 0.035)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                size: 19,
+                color: UserTheme.primary,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Filter Paket',
+                style: TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _FilterDropdown(
+                  value: selectedCategory,
+                  values: categories,
+                  icon: Icons.category_outlined,
+                  onChanged: onCategoryChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FilterDropdown(
+                  value: selectedDeliveryType,
+                  values: deliveryTypes,
+                  icon: Icons.delivery_dining_outlined,
+                  onChanged: onDeliveryTypeChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterDropdown extends StatelessWidget {
+  const _FilterDropdown({
+    required this.value,
+    required this.values,
+    required this.icon,
+    required this.onChanged,
+  });
+
+  final String value;
+  final List<String> values;
+  final IconData icon;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveValue = values.contains(value) ? value : values.first;
+    return DropdownButtonFormField<String>(
+      initialValue: effectiveValue,
+      isExpanded: true,
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, size: 18),
+        filled: true,
+        fillColor: const Color(0xFFF7F9FC),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+      ),
+      items: values
+          .map(
+            (item) => DropdownMenuItem<String>(
+              value: item,
+              child: Text(
+                item,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: UserTheme.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
     );
   }
 }

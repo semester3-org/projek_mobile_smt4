@@ -34,20 +34,28 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
 
   List<String> get _filters => widget.isLaundry
       ? const ['Semua', 'Pending', 'Diproses', 'Selesai']
-      : const ['Semua', 'Pending', 'Disetujui', 'Selesai'];
+      : const [
+          'Semua',
+          'Pending',
+          'Menunggu Bayar',
+          'Pengantaran Hari Ini',
+          'Selesai'
+        ];
 
   @override
   void initState() {
     super.initState();
     _load();
     RealtimeService().startMerchantOrdersPolling();
-    RealtimeService().addEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService()
+        .addEventListener('merchant_order_updated', _silentRefresh);
     RealtimeService().addEventListener('dashboard_updated', _silentRefresh);
   }
 
   @override
   void dispose() {
-    RealtimeService().removeEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService()
+        .removeEventListener('merchant_order_updated', _silentRefresh);
     RealtimeService().removeEventListener('dashboard_updated', _silentRefresh);
     RealtimeService().stopMerchantOrdersPolling();
     _debounce?.cancel();
@@ -81,8 +89,10 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
       case 1:
         return 'pending';
       case 2:
-        return 'processing';
+        return widget.isLaundry ? 'processing' : 'waiting_payment';
       case 3:
+        return widget.isLaundry ? 'done' : 'today_delivery';
+      case 4:
         return 'done';
       default:
         return null;
@@ -114,6 +124,57 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
       });
     } else if (result.isSuccess) {
       _load(silent: true);
+    }
+  }
+
+  Future<void> _completeDelivery(
+    MerchantOrder order,
+    MerchantDeliveryMilestone milestone,
+  ) async {
+    final result = await MerchantRepository.completeCateringDelivery(
+      orderId: order.id,
+      deliveryLogId: milestone.id,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.isSuccess
+            ? 'Pengantaran ${milestone.scheduledTime} selesai'
+            : result.error ?? 'Gagal menyelesaikan pengantaran'),
+      ),
+    );
+    if (result.isSuccess && result.data != null) {
+      setState(() {
+        final idx = _orders.indexWhere((o) => o.id == order.id);
+        if (idx >= 0) _orders[idx] = result.data!;
+      });
+      await _load(silent: true);
+    }
+  }
+
+  Future<void> _rejectOrder(MerchantOrder order) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => const _RejectOrderDialog(),
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+    final result = await MerchantRepository.rejectOrder(
+      orderId: order.id,
+      reason: reason.trim(),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.isSuccess
+            ? 'Pesanan ${order.code} ditolak'
+            : result.error ?? 'Gagal menolak pesanan'),
+      ),
+    );
+    if (result.isSuccess && result.data != null) {
+      setState(() {
+        final idx = _orders.indexWhere((o) => o.id == order.id);
+        if (idx >= 0) _orders[idx] = result.data!;
+      });
     }
   }
 
@@ -200,9 +261,22 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
               padding: const EdgeInsets.only(bottom: 18),
               child: _MerchantOrderCard(
                 order: order,
-                onProcess: order.statusGroup == 'done' || !order.canApprove
+                onProcess: order.statusGroup == 'done' ||
+                        order.statusGroup == 'cancelled' ||
+                        (!widget.isLaundry &&
+                            order.statusGroup == 'waiting_payment') ||
+                        (!widget.isLaundry &&
+                            order.statusGroup == 'today_delivery') ||
+                        !order.canApprove
                     ? null
                     : () => _process(order),
+                onCompleteDelivery: (milestone) =>
+                    _completeDelivery(order, milestone),
+                onReject: order.serviceType == 'catering' &&
+                        order.status == 'pending' &&
+                        order.statusGroup != 'cancelled'
+                    ? () => _rejectOrder(order)
+                    : null,
                 onDetail: () => _openDetail(order),
               ),
             ),
@@ -217,11 +291,15 @@ class _MerchantOrderCard extends StatelessWidget {
   const _MerchantOrderCard({
     required this.order,
     required this.onDetail,
+    required this.onCompleteDelivery,
+    this.onReject,
     this.onProcess,
   });
 
   final MerchantOrder order;
   final VoidCallback onDetail;
+  final ValueChanged<MerchantDeliveryMilestone> onCompleteDelivery;
+  final VoidCallback? onReject;
   final VoidCallback? onProcess;
 
   @override
@@ -295,6 +373,14 @@ class _MerchantOrderCard extends StatelessWidget {
               if (order.paymentStatusLabel.isNotEmpty) order.paymentStatusLabel,
             ].join(' · '),
           ),
+          if (order.serviceType == 'catering' &&
+              order.deliveryMilestones.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _DeliveryMilestones(
+              milestones: order.deliveryMilestones,
+              onComplete: onCompleteDelivery,
+            ),
+          ],
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
@@ -314,18 +400,38 @@ class _MerchantOrderCard extends StatelessWidget {
                 onPressed: onDetail,
                 child: const Text('Detail'),
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: onProcess,
-                style: FilledButton.styleFrom(
-                  backgroundColor: MerchantPalette.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+              if (onReject != null) ...[
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: onReject,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: MerchantPalette.danger,
+                    side: BorderSide(
+                      color: MerchantPalette.danger.withValues(alpha: 0.35),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
+                  child: const Text('Tolak'),
                 ),
-                child: Text(_actionLabel(order, onProcess)),
-              ),
+              ],
+              if (onProcess != null &&
+                  (order.serviceType != 'catering' ||
+                      order.statusGroup != 'today_delivery')) ...[
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: onProcess,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: MerchantPalette.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(_actionLabel(order, onProcess)),
+                ),
+              ],
             ],
           ),
         ],
@@ -344,8 +450,8 @@ String _serviceEstimateText(MerchantOrder order) {
           ? 'Sedang ditimbang merchant'
           : 'Estimasi layanan belum diatur';
     }
-  if (RegExp(r'^\d+(-\d+)?\s*mnt', caseSensitive: false).hasMatch(label)) {
-      return 'Estimasi layanan: lihat kategori layanan';
+    if (RegExp(r'^\d+(-\d+)?\s*mnt', caseSensitive: false).hasMatch(label)) {
+      return 'Estimasi layanan: $label';
     }
     return 'Estimasi layanan: $label';
   }
@@ -357,8 +463,111 @@ String _serviceEstimateText(MerchantOrder order) {
 String _actionLabel(MerchantOrder order, VoidCallback? onProcess) {
   if (order.statusGroup == 'done') return 'Selesai';
   if (!order.canApprove) return 'Menunggu Bayar';
+  if (order.serviceType == 'catering' && order.status == 'pending') {
+    return 'Setujui';
+  }
   if (order.status == 'pending') return 'Approve';
   return 'Proses';
+}
+
+class _DeliveryMilestones extends StatelessWidget {
+  const _DeliveryMilestones({
+    required this.milestones,
+    required this.onComplete,
+  });
+
+  final List<MerchantDeliveryMilestone> milestones;
+  final ValueChanged<MerchantDeliveryMilestone> onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: milestones
+          .map(
+            (item) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F6FA),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    item.isDelivered
+                        ? Icons.check_circle_rounded
+                        : Icons.delivery_dining_rounded,
+                    color: item.isDelivered
+                        ? MerchantPalette.success
+                        : MerchantPalette.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Pengantaran ${item.scheduledTime}',
+                      style: const TextStyle(
+                        color: MerchantPalette.text,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: item.isDelivered ? null : () => onComplete(item),
+                    child: Text(item.isDelivered ? 'Selesai' : 'Selesaikan'),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _RejectOrderDialog extends StatefulWidget {
+  const _RejectOrderDialog();
+
+  @override
+  State<_RejectOrderDialog> createState() => _RejectOrderDialogState();
+}
+
+class _RejectOrderDialogState extends State<_RejectOrderDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Tolak Pesanan'),
+      content: TextField(
+        controller: _ctrl,
+        maxLines: 3,
+        decoration: const InputDecoration(
+          labelText: 'Alasan penolakan',
+          hintText: 'Contoh: Kuota catering hari ini sudah penuh',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final reason = _ctrl.text.trim();
+            if (reason.isEmpty) return;
+            Navigator.pop(context, reason);
+          },
+          child: const Text('Tolak'),
+        ),
+      ],
+    );
+  }
 }
 
 class _InfoLine extends StatelessWidget {
@@ -392,6 +601,7 @@ class _InfoLine extends StatelessWidget {
 Color _statusColor(String group) {
   switch (group) {
     case 'pending':
+    case 'cancelled':
       return MerchantPalette.danger;
     case 'done':
       return MerchantPalette.success;

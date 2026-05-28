@@ -201,7 +201,9 @@ class Order {
     }
     switch (status) {
       case 'pending':
-        return awaitingWeighing ? 'Menunggu penimbangan' : 'Menunggu konfirmasi';
+        return awaitingWeighing
+            ? 'Menunggu penimbangan'
+            : 'Menunggu konfirmasi';
       case 'confirmed':
         return 'Dikonfirmasi';
       case 'in_progress':
@@ -219,6 +221,10 @@ class Order {
     final method = (paymentMethod ?? '').toLowerCase();
     final payment = (paymentStatus ?? '').toLowerCase();
     final isCod = method.contains('cod') || method.contains('cash');
+    if (service == 'catering' &&
+        (merchantStatus ?? '').toLowerCase() != 'accepted') {
+      return false;
+    }
     return !isCod &&
         (status == 'pending' || status == 'confirmed') &&
         (payment.isEmpty ||
@@ -233,6 +239,10 @@ class Order {
 
   bool get needsOnlinePayment {
     final payment = (paymentStatus ?? '').toLowerCase();
+    if (service == 'catering' &&
+        (merchantStatus ?? '').toLowerCase() != 'accepted') {
+      return false;
+    }
     return !awaitingWeighing &&
         !isCashOnDelivery &&
         payment != 'paid' &&
@@ -253,4 +263,21 @@ class Order {
 
   bool get isSubscriptionCancellationRequested =>
       (subscriptionStatus ?? '').toLowerCase() == 'cancel_requested';
+
+  bool get shouldCancelAsSubscription =>
+      isCateringSubscription &&
+      isPaid &&
+      (merchantStatus ?? '').toLowerCase() != 'pending' &&
+      status != 'cancelled';
+
+  bool get canExtendCateringSubscription {
+    final subStatus = (subscriptionStatus ?? '').toLowerCase();
+    return isCateringSubscription &&
+        isPaid &&
+        subStatus == 'active' &&
+        subStatus != 'cancel_requested' &&
+        subStatus != 'ended' &&
+        subStatus != 'expired' &&
+        status != 'cancelled';
+  }
 }

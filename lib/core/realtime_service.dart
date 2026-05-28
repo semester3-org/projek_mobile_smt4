@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 
@@ -19,6 +20,7 @@ class RealtimeService extends ChangeNotifier {
   int _userPollingClients = 0;
   int _dashboardPollingClients = 0;
   int _merchantOrdersPollingClients = 0;
+  String? _lastUserOrdersSignature;
 
   // Callback untuk notifikasi update
   final Map<String, List<VoidCallback>> _listeners = {
@@ -82,7 +84,15 @@ class RealtimeService extends ChangeNotifier {
     try {
       final res = await ApiService.get('api/user_orders');
       if (res.success && res.data != null) {
-        _notifyListeners('order_status_updated');
+        final signature = jsonEncode(res.data);
+        if (_lastUserOrdersSignature == null) {
+          _lastUserOrdersSignature = signature;
+          return;
+        }
+        if (_lastUserOrdersSignature != signature) {
+          _lastUserOrdersSignature = signature;
+          _notifyListeners('order_status_updated');
+        }
       }
     } catch (e) {
       debugPrint('Polling error: $e');

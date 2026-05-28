@@ -30,6 +30,8 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   final _categoryCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _price20Ctrl = TextEditingController();
+  final _deliveryTime1Ctrl = TextEditingController();
+  final _deliveryTime2Ctrl = TextEditingController();
   final _unitCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
   final _picker = ImagePicker();
@@ -37,6 +39,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   String _imageUrl = '';
   bool _saving = false;
   bool _showWeekdayPrice = false;
+  int _mealDeliveryCount = 1;
   List<LaundryServiceEstimate> _estimates = [];
   List<CateringPackageCategory> _packageCategories = [];
   String? _selectedEstimate;
@@ -69,6 +72,13 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _showWeekdayPrice = !widget.isLaundry &&
         product?.price20Days != null &&
         product!.price20Days! > 0;
+    _mealDeliveryCount =
+        widget.isLaundry ? 1 : (product?.mealDeliveryCount ?? 1);
+    if (_mealDeliveryCount < 1 || _mealDeliveryCount > 2) {
+      _mealDeliveryCount = 1;
+    }
+    _deliveryTime1Ctrl.text = product?.deliveryTime1 ?? '07:00';
+    _deliveryTime2Ctrl.text = product?.deliveryTime2 ?? '15:00';
     _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '');
     if (!widget.isLaundry) {
       _unitCtrl.text = 'Paket bulanan';
@@ -109,6 +119,8 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _categoryCtrl.dispose();
     _priceCtrl.dispose();
     _price20Ctrl.dispose();
+    _deliveryTime1Ctrl.dispose();
+    _deliveryTime2Ctrl.dispose();
     _unitCtrl.dispose();
     _descriptionCtrl.dispose();
     super.dispose();
@@ -181,6 +193,15 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       description: description,
       price: price,
       price20Days: widget.isLaundry || !_showWeekdayPrice ? null : price20Days,
+      mealDeliveryCount: widget.isLaundry ? 1 : _mealDeliveryCount,
+      deliveryTime1: _deliveryTime1Ctrl.text.trim().isEmpty
+          ? '07:00'
+          : _deliveryTime1Ctrl.text.trim(),
+      deliveryTime2: widget.isLaundry || _mealDeliveryCount < 2
+          ? null
+          : (_deliveryTime2Ctrl.text.trim().isEmpty
+              ? '15:00'
+              : _deliveryTime2Ctrl.text.trim()),
       category: widget.isLaundry
           ? (_selectedEstimate ?? _categoryCtrl.text.trim())
           : (_selectedPackageCategory ?? _categoryCtrl.text.trim()),
@@ -238,6 +259,33 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.error ?? 'Gagal menghapus produk')),
     );
+  }
+
+  Future<void> _pickDeliveryTime(TextEditingController controller) async {
+    final parts = controller.text.trim().split(':');
+    final initialHour = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
+    final initialMinute = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: initialHour != null && initialHour >= 0 && initialHour <= 23
+            ? initialHour
+            : 7,
+        minute:
+            initialMinute != null && initialMinute >= 0 && initialMinute <= 59
+                ? initialMinute
+                : 0,
+      ),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      controller.text =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    });
   }
 
   @override
@@ -411,7 +459,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
           ),
         ] else ...[
           const _FieldLabel(
-            'Harga Full Day (dikirim setiap hari, termasuk Sabtu-Minggu)',
+            'Harga Full Day 30 hari(dikirim setiap hari, termasuk Sabtu-Minggu)',
           ),
           const SizedBox(height: 8),
           _Input(
@@ -426,7 +474,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
               children: [
                 const Expanded(
                   child: _FieldLabel(
-                    'Harga Weekday (Senin-Jumat, Sabtu-Minggu libur)',
+                    'Harga Weekday 30 hari (Sabtu-Minggu tidak dikirim)',
                   ),
                 ),
                 TextButton(
@@ -453,6 +501,45 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
             ),
         ],
         const SizedBox(height: 22),
+        if (!widget.isLaundry) ...[
+          const _FieldLabel('Jadwal Pengantaran Harian'),
+          const SizedBox(height: 8),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 1, label: Text('1x sehari')),
+              ButtonSegment(value: 2, label: Text('2x sehari')),
+            ],
+            selected: {_mealDeliveryCount},
+            onSelectionChanged: (value) {
+              setState(() => _mealDeliveryCount = value.first);
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _TimePickField(
+                  label: _mealDeliveryCount == 1
+                      ? 'Jam Pengantaran'
+                      : 'Jam Pengantaran 1',
+                  controller: _deliveryTime1Ctrl,
+                  onTap: () => _pickDeliveryTime(_deliveryTime1Ctrl),
+                ),
+              ),
+              if (_mealDeliveryCount == 2) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TimePickField(
+                    label: 'Jam Pengantaran 2',
+                    controller: _deliveryTime2Ctrl,
+                    onTap: () => _pickDeliveryTime(_deliveryTime2Ctrl),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 22),
+        ],
         _FieldLabel(widget.isLaundry
             ? 'Deskripsi Layanan'
             : 'Menu, Lauk Pauk & Jadwal Antar'),
@@ -541,7 +628,7 @@ class _AddWeekdayPriceCard extends StatelessWidget {
             const SizedBox(width: 14),
             const Expanded(
               child: Text(
-                'Ingin menambahkan paket Weekday? Senin-Jumat, Sabtu dan Minggu libur.',
+                'Ingin menambahkan paket Weekday 30 hari? Makanan dikirim Senin-Jumat, Sabtu dan Minggu libur.',
                 style: TextStyle(
                   color: MerchantPalette.text,
                   fontSize: 14,
@@ -557,11 +644,45 @@ class _AddWeekdayPriceCard extends StatelessWidget {
   }
 }
 
+class _TimePickField extends StatelessWidget {
+  const _TimePickField({
+    required this.label,
+    required this.controller,
+    required this.onTap,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FieldLabel(label),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: IgnorePointer(
+            child: _Input(
+              controller: controller,
+              suffixIcon: Icons.schedule_rounded,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _Input extends StatelessWidget {
   const _Input({
     required this.controller,
     this.maxLines = 1,
     this.prefix,
+    this.suffixIcon,
     this.keyboardType,
     this.inputFormatters,
   });
@@ -569,6 +690,7 @@ class _Input extends StatelessWidget {
   final TextEditingController controller;
   final int maxLines;
   final String? prefix;
+  final IconData? suffixIcon;
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
 
@@ -590,6 +712,7 @@ class _Input extends StatelessWidget {
           color: MerchantPalette.muted,
           fontSize: 16,
         ),
+        suffixIcon: suffixIcon == null ? null : Icon(suffixIcon),
         filled: true,
         fillColor: Colors.white,
         contentPadding:

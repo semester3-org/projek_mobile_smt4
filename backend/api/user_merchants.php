@@ -264,7 +264,11 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         if ($price > 0 && ($minPrice <= 0 || $price < $minPrice)) $minPrice = $price;
     }
 
-    $categories = merchantCategories($row['service_categories'] ?? null, $type);
+    $categories = [];
+    $specialty = trim((string)($row['specialty'] ?? ''));
+    if ($specialty !== '') {
+        $categories = array_values(array_filter(array_map('trim', explode(',', $specialty))));
+    }
     foreach ($menu as $item) {
         $category = trim((string)($item['category'] ?? ''));
         if ($category !== '' && !in_array($category, $categories, true)) {
@@ -415,7 +419,7 @@ try {
         $stmt = $conn->prepare("
             SELECT m.id AS merchant_id, m.business_name, m.merchant_type, m.phone, m.address,
                    m.description, m.photo_url, m.open_time, m.close_time,
-                   m.service_categories, m.status, u.email,
+                   m.status, u.email,
                    COALESCE(NULLIF(m.latitude, 0), $placeLat) AS latitude,
                    COALESCE(NULLIF(m.longitude, 0), $placeLng) AS longitude,
                    p.id AS place_id,

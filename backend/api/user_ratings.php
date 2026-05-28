@@ -47,7 +47,15 @@ function userRatingPurchasedProducts(mysqli $conn, string $userId, string $merch
         INNER JOIN products p ON p.id = oi.product_id
         WHERE o.user_id = ?
           AND o.merchant_id = ?
-          AND o.status = 'done'
+          AND (
+            o.status = 'done'
+            OR (
+              o.service_type = 'catering'
+              AND o.status = 'accepted'
+              AND COALESCE(o.payment_status, '') IN ('paid','payment_submitted')
+              AND COALESCE(o.subscription_status, '') IN ('active','cancel_requested')
+            )
+          )
         ORDER BY p.nama_produk ASC
     ");
     if (!$stmt) return [];
@@ -113,7 +121,15 @@ function userRatingCanReviewProduct(mysqli $conn, string $userId, string $mercha
         INNER JOIN order_items oi ON oi.order_id = o.id
         WHERE o.user_id = ?
           AND o.merchant_id = ?
-          AND o.status = 'done'
+          AND (
+            o.status = 'done'
+            OR (
+              o.service_type = 'catering'
+              AND o.status = 'accepted'
+              AND COALESCE(o.payment_status, '') IN ('paid','payment_submitted')
+              AND COALESCE(o.subscription_status, '') IN ('active','cancel_requested')
+            )
+          )
           AND oi.product_id = ?
         LIMIT 1
     ");

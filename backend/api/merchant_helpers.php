@@ -139,7 +139,6 @@ function merchantEnsureSchema(mysqli $conn): void {
     merchantAddColumn($conn, 'merchants', 'longitude', "`longitude` DECIMAL(11,8) DEFAULT NULL");
     merchantAddColumn($conn, 'merchants', 'open_time', "`open_time` VARCHAR(5) DEFAULT '08:00'");
     merchantAddColumn($conn, 'merchants', 'close_time', "`close_time` VARCHAR(5) DEFAULT '21:00'");
-    merchantAddColumn($conn, 'merchants', 'service_categories', "`service_categories` TEXT DEFAULT NULL");
     merchantAddColumn($conn, 'merchants', 'status', "`status` ENUM('active','inactive') DEFAULT 'active'");
 
     if (merchantTableExists($conn, 'products')) {
@@ -178,6 +177,9 @@ function merchantEnsureSchema(mysqli $conn): void {
     if (merchantTableExists($conn, 'products')) {
         merchantAddColumn($conn, 'products', 'price_20_days', "`price_20_days` DECIMAL(14,2) DEFAULT NULL");
         merchantAddColumn($conn, 'products', 'package_delivery_type', "`package_delivery_type` ENUM('full_day','weekday') DEFAULT NULL");
+        merchantAddColumn($conn, 'products', 'meal_delivery_count', "`meal_delivery_count` TINYINT UNSIGNED NOT NULL DEFAULT 1");
+        merchantAddColumn($conn, 'products', 'delivery_time_1', "`delivery_time_1` VARCHAR(5) DEFAULT '07:00'");
+        merchantAddColumn($conn, 'products', 'delivery_time_2', "`delivery_time_2` VARCHAR(5) DEFAULT NULL");
     }
 
     if (merchantTableExists($conn, 'orders')) {
@@ -200,6 +202,8 @@ function merchantEnsureSchema(mysqli $conn): void {
         merchantAddColumn($conn, 'orders', 'subscription_end_date', "`subscription_end_date` DATE DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'subscription_status', "`subscription_status` VARCHAR(30) DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'cancellation_requested_at', "`cancellation_requested_at` DATETIME DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'extension_parent_order_id', "`extension_parent_order_id` BIGINT UNSIGNED DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'extension_days', "`extension_days` INT DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'promo_id', "`promo_id` BIGINT UNSIGNED DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'promo_name', "`promo_name` VARCHAR(255) DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'promo_discount_amount', "`promo_discount_amount` DECIMAL(14,2) NOT NULL DEFAULT 0");
@@ -232,6 +236,8 @@ function merchantEnsureSchema(mysqli $conn): void {
                 subscription_end_date DATE DEFAULT NULL,
                 subscription_status VARCHAR(30) DEFAULT NULL,
                 cancellation_requested_at DATETIME DEFAULT NULL,
+                extension_parent_order_id BIGINT UNSIGNED DEFAULT NULL,
+                extension_days INT DEFAULT NULL,
                 promo_id BIGINT UNSIGNED DEFAULT NULL,
                 promo_name VARCHAR(255) DEFAULT NULL,
                 promo_discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
@@ -462,6 +468,30 @@ function merchantEnsureSchema(mysqli $conn): void {
         ");
     }
 
+    if (!merchantTableExists($conn, 'catering_delivery_logs')) {
+        $conn->query("
+            CREATE TABLE catering_delivery_logs (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                order_id BIGINT UNSIGNED NOT NULL,
+                merchant_id VARCHAR(36) NOT NULL,
+                user_id VARCHAR(36) NOT NULL,
+                delivery_date DATE NOT NULL,
+                slot_number TINYINT UNSIGNED NOT NULL,
+                scheduled_time VARCHAR(5) NOT NULL,
+                status ENUM('pending','delivered') NOT NULL DEFAULT 'pending',
+                delivered_at DATETIME DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uniq_catering_delivery_slot (order_id, delivery_date, slot_number),
+                KEY idx_catering_delivery_merchant_date (merchant_id, delivery_date),
+                KEY idx_catering_delivery_order_date (order_id, delivery_date),
+                KEY idx_catering_delivery_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+    merchantRepairCateringDeliveryLogDates($conn);
+
     if (!merchantTableExists($conn, 'user_favorite_merchants')) {
         $conn->query("
             CREATE TABLE user_favorite_merchants (
@@ -551,6 +581,9 @@ function merchantEnsureSchema(mysqli $conn): void {
     if (merchantTableExists($conn, 'products')) {
         merchantAddColumn($conn, 'products', 'laundry_estimate_id', "`laundry_estimate_id` VARCHAR(36) DEFAULT NULL");
         merchantAddColumn($conn, 'products', 'catering_package_category_id', "`catering_package_category_id` VARCHAR(36) DEFAULT NULL");
+        merchantAddColumn($conn, 'products', 'meal_delivery_count', "`meal_delivery_count` TINYINT UNSIGNED NOT NULL DEFAULT 1");
+        merchantAddColumn($conn, 'products', 'delivery_time_1', "`delivery_time_1` VARCHAR(5) DEFAULT '07:00'");
+        merchantAddColumn($conn, 'products', 'delivery_time_2', "`delivery_time_2` VARCHAR(5) DEFAULT NULL");
     }
 
     $conn->query("
@@ -603,7 +636,8 @@ function merchantSyncCateringSubscriber(mysqli $conn, int $orderId): void {
     $stmt = $conn->prepare("
         SELECT o.id, o.merchant_id, o.user_id, o.subscription_days,
                o.subscription_start_date, o.subscription_end_date,
-               o.subscription_status, o.cancellation_requested_at
+               o.subscription_status, o.cancellation_requested_at,
+               o.estimated_time, o.notes
         FROM orders o
         WHERE o.id = ? AND o.service_type = 'catering'
         LIMIT 1
@@ -619,7 +653,10 @@ function merchantSyncCateringSubscriber(mysqli $conn, int $orderId): void {
         return;
     }
 
-    $packageType = ((int)($row['subscription_days'] ?? 30)) . '_days';
+    $isWeekdayPackage = str_contains(strtolower((string)($row['estimated_time'] ?? '') . ' ' . (string)($row['notes'] ?? '')), 'weekday');
+    $packageType = $isWeekdayPackage
+        ? 'weekday_30_days'
+        : ((int)($row['subscription_days'] ?? 30)) . '_days';
     $status = strtolower((string)($row['subscription_status'] ?? 'active'));
     if ($status === 'pending_payment') {
         $status = 'pending';
@@ -688,7 +725,8 @@ function merchantSyncCateringSubscriber(mysqli $conn, int $orderId): void {
 
 function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void {
     $stmt = $conn->prepare("
-        SELECT subscription_days, subscription_status
+        SELECT id, subscription_days, subscription_status, status, payment_status,
+               extension_parent_order_id, extension_days
         FROM orders
         WHERE id = ?
           AND service_type = 'catering'
@@ -705,12 +743,91 @@ function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void 
     if (!$row) {
         return;
     }
+    if (strtolower((string)($row['status'] ?? '')) !== 'accepted' ||
+        !in_array(strtolower((string)($row['payment_status'] ?? '')), ['paid', 'payment_submitted'], true)) {
+        return;
+    }
+
+    $extensionParentId = (int)($row['extension_parent_order_id'] ?? 0);
+    if ($extensionParentId > 0) {
+        $extraDays = (int)($row['extension_days'] ?? $row['subscription_days'] ?? 30);
+        if (!in_array($extraDays, [20, 30], true)) {
+            $extraDays = 30;
+        }
+
+        $parentStmt = $conn->prepare("
+            SELECT subscription_end_date
+            FROM orders
+            WHERE id = ?
+              AND service_type = 'catering'
+            LIMIT 1
+        ");
+        if (!$parentStmt) {
+            return;
+        }
+        $parentStmt->bind_param('i', $extensionParentId);
+        $parentStmt->execute();
+        $parent = $parentStmt->get_result()->fetch_assoc();
+        $parentStmt->close();
+        if (!$parent) {
+            return;
+        }
+
+        $base = new DateTime('today');
+        if (!empty($parent['subscription_end_date'])) {
+            $currentEnd = new DateTime((string)$parent['subscription_end_date']);
+            if ($currentEnd > $base) {
+                $base = $currentEnd;
+            }
+        }
+        $extensionStart = clone $base;
+        $extensionStart->modify('+1 day');
+        $newEnd = clone $base;
+        $newEnd->modify('+' . $extraDays . ' day');
+
+        $startDate = $extensionStart->format('Y-m-d');
+        $endDate = $newEnd->format('Y-m-d');
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET subscription_days = COALESCE(subscription_days, 0) + ?,
+                subscription_end_date = ?,
+                subscription_status = 'active',
+                updated_at = NOW()
+            WHERE id = ?
+              AND service_type = 'catering'
+        ");
+        if ($stmt) {
+            $stmt->bind_param('isi', $extraDays, $endDate, $extensionParentId);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'done',
+                subscription_status = 'ended',
+                subscription_start_date = ?,
+                subscription_end_date = ?,
+                updated_at = NOW()
+            WHERE id = ?
+              AND service_type = 'catering'
+        ");
+        if ($stmt) {
+            $stmt->bind_param('ssi', $startDate, $endDate, $orderId);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+        merchantSyncCateringSubscriber($conn, $extensionParentId);
+        merchantEnsureCateringDeliveryLogs($conn, $extensionParentId);
+        return;
+    }
 
     $days = (int)($row['subscription_days'] ?? 30);
     if (!in_array($days, [20, 30], true)) {
         $days = 30;
     }
-    $start = new DateTime('tomorrow');
+    $start = new DateTime('today');
     $end = clone $start;
     $end->modify('+' . max(0, $days - 1) . ' day');
 
@@ -731,6 +848,168 @@ function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void 
         $stmt->close();
     }
     merchantSyncCateringSubscriber($conn, $orderId);
+    merchantEnsureCateringDeliveryLogs($conn, $orderId);
+}
+
+function merchantCateringDeliverySlots(mysqli $conn, int $orderId): array {
+    $stmt = $conn->prepare("
+        SELECT p.meal_delivery_count, p.delivery_time_1, p.delivery_time_2
+        FROM order_items oi
+        INNER JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id ASC
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        return [['slot' => 1, 'time' => '07:00']];
+    }
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    $count = max(1, min(2, (int)($row['meal_delivery_count'] ?? 1)));
+    $time1 = trim((string)($row['delivery_time_1'] ?? '07:00'));
+    $time2 = trim((string)($row['delivery_time_2'] ?? '15:00'));
+    if (!preg_match('/^\d{2}:\d{2}$/', $time1)) $time1 = '07:00';
+    if (!preg_match('/^\d{2}:\d{2}$/', $time2)) $time2 = '15:00';
+    $slots = [['slot' => 1, 'time' => $time1]];
+    if ($count >= 2) {
+        $slots[] = ['slot' => 2, 'time' => $time2];
+    }
+    return $slots;
+}
+
+function merchantCateringDeliveryDateAllowed(array $order, DateTime $date): bool {
+    $days = (int)($order['subscription_days'] ?? 30);
+    $packageText = strtolower((string)($order['estimated_time'] ?? '') . ' ' . (string)($order['notes'] ?? ''));
+    if ($days === 20 || str_contains($packageText, 'weekday')) {
+        $weekday = (int)$date->format('N');
+        return $weekday <= 5;
+    }
+    return true;
+}
+
+function merchantEnsureCateringDeliveryLogs(mysqli $conn, int $orderId, ?string $date = null): void {
+    if (!merchantTableExists($conn, 'catering_delivery_logs')) return;
+
+    $stmt = $conn->prepare("
+        SELECT id, merchant_id, user_id, service_type, status, payment_status,
+               subscription_days, subscription_start_date, subscription_end_date,
+               estimated_time, notes
+        FROM orders
+        WHERE id = ? AND service_type = 'catering'
+        LIMIT 1
+    ");
+    if (!$stmt) return;
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$order) return;
+
+    $payment = strtolower((string)($order['payment_status'] ?? ''));
+    if (($order['status'] ?? '') !== 'accepted' ||
+        !in_array($payment, ['paid', 'payment_submitted'], true) ||
+        empty($order['subscription_start_date']) ||
+        empty($order['subscription_end_date'])) {
+        return;
+    }
+
+    $target = new DateTime($date ?: date('Y-m-d'));
+    $start = new DateTime((string)$order['subscription_start_date']);
+    $end = new DateTime((string)$order['subscription_end_date']);
+    if ($target < $start || $target > $end || !merchantCateringDeliveryDateAllowed($order, $target)) {
+        return;
+    }
+
+    $ins = $conn->prepare("
+        INSERT IGNORE INTO catering_delivery_logs
+            (order_id, merchant_id, user_id, delivery_date, slot_number, scheduled_time, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+    ");
+    if (!$ins) return;
+    $deliveryDate = $target->format('Y-m-d');
+    foreach (merchantCateringDeliverySlots($conn, $orderId) as $slot) {
+        $slotNumber = (int)$slot['slot'];
+        $scheduledTime = (string)$slot['time'];
+        $ins->bind_param(
+            'isssis',
+            $orderId,
+            $order['merchant_id'],
+            $order['user_id'],
+            $deliveryDate,
+            $slotNumber,
+            $scheduledTime
+        );
+        $ins->execute();
+    }
+    $ins->close();
+}
+
+function merchantCateringDeliveryMilestones(mysqli $conn, int $orderId, ?string $date = null): array {
+    merchantEnsureCateringDeliveryLogs($conn, $orderId, $date);
+    if (!merchantTableExists($conn, 'catering_delivery_logs')) return [];
+    $deliveryDate = $date ?: date('Y-m-d');
+    $stmt = $conn->prepare("
+        SELECT id, delivery_date, slot_number, scheduled_time, status, delivered_at
+        FROM catering_delivery_logs
+        WHERE order_id = ? AND delivery_date = ?
+        ORDER BY slot_number ASC
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param('is', $orderId, $deliveryDate);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return array_map(fn($row) => [
+        'id' => (string)($row['id'] ?? ''),
+        'date' => $row['delivery_date'] ?? $deliveryDate,
+        'slotNumber' => (int)($row['slot_number'] ?? 1),
+        'scheduledTime' => $row['scheduled_time'] ?? '',
+        'status' => $row['status'] ?? 'pending',
+        'deliveredAt' => !empty($row['delivered_at']) ? date(DATE_ATOM, strtotime($row['delivered_at'])) : null,
+    ], $rows);
+}
+
+function merchantMilestonesCompleted(array $milestones): bool {
+    if (empty($milestones)) return false;
+    foreach ($milestones as $milestone) {
+        if (($milestone['status'] ?? '') !== 'delivered') {
+            return false;
+        }
+    }
+    return true;
+}
+
+function merchantRepairCateringDeliveryLogDates(mysqli $conn): void {
+    if (!merchantTableExists($conn, 'catering_delivery_logs')) return;
+
+    $conn->query("
+        UPDATE catering_delivery_logs today_log
+        INNER JOIN catering_delivery_logs shifted_log
+            ON shifted_log.order_id = today_log.order_id
+           AND shifted_log.slot_number = today_log.slot_number
+           AND shifted_log.delivery_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+           AND DATE(COALESCE(shifted_log.delivered_at, shifted_log.created_at)) = CURDATE()
+           AND shifted_log.status = 'delivered'
+        SET today_log.status = 'delivered',
+            today_log.delivered_at = COALESCE(shifted_log.delivered_at, today_log.delivered_at, NOW()),
+            today_log.updated_at = NOW()
+        WHERE today_log.delivery_date = CURDATE()
+          AND today_log.status <> 'delivered'
+    ");
+
+    $conn->query("
+        INSERT IGNORE INTO catering_delivery_logs
+            (order_id, merchant_id, user_id, delivery_date, slot_number, scheduled_time, status, delivered_at, created_at, updated_at)
+        SELECT shifted_log.order_id, shifted_log.merchant_id, shifted_log.user_id, CURDATE(),
+               shifted_log.slot_number, shifted_log.scheduled_time, shifted_log.status,
+               shifted_log.delivered_at, shifted_log.created_at, NOW()
+        FROM catering_delivery_logs shifted_log
+        WHERE shifted_log.delivery_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+          AND DATE(COALESCE(shifted_log.delivered_at, shifted_log.created_at)) = CURDATE()
+          AND shifted_log.status = 'delivered'
+    ");
 }
 
 function userSyncCateringSubscribersForUser(mysqli $conn, string $userId): void {
@@ -788,15 +1067,14 @@ function merchantCurrent(mysqli $conn, array $payload): array {
     }
 
     $ins = $conn->prepare("
-        INSERT INTO merchants (id, user_id, business_name, merchant_type, merchant_code, service_categories, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+        INSERT INTO merchants (id, user_id, business_name, merchant_type, merchant_code, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
     ");
     if (!$ins) {
         merchantSendJson(false, null, 'Gagal membuat profil merchant', 500);
     }
     $code = 'M-' . strtoupper(substr(str_replace('-', '', $merchantId), 0, 8));
-    $categories = $type === 'laundry' ? 'Laundry Kiloan,Antar Jemput' : 'Paket Bulanan,Menu Harian';
-    $ins->bind_param('ssssss', $merchantId, $userId, $businessName, $type, $code, $categories);
+    $ins->bind_param('sssss', $merchantId, $userId, $businessName, $type, $code);
     $ins->execute();
     $ins->close();
 
@@ -808,25 +1086,26 @@ function merchantTypeFromRow(array $merchant): string {
     return in_array($type, ['laundry', 'catering'], true) ? $type : 'laundry';
 }
 
-function merchantCategories(?string $raw, string $type): array {
-    if ($raw === null || trim($raw) === '') {
-        return $type === 'laundry'
-            ? ['Laundry Kiloan', 'Antar Jemput']
-            : ['Paket Bulanan', 'Menu Harian'];
-    }
-    $decoded = json_decode($raw, true);
-    if (is_array($decoded)) {
-        return array_values(array_filter(array_map('strval', $decoded)));
-    }
-    return array_values(array_filter(array_map('trim', explode(',', $raw))));
-}
-
 function merchantStatusGroup(string $status): string {
     return match ($status) {
         'pending' => 'pending',
         'done' => 'done',
         default => 'processing',
     };
+}
+
+function merchantOrderGroup(array $row): string {
+    $serviceType = strtolower((string)($row['service_type'] ?? $row['merchant_type'] ?? ''));
+    $status = strtolower((string)($row['status'] ?? 'pending'));
+    $payment = strtolower((string)($row['payment_status'] ?? ''));
+    if ($payment === 'cancelled') return 'cancelled';
+    if ($status === 'done') return 'done';
+    if ($serviceType !== 'catering') return merchantStatusGroup($status);
+    if ($status === 'pending') return 'pending';
+    if ($status === 'accepted' && !in_array($payment, ['paid', 'payment_submitted'], true)) {
+        return 'waiting_payment';
+    }
+    return 'today_delivery';
 }
 
 function merchantStatusLabel(string $status): string {
@@ -837,6 +1116,15 @@ function merchantStatusLabel(string $status): string {
         'delivered' => 'Pengiriman',
         'done' => 'Selesai',
         default => ucfirst($status),
+    };
+}
+
+function merchantOrderDisplayStatusLabel(array $row): string {
+    return match (merchantOrderGroup($row)) {
+        'cancelled' => 'Dibatalkan',
+        'waiting_payment' => 'Menunggu bayar',
+        'today_delivery' => 'Pengantaran hari ini',
+        default => merchantStatusLabel((string)($row['status'] ?? 'pending')),
     };
 }
 
@@ -1383,10 +1671,16 @@ function merchantFinalizeLaundryOrder(
 
 function merchantOrderCanApprove(array $row): bool {
     $status = strtolower(trim((string)($row['status'] ?? 'pending')));
+    $paymentStatus = strtolower(trim((string)($row['payment_status'] ?? 'waiting_payment')));
+    if ($paymentStatus === 'cancelled') return false;
     if ($status !== 'pending') return true;
 
+    $serviceType = strtolower(trim((string)($row['service_type'] ?? $row['merchant_type'] ?? '')));
+    if ($serviceType === 'catering') {
+        return true;
+    }
+
     $method = strtolower(trim((string)($row['payment_method'] ?? '')));
-    $paymentStatus = strtolower(trim((string)($row['payment_status'] ?? 'waiting_payment')));
     if ($paymentStatus === 'awaiting_weighing') {
         return true;
     }
@@ -1400,8 +1694,7 @@ function merchantNextStatus(string $status, bool $catering = false): string {
     if ($catering) {
         return match ($status) {
             'pending' => 'accepted',
-            'accepted' => 'done',
-            default => 'done',
+            default => $status,
         };
     }
     return match ($status) {
@@ -1455,6 +1748,11 @@ function merchantProductPayload(array $row, ?mysqli $conn = null): array {
         'isActive' => (int)($row['is_active'] ?? 1) === 1,
         'serviceType' => $row['service_type'] ?? '',
         'packageDeliveryType' => $row['package_delivery_type'] ?? null,
+        'mealDeliveryCount' => max(1, min(2, (int)($row['meal_delivery_count'] ?? 1))),
+        'deliveryTime1' => $row['delivery_time_1'] ?? '07:00',
+        'deliveryTime2' => $row['delivery_time_2'] ?? null,
+        'rating' => isset($row['rating']) ? round((float)$row['rating'], 1) : 0.0,
+        'reviewCount' => (int)($row['review_count'] ?? 0),
         'addons' => $conn === null ? [] : merchantProductAddons($conn, $productId),
         'hasActivePromo' => (bool)$promo['hasActivePromo'],
         'activePromoName' => (string)$promo['activePromoName'],
@@ -1540,6 +1838,15 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
     $status = $row['status'] ?? 'pending';
     $serviceType = $row['service_type'] ?? $row['merchant_type'] ?? 'laundry';
     $firstItem = $items[0]['name'] ?? ($serviceType === 'laundry' ? 'Layanan Laundry' : 'Paket Catering');
+    $deliveryMilestones = $serviceType === 'catering'
+        ? merchantCateringDeliveryMilestones($conn, $orderId)
+        : [];
+    $statusGroup = merchantOrderGroup($row);
+    $statusLabel = merchantOrderDisplayStatusLabel($row);
+    if ($statusGroup === 'today_delivery' && merchantMilestonesCompleted($deliveryMilestones)) {
+        $statusGroup = 'done';
+        $statusLabel = 'Selesai';
+    }
     $firstProductId = isset($items[0]['productId']) && ctype_digit((string)$items[0]['productId'])
         ? (int)$items[0]['productId']
         : 0;
@@ -1560,10 +1867,8 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
         'estimatedTime' => $row['estimated_time'] ?? '',
         'estimatedFinishAt' => !empty($estimatedFinishAt) ? date(DATE_ATOM, strtotime($estimatedFinishAt)) : null,
         'status' => $status,
-        'statusLabel' => $serviceType === 'laundry'
-            ? merchantLaundryStatusLabel($row)
-            : merchantStatusLabel($status),
-        'statusGroup' => merchantStatusGroup($status),
+        'statusLabel' => $statusLabel,
+        'statusGroup' => $statusGroup,
         'deliveryAddress' => $row['delivery_address'] ?? '',
         'deliveryLatitude' => isset($row['delivery_latitude']) ? (float)$row['delivery_latitude'] : null,
         'deliveryLongitude' => isset($row['delivery_longitude']) ? (float)$row['delivery_longitude'] : null,
@@ -1597,6 +1902,7 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
             : [],
         'selectedAddons' => $selectedLaundryAddons,
         'items' => $items,
+        'deliveryMilestones' => $deliveryMilestones,
     ];
 }
 
@@ -1611,14 +1917,69 @@ function merchantOrderQuery(mysqli $conn, string $merchantId, ?string $id = null
         $types .= 'ss';
         $params[] = $id;
         $params[] = $id;
+    } else {
+        $where[] = "(COALESCE(o.extension_parent_order_id, 0) = 0 OR o.status <> 'done')";
     }
 
     if ($statusGroup === 'pending') {
-        $where[] = "o.status = 'pending'";
+        $where[] = "o.status = 'pending' AND COALESCE(o.payment_status, '') <> 'cancelled'";
+    } elseif ($statusGroup === 'waiting_payment') {
+        $where[] = "o.service_type = 'catering' AND o.status = 'accepted' AND COALESCE(o.payment_status, '') NOT IN ('paid','payment_submitted','cancelled')";
+    } elseif ($statusGroup === 'today_delivery') {
+        $where[] = "
+            o.service_type = 'catering'
+            AND o.status = 'accepted'
+            AND COALESCE(o.payment_status, '') IN ('paid','payment_submitted')
+            AND o.subscription_start_date <= CURDATE()
+            AND o.subscription_end_date >= CURDATE()
+            AND NOT (
+                (o.subscription_days = 20 OR LOWER(CONCAT(COALESCE(o.estimated_time, ''), ' ', COALESCE(o.notes, ''))) LIKE '%weekday%')
+                AND DAYOFWEEK(CURDATE()) IN (1, 7)
+            )
+            AND NOT (
+                EXISTS (
+                    SELECT 1 FROM catering_delivery_logs cdl
+                    WHERE cdl.order_id = o.id
+                      AND cdl.delivery_date = CURDATE()
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM catering_delivery_logs cdl
+                    WHERE cdl.order_id = o.id
+                      AND cdl.delivery_date = CURDATE()
+                      AND cdl.status <> 'delivered'
+                )
+            )
+        ";
     } elseif ($statusGroup === 'processing') {
         $where[] = "o.status IN ('accepted','processing','delivered')";
     } elseif ($statusGroup === 'done') {
-        $where[] = "o.status = 'done'";
+        $where[] = "
+            (
+                o.status = 'done'
+                OR (
+                    o.service_type = 'catering'
+                    AND o.status = 'accepted'
+                    AND COALESCE(o.payment_status, '') IN ('paid','payment_submitted')
+                    AND o.subscription_start_date <= CURDATE()
+                    AND o.subscription_end_date >= CURDATE()
+                    AND NOT (
+                        (o.subscription_days = 20 OR LOWER(CONCAT(COALESCE(o.estimated_time, ''), ' ', COALESCE(o.notes, ''))) LIKE '%weekday%')
+                        AND DAYOFWEEK(CURDATE()) IN (1, 7)
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM catering_delivery_logs cdl
+                        WHERE cdl.order_id = o.id
+                          AND cdl.delivery_date = CURDATE()
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM catering_delivery_logs cdl
+                        WHERE cdl.order_id = o.id
+                          AND cdl.delivery_date = CURDATE()
+                          AND cdl.status <> 'delivered'
+                    )
+                )
+            )
+        ";
     }
 
     if ($search !== null && trim($search) !== '') {
@@ -1971,7 +2332,6 @@ function merchantProfilePayload(mysqli $conn, array $merchant): array {
         'photoUrl' => $merchant['photo_url'] ?? '',
         'openTime' => $merchant['open_time'] ?? '08:00',
         'closeTime' => $merchant['close_time'] ?? '21:00',
-        'categories' => merchantCategories($merchant['service_categories'] ?? null, $type),
         'rating' => $summary['rating'],
         'reviewCount' => $summary['reviewCount'],
         'status' => $merchant['status'] ?? 'active',
@@ -2057,7 +2417,7 @@ function merchantSyncPlace(mysqli $conn, array $merchant): void {
     if ($type === 'catering' && merchantTableExists($conn, 'catering_places')) {
         merchantAddColumn($conn, 'catering_places', 'latitude', "`latitude` DECIMAL(10,8) DEFAULT NULL");
         merchantAddColumn($conn, 'catering_places', 'longitude', "`longitude` DECIMAL(11,8) DEFAULT NULL");
-        $specialty = implode(', ', merchantCategories($merchant['service_categories'] ?? null, $type));
+        $specialty = 'Catering';
         $stmt = $conn->prepare("
             INSERT INTO catering_places (id, name, address, specialty, rating, distance_km, image_url, min_order_portion, merchant_id, latitude, longitude, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?, NOW(), NOW())

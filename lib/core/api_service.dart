@@ -37,7 +37,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://192.168.0.118:8000';
+      return 'http://10.154.208.177:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {
@@ -161,6 +161,64 @@ class ApiService {
       return {
         'success': false,
         'message': 'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'Request timeout. Coba lagi.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> loginWithGoogle({
+    required String email,
+    required String displayName,
+    String? photoUrl,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/login-google'),
+            headers: _publicHeaders,
+            body: jsonEncode({
+              'email': email.trim().toLowerCase(),
+              'displayName': displayName.trim(),
+              'photoUrl': photoUrl,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (data['success'] == true && data['data'] != null) {
+        final userData = data['data'] as Map<String, dynamic>;
+        final token = userData['token'] as String? ?? '';
+        if (token.isNotEmpty) {
+          await AuthStorage.saveAuth(
+            token: token,
+            sessionId: userData['sessionId'] as String?,
+            userId: userData['id'] as String? ?? '',
+            email: userData['email'] as String? ?? email.trim().toLowerCase(),
+            displayName: userData['displayName'] as String? ?? '',
+            role: userData['role'] as String? ?? 'user',
+            merchantType: userData['merchantType'] as String?,
+          );
+        }
+      }
+
+      return {
+        'success': data['success'] == true,
+        'data': data['data'],
+        'message': data['message'] ??
+            (data['success'] == true ? 'Login Google berhasil' : 'Login Google gagal'),
+      };
+    } on SocketException {
+      return {
+        'success': false,
+        'message': 'Koneksi gagal. Pastikan server PHP berjalan.',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};

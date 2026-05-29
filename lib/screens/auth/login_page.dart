@@ -58,6 +58,36 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _submitGoogle() async {
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
+
+    try {
+      final errorMsg = await AuthScope.of(context).loginWithGoogle();
+
+      if (!mounted) return;
+
+      if (errorMsg != null) {
+        setState(() {
+          _errorText = errorMsg;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = 'Terjadi kesalahan: ${e.toString()}';
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,9 +215,22 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.login),
-              label: const Text('Google'),
+              onPressed: _isLoading ? null : _submitGoogle,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              icon: const Icon(Icons.login, color: Colors.red),
+              label: const Text(
+                'Google',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
             ),
           ],
         ),

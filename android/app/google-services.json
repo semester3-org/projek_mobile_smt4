@@ -14,7 +14,16 @@
       },
       "oauth_client": [
         {
-          "client_id": "46013103292-7160o05og2hdl114s5n1i7j6tq4ujq61.apps.googleusercontent.com"
+          "client_id": "46013103292-8qpvmqqg12rlr299q6gb1b06ekm8h0mn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.projek.kos",
+            "certificate_hash": "a5c710ed1d74ee4fe2747c118f3691b48bea2c62"
+          }
+        },
+        {
+          "client_id": "46013103292-8sjl53g2t66nadilakg7m02dieqfqave.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
@@ -24,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "46013103292-8sjl53g2t66nadilakg7m02dieqfqave.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

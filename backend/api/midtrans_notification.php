@@ -119,6 +119,10 @@ if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
         sendError('Failed to update order payment status', 500);
     }
 
+    if ($orderPaymentStatus === 'paid') {
+        merchantActivateCateringSubscription($conn, $orderInt);
+    }
+
     error_log("Midtrans order notification: Order ID $orderIdForOrder, Status $transactionStatus -> $orderPaymentStatus");
     sendSuccess(null, 'Order notification processed successfully');
 }

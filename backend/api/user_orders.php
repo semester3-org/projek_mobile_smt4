@@ -112,9 +112,16 @@ function userOrderPayload(mysqli $conn, array $row): array {
     $subscriptionStillRunning = $subscriptionEndDate === null || $subscriptionEndDate >= date('Y-m-d');
     $canCancel = false;
     if ($isCatering) {
-        $canCancel = ($order['subscriptionDays'] ?? null) !== null &&
-            $subscriptionStillRunning &&
-            !in_array($subscriptionStatus, ['cancel_requested', 'ended', 'expired'], true);
+        $paymentCancelled = strtolower((string)($order['paymentStatus'] ?? '')) === 'cancelled';
+        $isBeforeApproval = ($order['status'] ?? '') === 'pending' &&
+            !in_array(strtolower((string)($order['paymentStatus'] ?? '')), ['paid', 'payment_submitted'], true);
+        $canCancel = !$paymentCancelled &&
+            (
+                $isBeforeApproval ||
+                (($order['subscriptionDays'] ?? null) !== null &&
+                    $subscriptionStillRunning &&
+                    !in_array($subscriptionStatus, ['cancel_requested', 'ended', 'expired'], true))
+            );
     } else {
         $windowUntil = $row['cancellation_window_until'] ?? null;
         $paymentCancelled = strtolower((string)($order['paymentStatus'] ?? '')) === 'cancelled';
@@ -170,9 +177,12 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'awaitingWeighing' => ($order['serviceType'] ?? '') === 'laundry' &&
             (float)($order['totalAmount'] ?? 0) <= 0 &&
             strtolower((string)($order['paymentStatus'] ?? '')) === 'awaiting_weighing',
-        'readyToPay' => ($order['serviceType'] ?? '') === 'laundry' &&
+        'readyToPay' => in_array(strtolower((string)($order['paymentStatus'] ?? '')), ['waiting_payment', 'unpaid'], true) &&
             (float)($order['totalAmount'] ?? 0) > 0 &&
-            in_array(strtolower((string)($order['paymentStatus'] ?? '')), ['waiting_payment', 'unpaid'], true),
+            (
+                (($order['serviceType'] ?? '') === 'laundry') ||
+                (($order['serviceType'] ?? '') === 'catering' && ($order['status'] ?? '') === 'accepted')
+            ),
         'displayStatusLabel' => ($order['serviceType'] ?? '') === 'laundry'
             ? userOrderLaundryDisplayStatus($order)
             : null,
@@ -203,6 +213,18 @@ function userOrderPaymentAllowed(string $merchantType, string $paymentMethod): b
     return true;
 }
 
+function userOrderValidPhone(string $phone): bool {
+    $digits = preg_replace('/\D+/', '', trim($phone));
+    if ($digits === null) {
+        return false;
+    }
+    $length = strlen($digits);
+    if ($length < 10 || $length > 15) {
+        return false;
+    }
+    return str_starts_with($digits, '08') || str_starts_with($digits, '628');
+}
+
 function userOrderSubscriptionDays(string $service, array $body): ?int {
     if ($service !== 'catering') return null;
     $days = (int)($body['subscriptionDays'] ?? 0);
@@ -213,6 +235,9 @@ function userOrderSubscriptionDays(string $service, array $body): ?int {
         }
     }
     if (!in_array($days, [20, 30], true)) {
+        $days = 30;
+    }
+    if ($days === 20) {
         $days = 30;
     }
     return $days;
@@ -275,7 +300,7 @@ try {
         $id = trim((string)($body['id'] ?? ''));
         $action = strtolower(trim((string)($body['action'] ?? '')));
 
-        if ($id === '' || !in_array($action, ['confirm_payment', 'cancel_subscription', 'cancel_order'], true)) {
+        if ($id === '' || !in_array($action, ['confirm_payment', 'cancel_subscription', 'extend_subscription', 'cancel_order'], true)) {
             merchantSendJson(false, null, 'Aksi pesanan tidak valid', 400);
         }
 
@@ -302,19 +327,26 @@ try {
         if ($action === 'cancel_order') {
             $serviceType = strtolower((string)($row['service_type'] ?? ''));
             if ($serviceType === 'catering') {
-                merchantSendJson(false, null, 'Gunakan menu batalkan langganan untuk catering', 400);
-            }
-            if (($row['status'] ?? '') !== 'pending') {
-                merchantSendJson(false, null, 'Pesanan tidak bisa dibatalkan', 400);
-            }
-            $windowUntil = $row['cancellation_window_until'] ?? null;
-            if ($windowUntil === null || strtotime((string)$windowUntil) < time()) {
-                merchantSendJson(false, null, 'Waktu pembatalan (5 detik) sudah habis', 400);
+                $paymentStatus = strtolower((string)($row['payment_status'] ?? ''));
+                if (($row['status'] ?? '') !== 'pending' ||
+                    in_array($paymentStatus, ['paid', 'payment_submitted'], true)) {
+                    merchantSendJson(false, null, 'Gunakan menu batalkan langganan untuk catering aktif', 400);
+                }
+            } else {
+                if (($row['status'] ?? '') !== 'pending') {
+                    merchantSendJson(false, null, 'Pesanan tidak bisa dibatalkan', 400);
+                }
+                $windowUntil = $row['cancellation_window_until'] ?? null;
+                if ($windowUntil === null || strtotime((string)$windowUntil) < time()) {
+                    merchantSendJson(false, null, 'Waktu pembatalan (5 detik) sudah habis', 400);
+                }
             }
             $orderIdInt = (int)$row['id'];
             $stmt = $conn->prepare("
                 UPDATE orders
                 SET payment_status = 'cancelled',
+                    subscription_status = IF(service_type = 'catering', 'cancelled', subscription_status),
+                    cancellation_requested_at = IF(service_type = 'catering', NOW(), cancellation_requested_at),
                     notes = CONCAT(COALESCE(notes, ''), '\n[Dibatalkan user]'),
                     updated_at = NOW()
                 WHERE id = ? AND user_id = ?
@@ -344,6 +376,10 @@ try {
             $serviceType = strtolower((string)($row['service_type'] ?? $row['merchant_type'] ?? ''));
             if ($serviceType !== 'catering') {
                 merchantSendJson(false, null, 'Hanya langganan catering yang bisa dibatalkan dari menu ini', 400);
+            }
+            if (($row['status'] ?? '') === 'pending' ||
+                !in_array(strtolower((string)($row['payment_status'] ?? '')), ['paid', 'payment_submitted'], true)) {
+                merchantSendJson(false, null, 'Pesanan catering belum aktif. Gunakan batal pesanan.', 400);
             }
             $subscriptionStatus = strtolower((string)($row['subscription_status'] ?? ''));
             if (in_array($subscriptionStatus, ['cancel_requested', 'ended'], true)) {
@@ -391,10 +427,154 @@ try {
             merchantSendJson(true, userOrderPayload($conn, $updated), 'Langganan akan berhenti saat periode selesai');
         }
 
+        if ($action === 'extend_subscription') {
+            $serviceType = strtolower((string)($row['service_type'] ?? $row['merchant_type'] ?? ''));
+            if ($serviceType !== 'catering') {
+                merchantSendJson(false, null, 'Hanya langganan catering yang bisa diperpanjang', 400);
+            }
+            $paymentStatus = strtolower((string)($row['payment_status'] ?? ''));
+            $subscriptionStatus = strtolower((string)($row['subscription_status'] ?? ''));
+            if (!in_array($paymentStatus, ['paid', 'payment_submitted'], true) ||
+                in_array($subscriptionStatus, ['cancel_requested', 'ended', 'expired'], true)) {
+                merchantSendJson(false, null, 'Langganan belum aktif atau sudah dibatalkan', 400);
+            }
+            if ((int)($row['extension_parent_order_id'] ?? 0) > 0) {
+                merchantSendJson(false, null, 'Pengajuan perpanjangan ini tidak bisa diperpanjang lagi', 400);
+            }
+            $extraDays = (int)($body['days'] ?? $row['subscription_days'] ?? 30);
+            if (!in_array($extraDays, [20, 30], true)) {
+                $extraDays = 30;
+            }
+            $orderIdInt = (int)$row['id'];
+
+            $pending = $conn->prepare("
+                SELECT id, order_code
+                FROM orders
+                WHERE user_id = ?
+                  AND service_type = 'catering'
+                  AND extension_parent_order_id = ?
+                  AND COALESCE(payment_status, '') <> 'cancelled'
+                  AND status <> 'done'
+                ORDER BY created_at DESC
+                LIMIT 1
+            ");
+            if (!$pending) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $pending->bind_param('si', $userId, $orderIdInt);
+            $pending->execute();
+            $pendingRow = $pending->get_result()->fetch_assoc();
+            $pending->close();
+            if ($pendingRow) {
+                merchantSendJson(
+                    false,
+                    [
+                        'existingOrderId' => (string)($pendingRow['id'] ?? ''),
+                        'existingOrderCode' => $pendingRow['order_code'] ?? '',
+                    ],
+                    'Pengajuan perpanjangan sebelumnya masih menunggu proses merchant atau pembayaran.',
+                    409
+                );
+            }
+
+            $newOrderId = 0;
+            $conn->begin_transaction();
+            try {
+                $extensionNote = '[Pengajuan perpanjangan ' . $extraDays . ' hari dari ' . ($row['order_code'] ?? ('#' . $orderIdInt)) . ']';
+                $stmt = $conn->prepare("
+                    INSERT INTO orders
+                        (user_id, merchant_id, total_harga, status, service_type, delivery_address,
+                         delivery_latitude, delivery_longitude, estimated_time, payment_method,
+                         payment_status, customer_name, customer_phone, notes, subscription_days,
+                         subscription_start_date, subscription_end_date, subscription_status,
+                         cancellation_window_until, extension_parent_order_id, extension_days,
+                         created_at, updated_at)
+                    SELECT user_id, merchant_id, total_harga, 'pending', service_type, delivery_address,
+                           delivery_latitude, delivery_longitude, estimated_time, NULL,
+                           'waiting_payment', customer_name, customer_phone,
+                           TRIM(CONCAT(COALESCE(notes, ''), '\n', ?)), ?,
+                           NULL, NULL, 'pending_payment',
+                           DATE_ADD(NOW(), INTERVAL 5 SECOND), ?, ?,
+                           NOW(), NOW()
+                    FROM orders
+                    WHERE id = ? AND user_id = ?
+                    LIMIT 1
+                ");
+                if (!$stmt) throw new Exception($conn->error);
+                $stmt->bind_param('siiiis', $extensionNote, $extraDays, $orderIdInt, $extraDays, $orderIdInt, $userId);
+                $stmt->execute();
+                $newOrderId = (int)$conn->insert_id;
+                $stmt->close();
+                if ($newOrderId <= 0) {
+                    throw new Exception('Gagal membuat pengajuan perpanjangan');
+                }
+
+                $orderCode = 'SR-CATERING-' . str_pad((string)$newOrderId, 6, '0', STR_PAD_LEFT);
+                $stmt = $conn->prepare("UPDATE orders SET order_code = ? WHERE id = ?");
+                if (!$stmt) throw new Exception($conn->error);
+                $stmt->bind_param('si', $orderCode, $newOrderId);
+                $stmt->execute();
+                $stmt->close();
+
+                $stmt = $conn->prepare("
+                    INSERT INTO order_items (order_id, product_id, qty, harga, created_at, updated_at)
+                    SELECT ?, product_id, qty, harga, NOW(), NOW()
+                    FROM order_items
+                    WHERE order_id = ?
+                ");
+                if (!$stmt) throw new Exception($conn->error);
+                $stmt->bind_param('ii', $newOrderId, $orderIdInt);
+                $stmt->execute();
+                $stmt->close();
+
+                $conn->commit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                merchantSendJson(false, null, 'Gagal membuat pengajuan perpanjangan: ' . $e->getMessage(), 500);
+            }
+
+            $stmt = $conn->prepare("
+                SELECT o.*, m.business_name, m.merchant_type
+                FROM orders o
+                INNER JOIN merchants m ON m.id = o.merchant_id
+                WHERE o.id = ?
+                LIMIT 1
+            ");
+            $stmt->bind_param('i', $newOrderId);
+            $stmt->execute();
+            $updated = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            merchantCreateNotification(
+                $conn,
+                (string)$row['merchant_user_id'],
+                'Pengajuan perpanjangan catering',
+                ($updated['order_code'] ?? ('#' . $newOrderId)) . ' menunggu persetujuan merchant sebelum user membayar.',
+                'catering',
+                'Lihat Pesanan',
+                'order:' . (string)$newOrderId
+            );
+            merchantCreateNotification(
+                $conn,
+                $userId,
+                'Pengajuan perpanjangan dikirim',
+                ($updated['order_code'] ?? ('#' . $newOrderId)) . ' menunggu persetujuan merchant. Pembayaran tersedia setelah disetujui.',
+                'catering',
+                'Lihat Detail',
+                'order:' . (string)$newOrderId
+            );
+
+            merchantSendJson(true, userOrderPayload($conn, $updated), 'Pengajuan perpanjangan dikirim ke merchant');
+        }
+
         $paymentMethod = (string)($row['payment_method'] ?? '');
         $method = strtolower($paymentMethod);
         if (str_contains($method, 'cod') || str_contains($method, 'cash')) {
             merchantSendJson(false, null, 'Pesanan COD tidak perlu konfirmasi pembayaran di awal', 400);
+        }
+        if (strtolower((string)($row['service_type'] ?? '')) === 'catering' &&
+            strtolower((string)($row['status'] ?? '')) !== 'accepted') {
+            merchantSendJson(false, null, 'Pesanan catering perlu disetujui merchant sebelum dibayar', 400);
         }
 
         $stmt = $conn->prepare("
@@ -410,6 +590,10 @@ try {
         $stmt->bind_param('is', $orderIdInt, $userId);
         $stmt->execute();
         $stmt->close();
+
+        if (strtolower((string)($row['service_type'] ?? '')) === 'catering') {
+            merchantActivateCateringSubscription($conn, $orderIdInt);
+        }
 
         merchantCreateNotification(
             $conn,
@@ -467,19 +651,73 @@ try {
     if ($deliveryAddress === '') {
         merchantSendJson(false, null, 'Alamat tujuan wajib diisi', 400);
     }
+    if (!userOrderValidPhone($customerPhone)) {
+        merchantSendJson(false, null, 'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...', 400);
+    }
 
     $merchantType = merchantQueryValue($conn, 'SELECT merchant_type FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
     if ($service === '') {
         $service = (string)($merchantType ?: 'laundry');
     }
     $merchantType = (string)($merchantType ?: $service);
-    if ($paymentMethod === '') {
-        $paymentMethod = $merchantType === 'catering' ? 'GoPay/QRIS' : 'Cash on Delivery';
+    if ($service === 'catering' || $merchantType === 'catering') {
+        $profileName = merchantQueryValue(
+            $conn,
+            'SELECT display_name FROM users WHERE id = ? LIMIT 1',
+            's',
+            [$userId]
+        );
+        $profileName = trim((string)$profileName);
+        if ($profileName !== '') {
+            $customerName = $profileName;
+        }
     }
-    if (!userOrderPaymentAllowed($merchantType, $paymentMethod)) {
+    if ($merchantType === 'catering') {
+        $paymentMethod = '';
+    } elseif ($paymentMethod === '') {
+        $paymentMethod = 'Cash on Delivery';
+    }
+    if ($merchantType !== 'catering' && !userOrderPaymentAllowed($merchantType, $paymentMethod)) {
         merchantSendJson(false, null, 'Catering tidak mendukung pembayaran COD. Pilih e-wallet, QRIS, atau transfer bank.', 400);
     }
-    $paymentStatus = userOrderInitialPaymentStatus($paymentMethod);
+    if ($service === 'catering') {
+        $existing = $conn->prepare("
+            SELECT id, order_code, status, subscription_status, subscription_end_date
+            FROM orders
+            WHERE user_id = ?
+              AND service_type = 'catering'
+              AND COALESCE(payment_status, '') <> 'cancelled'
+              AND status <> 'done'
+              AND (
+                subscription_end_date IS NULL
+                OR subscription_end_date >= CURDATE()
+                OR status IN ('pending','accepted')
+              )
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        if (!$existing) {
+            merchantSendJson(false, null, 'Database error', 500);
+        }
+        $existing->bind_param('s', $userId);
+        $existing->execute();
+        $activeOrder = $existing->get_result()->fetch_assoc();
+        $existing->close();
+        if ($activeOrder) {
+            merchantSendJson(
+                false,
+                [
+                    'existingOrderId' => (string)($activeOrder['id'] ?? ''),
+                    'existingOrderCode' => $activeOrder['order_code'] ?? '',
+                ],
+                'Kamu masih punya pesanan/langganan catering aktif. Gunakan menu perpanjang di detail langganan agar jadwal tidak bentrok.',
+                409
+            );
+        }
+    }
+    $paymentStatus = $merchantType === 'catering'
+        ? 'waiting_payment'
+        : userOrderInitialPaymentStatus($paymentMethod);
     $subscriptionDays = userOrderSubscriptionDays($service, $body);
     $subscriptionStartDate = null;
     $subscriptionEndDate = null;
@@ -560,18 +798,70 @@ try {
         }
 
         if ($promoId !== null) {
-            $lock = $conn->prepare('SELECT id, usage_limit, used_count FROM merchant_promos WHERE id = ? FOR UPDATE');
+            $lock = $conn->prepare('SELECT * FROM merchant_promos WHERE id = ? AND merchant_id = ? FOR UPDATE');
             if (!$lock) throw new Exception($conn->error);
-            $lock->bind_param('i', $promoId);
+            $lock->bind_param('is', $promoId, $merchantId);
             $lock->execute();
             $lockedPromo = $lock->get_result()->fetch_assoc();
             $lock->close();
-            if (!$lockedPromo || ((int)($lockedPromo['usage_limit'] ?? 0) > 0 &&
-                (int)($lockedPromo['used_count'] ?? 0) >= (int)($lockedPromo['usage_limit'] ?? 0))) {
+
+            $productIds = array_values(array_filter(array_map(
+                fn($it) => (int)($it['productId'] ?? 0),
+                $normalizedItems
+            ), fn($id) => $id > 0));
+
+            $now = time();
+            $lockedIsActive = (int)($lockedPromo['is_active'] ?? 0) === 1;
+            $lockedStartAt = $lockedPromo['start_at'] ?? null;
+            $lockedEndAt = $lockedPromo['end_at'] ?? null;
+            $lockedIsLive = $lockedIsActive &&
+                (!$lockedStartAt || strtotime((string)$lockedStartAt) <= $now) &&
+                (!$lockedEndAt || strtotime((string)$lockedEndAt) >= $now);
+
+            $lockedUsageLimit = isset($lockedPromo['usage_limit']) ? (int)$lockedPromo['usage_limit'] : null;
+            $lockedUsedCount = (int)($lockedPromo['used_count'] ?? 0);
+            $lockedGlobalOk = $lockedUsageLimit === null || $lockedUsageLimit <= 0 || $lockedUsedCount < $lockedUsageLimit;
+
+            $lockedPerUserLimit = max(1, (int)($lockedPromo['per_user_usage_limit'] ?? 1));
+            $lockedUserUsageCount = 0;
+            if ($userId !== '') {
+                $lockedUserUsageCount = (int)merchantQueryValue(
+                    $conn,
+                    'SELECT COUNT(*) FROM promo_usages WHERE promo_id = ? AND user_id = ?',
+                    'is',
+                    [(int)($lockedPromo['id'] ?? 0), $userId]
+                );
+            }
+            $lockedUserOk = $userId === '' || $lockedUserUsageCount < $lockedPerUserLimit;
+
+            $lockedMinOrder = max(0, (float)($lockedPromo['min_order_amount'] ?? 0));
+            $lockedMinOk = $subtotal >= $lockedMinOrder;
+
+            $lockedMatchOk = !empty($productIds) && merchantPromoMatchesProducts($conn, $lockedPromo, $productIds);
+
+            if (!$lockedPromo ||
+                !$lockedIsLive ||
+                !$lockedGlobalOk ||
+                !$lockedUserOk ||
+                !$lockedMinOk ||
+                !$lockedMatchOk) {
                 $promoId = null;
                 $promoName = null;
                 $promoDiscountAmount = 0.0;
                 $total = $subtotal;
+            } else {
+                $applied = merchantPromoApply($subtotal, $lockedPromo);
+                $promoDiscountAmount = (float)($applied['discount'] ?? 0);
+                if ($promoDiscountAmount <= 0) {
+                    $promoId = null;
+                    $promoName = null;
+                    $promoDiscountAmount = 0.0;
+                    $total = $subtotal;
+                } else {
+                    $promoName = (string)($lockedPromo['name'] ?? '');
+                    $total = (float)($applied['total'] ?? $subtotal);
+                    $total = max(0, $total);
+                }
             }
         }
 
@@ -685,7 +975,7 @@ try {
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
-        merchantSendJson(false, null, 'Gagal membuat pesanan: ' . $e->getMessage(), 500);
+        merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
     }
 
     $stmt = $conn->prepare("
@@ -702,7 +992,7 @@ try {
 
     merchantSendJson(true, userOrderPayload($conn, $row), 'Pesanan berhasil dibuat', 201);
 } catch (Throwable $e) {
-    merchantSendJson(false, null, $e->getMessage(), 500);
+    merchantSendJson(false, null, 'Gagal membuat pesanan. Silakan coba lagi.', 500);
 }
 
 ?>

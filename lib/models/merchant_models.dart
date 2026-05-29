@@ -1,3 +1,5 @@
+import '../core/indonesia_time.dart';
+
 class MerchantOrderItem {
   const MerchantOrderItem({
     required this.id,
@@ -33,6 +35,43 @@ class MerchantOrderItem {
   }
 }
 
+class MerchantDeliveryMilestone {
+  const MerchantDeliveryMilestone({
+    required this.id,
+    required this.date,
+    required this.slotNumber,
+    required this.scheduledTime,
+    required this.status,
+    this.deliveryNote = '',
+    this.deliveryPhotoUrl = '',
+    this.deliveredAt,
+  });
+
+  final String id;
+  final String date;
+  final int slotNumber;
+  final String scheduledTime;
+  final String status;
+  final String deliveryNote;
+  final String deliveryPhotoUrl;
+  final DateTime? deliveredAt;
+
+  factory MerchantDeliveryMilestone.fromJson(Map<String, dynamic> json) {
+    return MerchantDeliveryMilestone(
+      id: json['id'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      slotNumber: (json['slotNumber'] as num?)?.toInt() ?? 1,
+      scheduledTime: json['scheduledTime'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
+      deliveryNote: json['deliveryNote'] as String? ?? '',
+      deliveryPhotoUrl: json['deliveryPhotoUrl'] as String? ?? '',
+      deliveredAt: IndonesiaTime.tryParse(json['deliveredAt']),
+    );
+  }
+
+  bool get isDelivered => status == 'delivered';
+}
+
 class MerchantOrder {
   const MerchantOrder({
     required this.id,
@@ -57,6 +96,7 @@ class MerchantOrder {
     required this.canApprove,
     required this.notes,
     required this.items,
+    required this.deliveryMilestones,
     this.deliveryLatitude,
     this.deliveryLongitude,
     this.midtransOrderId,
@@ -89,6 +129,7 @@ class MerchantOrder {
   final bool canApprove;
   final String notes;
   final List<MerchantOrderItem> items;
+  final List<MerchantDeliveryMilestone> deliveryMilestones;
   final double? deliveryLatitude;
   final double? deliveryLongitude;
   final String? midtransOrderId;
@@ -100,6 +141,10 @@ class MerchantOrder {
 
   factory MerchantOrder.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? const [];
+    final rawMilestones =
+        json['deliveryMilestones'] as List<dynamic>? ?? const [];
+    final deliveryAddress = json['deliveryAddress'] as String? ?? '';
+    final deliveryLongitude = (json['deliveryLongitude'] as num?)?.toDouble();
     return MerchantOrder(
       id: json['id'] as String? ?? '',
       code: json['code'] as String? ?? '',
@@ -108,13 +153,16 @@ class MerchantOrder {
       customerEmail: json['customerEmail'] as String? ?? '',
       serviceType: json['serviceType'] as String? ?? '',
       serviceName: json['serviceName'] as String? ?? '',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-          DateTime.now(),
+      createdAt: IndonesiaTime.parse(
+        json['createdAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       estimatedTime: json['estimatedTime'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       statusLabel: json['statusLabel'] as String? ?? 'Pending',
       statusGroup: json['statusGroup'] as String? ?? 'pending',
-      deliveryAddress: json['deliveryAddress'] as String? ?? '',
+      deliveryAddress: deliveryAddress,
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
       paymentMethod: json['paymentMethod'] as String? ?? '',
       paymentMethodLabel: json['paymentMethodLabel'] as String? ?? '',
@@ -127,17 +175,31 @@ class MerchantOrder {
           .map((item) =>
               MerchantOrderItem.fromJson(item as Map<String, dynamic>))
           .toList(),
+      deliveryMilestones: rawMilestones
+          .map((item) => MerchantDeliveryMilestone.fromJson(
+                item as Map<String, dynamic>,
+              ))
+          .toList(),
       deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
-      deliveryLongitude: (json['deliveryLongitude'] as num?)?.toDouble(),
+      deliveryLongitude: deliveryLongitude,
       midtransOrderId: json['midtransOrderId'] as String?,
       subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
-      subscriptionStartDate:
-          DateTime.tryParse(json['subscriptionStartDate'] as String? ?? ''),
-      subscriptionEndDate:
-          DateTime.tryParse(json['subscriptionEndDate'] as String? ?? ''),
+      subscriptionStartDate: IndonesiaTime.tryParse(
+        json['subscriptionStartDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
+      subscriptionEndDate: IndonesiaTime.tryParse(
+        json['subscriptionEndDate'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       subscriptionStatus: json['subscriptionStatus'] as String?,
-      cancellationRequestedAt:
-          DateTime.tryParse(json['cancellationRequestedAt'] as String? ?? ''),
+      cancellationRequestedAt: IndonesiaTime.tryParse(
+        json['cancellationRequestedAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
     );
   }
 
@@ -196,6 +258,11 @@ class MerchantProduct {
     required this.isActive,
     required this.serviceType,
     this.packageDeliveryType,
+    this.mealDeliveryCount = 1,
+    this.deliveryTime1 = '07:00',
+    this.deliveryTime2,
+    this.rating = 0,
+    this.reviewCount = 0,
   });
 
   final String id;
@@ -209,6 +276,11 @@ class MerchantProduct {
   final bool isActive;
   final String serviceType;
   final String? packageDeliveryType;
+  final int mealDeliveryCount;
+  final String deliveryTime1;
+  final String? deliveryTime2;
+  final double rating;
+  final int reviewCount;
 
   factory MerchantProduct.fromJson(Map<String, dynamic> json) {
     return MerchantProduct(
@@ -223,6 +295,69 @@ class MerchantProduct {
       isActive: json['isActive'] as bool? ?? true,
       serviceType: json['serviceType'] as String? ?? '',
       packageDeliveryType: json['packageDeliveryType'] as String?,
+      mealDeliveryCount: (json['mealDeliveryCount'] as num?)?.toInt() ?? 1,
+      deliveryTime1: json['deliveryTime1'] as String? ?? '07:00',
+      deliveryTime2: json['deliveryTime2'] as String?,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class MerchantProductReview {
+  const MerchantProductReview({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.reviewer,
+    required this.rating,
+    required this.comment,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String productId;
+  final String productName;
+  final String reviewer;
+  final double rating;
+  final String comment;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory MerchantProductReview.fromJson(Map<String, dynamic> json) {
+    return MerchantProductReview(
+      id: json['id'] as String? ?? '',
+      productId: json['productId'] as String? ?? '',
+      productName: json['productName'] as String? ?? '',
+      reviewer: json['reviewer'] as String? ?? 'User',
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      comment: json['comment'] as String? ?? '',
+      createdAt: _parseMerchantDate(json['createdAt']),
+      updatedAt: _parseMerchantDate(json['updatedAt']),
+    );
+  }
+}
+
+class MerchantProductReviewSummary {
+  const MerchantProductReviewSummary({
+    required this.product,
+    required this.reviews,
+  });
+
+  final MerchantProduct product;
+  final List<MerchantProductReview> reviews;
+
+  factory MerchantProductReviewSummary.fromJson(Map<String, dynamic> json) {
+    final rawReviews = json['reviews'] as List<dynamic>? ?? const [];
+    return MerchantProductReviewSummary(
+      product: MerchantProduct.fromJson(
+        json['product'] as Map<String, dynamic>? ?? const {},
+      ),
+      reviews: rawReviews
+          .map((item) =>
+              MerchantProductReview.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -318,7 +453,6 @@ class MerchantProfile {
     required this.photoUrl,
     required this.openTime,
     required this.closeTime,
-    required this.categories,
     required this.rating,
     required this.reviewCount,
     required this.status,
@@ -337,14 +471,12 @@ class MerchantProfile {
   final String photoUrl;
   final String openTime;
   final String closeTime;
-  final List<String> categories;
   final double rating;
   final int reviewCount;
   final String status;
   final String email;
 
   factory MerchantProfile.fromJson(Map<String, dynamic> json) {
-    final rawCategories = json['categories'] as List<dynamic>? ?? const [];
     return MerchantProfile(
       id: json['id'] as String? ?? '',
       merchantCode: json['merchantCode'] as String? ?? '',
@@ -358,7 +490,6 @@ class MerchantProfile {
       photoUrl: json['photoUrl'] as String? ?? '',
       openTime: json['openTime'] as String? ?? '08:00',
       closeTime: json['closeTime'] as String? ?? '21:00',
-      categories: rawCategories.map((item) => item.toString()).toList(),
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       status: json['status'] as String? ?? 'active',

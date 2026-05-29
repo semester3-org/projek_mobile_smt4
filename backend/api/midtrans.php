@@ -279,6 +279,9 @@ if ($action === 'create_order_payment') {
     }
 
     $serviceType = strtolower((string)($order['service_type'] ?? $order['merchant_type'] ?? ''));
+    if ($serviceType === 'catering' && strtolower((string)($order['status'] ?? '')) !== 'accepted') {
+        sendError('Pesanan catering perlu disetujui merchant sebelum dibayar', 400);
+    }
     $paymentMethod = $paymentMethodInput !== '' ? $paymentMethodInput : (string)($order['payment_method'] ?? '');
     if ($paymentMethod === '') {
         $paymentMethod = $serviceType === 'catering' ? 'GoPay/QRIS' : 'Transfer Bank';
@@ -423,6 +426,9 @@ if ($action === 'sync_order_status') {
         $stmt->close();
 
         if ($localStatus === 'paid') {
+            if ($orderIdForBind > 0) {
+                merchantActivateCateringSubscription($conn, $orderIdForBind);
+            }
             $merchantUserId = merchantQueryValue(
                 $conn,
                 'SELECT m.user_id FROM orders o INNER JOIN merchants m ON m.id = o.merchant_id WHERE (o.midtrans_order_id = ? OR o.id = ?) LIMIT 1',

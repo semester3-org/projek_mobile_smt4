@@ -55,8 +55,9 @@ function cateringSubscriberPayload(mysqli $conn, array $row): array {
         'merchantId' => (string)($row['merchant_id'] ?? ''),
         'merchantName' => (string)($row['business_name'] ?? ''),
         'packageType' => (string)($row['package_type'] ?? ''),
-        'packageLabel' => str_contains((string)($row['package_type'] ?? ''), '20')
-            ? 'Paket 20 Hari'
+        'packageLabel' => (str_contains((string)($row['package_type'] ?? ''), 'weekday') ||
+                str_contains((string)($row['package_type'] ?? ''), '20'))
+            ? 'Paket Weekday 30 Hari'
             : 'Paket 30 Hari',
         'productName' => $productName,
         'productDescription' => $productDescription,

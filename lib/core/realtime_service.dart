@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 
@@ -19,6 +20,9 @@ class RealtimeService extends ChangeNotifier {
   int _userPollingClients = 0;
   int _dashboardPollingClients = 0;
   int _merchantOrdersPollingClients = 0;
+  String? _lastUserOrdersSignature;
+  String? _lastMerchantDashboardSignature;
+  String? _lastMerchantOrdersSignature;
 
   // Callback untuk notifikasi update
   final Map<String, List<VoidCallback>> _listeners = {
@@ -82,7 +86,15 @@ class RealtimeService extends ChangeNotifier {
     try {
       final res = await ApiService.get('api/user_orders');
       if (res.success && res.data != null) {
-        _notifyListeners('order_status_updated');
+        final signature = jsonEncode(res.data);
+        if (_lastUserOrdersSignature == null) {
+          _lastUserOrdersSignature = signature;
+          return;
+        }
+        if (_lastUserOrdersSignature != signature) {
+          _lastUserOrdersSignature = signature;
+          _notifyListeners('order_status_updated');
+        }
       }
     } catch (e) {
       debugPrint('Polling error: $e');
@@ -124,7 +136,15 @@ class RealtimeService extends ChangeNotifier {
       try {
         final res = await ApiService.get('api/merchant_orders');
         if (res.success && res.data != null) {
-          _notifyListeners('merchant_order_updated');
+          final signature = jsonEncode(res.data);
+          if (_lastMerchantOrdersSignature == null) {
+            _lastMerchantOrdersSignature = signature;
+            return;
+          }
+          if (_lastMerchantOrdersSignature != signature) {
+            _lastMerchantOrdersSignature = signature;
+            _notifyListeners('merchant_order_updated');
+          }
         }
       } catch (e) {
         debugPrint('Error polling merchant orders: $e');
@@ -144,7 +164,15 @@ class RealtimeService extends ChangeNotifier {
     try {
       final res = await ApiService.get('api/merchant_dashboard');
       if (res.success && res.data != null) {
-        _notifyListeners('dashboard_updated');
+        final signature = jsonEncode(res.data);
+        if (_lastMerchantDashboardSignature == null) {
+          _lastMerchantDashboardSignature = signature;
+          return;
+        }
+        if (_lastMerchantDashboardSignature != signature) {
+          _lastMerchantDashboardSignature = signature;
+          _notifyListeners('dashboard_updated');
+        }
       }
     } catch (e) {
       debugPrint('Dashboard polling error: $e');
@@ -184,6 +212,9 @@ class RealtimeService extends ChangeNotifier {
     _userPollingClients = 0;
     _dashboardPollingClients = 0;
     _merchantOrdersPollingClients = 0;
+    _lastUserOrdersSignature = null;
+    _lastMerchantDashboardSignature = null;
+    _lastMerchantOrdersSignature = null;
     _listeners.clear();
     super.dispose();
   }

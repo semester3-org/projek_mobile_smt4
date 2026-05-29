@@ -1,5 +1,7 @@
 <?php
 // Database Configuration
+date_default_timezone_set('Asia/Jakarta');
+
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
@@ -18,5 +20,6 @@ if ($conn->connect_error) {
 
 // Set charset to UTF-8
 $conn->set_charset("utf8");
+$conn->query("SET time_zone = '+07:00'");
 
 ?>

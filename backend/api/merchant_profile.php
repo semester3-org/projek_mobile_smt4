@@ -33,23 +33,11 @@ try {
     $closeTime = trim((string)($body['closeTime'] ?? '21:00'));
     $latitude = isset($body['latitude']) && $body['latitude'] !== '' ? (float)$body['latitude'] : null;
     $longitude = isset($body['longitude']) && $body['longitude'] !== '' ? (float)$body['longitude'] : null;
-    $categories = $body['categories'] ?? [];
 
     if ($businessName === '') {
         merchantSendJson(false, null, 'Nama merchant wajib diisi', 400);
     }
 
-    if (!is_array($categories)) {
-        $categories = [];
-    }
-    $categories = array_values(array_filter(array_map(
-        fn($item) => trim((string)$item),
-        $categories
-    )));
-    if (empty($categories)) {
-        $categories = merchantCategories(null, merchantTypeFromRow($merchant));
-    }
-    $categoryRaw = implode(',', $categories);
     $merchantId = (string)$merchant['id'];
 
     $stmt = $conn->prepare("
@@ -63,7 +51,6 @@ try {
             longitude = ?,
             open_time = ?,
             close_time = ?,
-            service_categories = ?,
             updated_at = NOW()
         WHERE id = ?
     ");
@@ -71,7 +58,7 @@ try {
         merchantSendJson(false, null, 'Database error', 500);
     }
     $stmt->bind_param(
-        'sssssddssss',
+        'sssssddsss',
         $businessName,
         $description,
         $phone,
@@ -81,7 +68,6 @@ try {
         $longitude,
         $openTime,
         $closeTime,
-        $categoryRaw,
         $merchantId
     );
     $stmt->execute();

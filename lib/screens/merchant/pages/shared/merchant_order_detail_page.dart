@@ -29,36 +29,20 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
-  String _status = 'pending';
-
-  static const _laundryStatuses = [
-    ('pending', 'Pending'),
-    ('accepted', 'Diterima'),
-    ('processing', 'Diproses'),
-    ('delivered', 'Pengiriman'),
-    ('done', 'Selesai'),
-  ];
-
-  static const _cateringStatuses = [
-    ('pending', 'Pending'),
-    ('accepted', 'Disetujui'),
-    ('done', 'Selesai'),
-  ];
-
-  List<(String, String)> get _statuses =>
-      widget.isLaundry ? _laundryStatuses : _cateringStatuses;
 
   @override
   void initState() {
     super.initState();
     _load();
-    RealtimeService().addEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService()
+        .addEventListener('merchant_order_updated', _silentRefresh);
     RealtimeService().startMerchantOrdersPolling();
   }
 
   @override
   void dispose() {
-    RealtimeService().removeEventListener('merchant_order_updated', _silentRefresh);
+    RealtimeService()
+        .removeEventListener('merchant_order_updated', _silentRefresh);
     _estimateCtrl.dispose();
     _weightCtrl.dispose();
     _laundryTotalCtrl.dispose();
@@ -77,7 +61,6 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
     final order = result.data;
     setState(() {
       _order = order;
-      _status = order?.status ?? 'pending';
       _estimateCtrl.text = order?.estimatedTime ?? '';
       if (!silent) _error = result.error;
       _loading = false;
@@ -93,7 +76,8 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
     final total = double.tryParse(_laundryTotalCtrl.text.replaceAll(',', '.'));
     if (weight == null || weight <= 0 || total == null || total <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Isi berat (kg) dan total bayar dengan benar')),
+        const SnackBar(
+            content: Text('Isi berat (kg) dan total bayar dengan benar')),
       );
       return;
     }
@@ -119,41 +103,14 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
     );
   }
 
-  Future<void> _save() async {
-    final order = _order;
-    if (order == null) return;
-    setState(() => _saving = true);
-    final result = await MerchantRepository.updateOrder(
-      id: order.id,
-      status: _status,
-    );
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      if (result.data != null) {
-        _order = result.data;
-        _status = result.data!.status;
-      }
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.isSuccess
-            ? 'Pesanan berhasil diperbarui'
-            : result.error ?? 'Gagal memperbarui pesanan'),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final order = _order;
     return MerchantPage(
-      topBar: MerchantTopBar(
+      topBar: const MerchantTopBar(
         title: 'Detail Pesanan',
         showAvatar: false,
         showBack: true,
-        actionLabel: _saving ? 'Menyimpan...' : 'Simpan',
-        onAction: _saving || order == null ? null : _save,
       ),
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       children: [
@@ -177,37 +134,22 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
         else if (order != null) ...[
           _OrderHeaderCard(order: order),
           const SizedBox(height: 20),
-          MerchantCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _CardTitle(
-                  icon: Icons.tune_rounded,
-                  title: 'Kontrol Pesanan',
-                ),
-                const SizedBox(height: 18),
-                const _TinyLabel(label: 'STATUS PESANAN'),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _status,
-                  items: _statuses
-                      .map((item) => DropdownMenuItem(
-                            value: item.$1,
-                            child: Text(item.$2),
-                          ))
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) setState(() => _status = value);
-                  },
-                  decoration: _inputDecoration(),
-                ),
-                if (widget.isLaundry) ...[
+          if (widget.isLaundry)
+            MerchantCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _CardTitle(
+                    icon: Icons.timeline_rounded,
+                    title: 'Progres Pesanan',
+                  ),
                   const SizedBox(height: 18),
-                  _MerchantLaundryProgressBar(status: _status),
+                  _MerchantLaundryProgressBar(status: order.status),
                 ],
-              ],
-            ),
-          ),
+              ),
+            )
+          else
+            _CateringOperationalSummary(order: order),
           const SizedBox(height: 20),
           _InfoCard(
             icon: Icons.person_rounded,
@@ -293,15 +235,91 @@ class _MerchantOrderDetailPageState extends State<MerchantOrderDetailPage> {
               ),
             ),
           ],
-          if (order.isCateringSubscription) ...[
+          if (widget.isLaundry) ...[
             const SizedBox(height: 20),
-            _SubscriptionCard(order: order),
+            _PaymentCard(order: order),
           ],
-          const SizedBox(height: 20),
-          _PaymentCard(order: order),
           const MerchantBottomSpacer(),
         ],
       ],
+    );
+  }
+}
+
+class _CateringOperationalSummary extends StatelessWidget {
+  const _CateringOperationalSummary({required this.order});
+
+  final MerchantOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final period =
+        '${_formatDate(order.subscriptionStartDate)} - ${_formatDate(order.subscriptionEndDate)}';
+    return MerchantCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(
+            icon: Icons.restaurant_menu_rounded,
+            title: 'Ringkasan Operasional',
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _CompactInfoPill(
+                icon: Icons.flag_outlined,
+                label: 'Pesanan',
+                value: order.statusLabel,
+              ),
+              _CompactInfoPill(
+                icon: Icons.payments_outlined,
+                label: 'Pembayaran',
+                value: order.paymentStatusLabel.isEmpty
+                    ? 'Menunggu pembayaran'
+                    : order.paymentStatusLabel,
+              ),
+              _CompactInfoPill(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'Metode',
+                value: PaymentMethodHelper.getDisplayName(
+                  order.paymentMethod.isEmpty ? null : order.paymentMethod,
+                ),
+              ),
+              if (order.isCateringSubscription) ...[
+                _CompactInfoPill(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Durasi',
+                  value: '${order.subscriptionDays ?? 0} hari',
+                ),
+                _CompactInfoPill(
+                  icon: Icons.event_available_outlined,
+                  label: 'Periode',
+                  value: period,
+                ),
+                _CompactInfoPill(
+                  icon: Icons.verified_outlined,
+                  label: 'Langganan',
+                  value: _subscriptionStatusLabel(
+                    order.subscriptionStatus ?? '',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (!order.canApprove ||
+              order.isSubscriptionCancellationRequested) ...[
+            const SizedBox(height: 14),
+            _PaymentNotice(
+              canApprove: order.canApprove,
+              message: order.isSubscriptionCancellationRequested
+                  ? 'User sudah membatalkan langganan. Layanan tetap berjalan sampai tanggal berakhir.'
+                  : null,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -516,41 +534,64 @@ class _PaymentCard extends StatelessWidget {
   }
 }
 
-class _SubscriptionCard extends StatelessWidget {
-  const _SubscriptionCard({required this.order});
+class _CompactInfoPill extends StatelessWidget {
+  const _CompactInfoPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
-  final MerchantOrder order;
+  final IconData icon;
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    return _InfoCard(
-      icon: Icons.calendar_month_outlined,
-      title: 'Langganan Catering',
-      children: [
-        _PaymentMeta(
-          label: 'DURASI',
-          value: '${order.subscriptionDays ?? 0} hari',
-        ),
-        const SizedBox(height: 12),
-        _PaymentMeta(
-          label: 'PERIODE',
-          value:
-              '${_formatDate(order.subscriptionStartDate)} - ${_formatDate(order.subscriptionEndDate)}',
-        ),
-        const SizedBox(height: 12),
-        _PaymentMeta(
-          label: 'STATUS LANGGANAN',
-          value: _subscriptionStatusLabel(order.subscriptionStatus ?? ''),
-        ),
-        if (order.isSubscriptionCancellationRequested) ...[
-          const SizedBox(height: 12),
-          const _PaymentNotice(
-            canApprove: true,
-            message:
-                'User sudah membatalkan langganan. Layanan tetap berjalan sampai tanggal berakhir.',
+    return Container(
+      constraints: const BoxConstraints(minWidth: 128),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F6FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE4EAF3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: MerchantPalette.primary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: MerchantPalette.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: MerchantPalette.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -812,7 +853,8 @@ class _MerchantLaundryProgressBar extends StatelessWidget {
             return Expanded(
               child: Container(
                 height: 5,
-                margin: EdgeInsets.only(right: index == _steps.length - 1 ? 0 : 6),
+                margin:
+                    EdgeInsets.only(right: index == _steps.length - 1 ? 0 : 6),
                 decoration: BoxDecoration(
                   color: active
                       ? MerchantPalette.primary

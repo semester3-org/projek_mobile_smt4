@@ -19,6 +19,8 @@ class UserRepository {
   static const String _profileKey = 'user_profile';
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
+  static const Duration _merchantListCacheTtl = Duration(seconds: 25);
+  static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();
@@ -54,6 +56,13 @@ class UserRepository {
     double? latitude,
     double? longitude,
   }) async {
+    final cacheKey = _merchantListCacheKey(type, latitude, longitude);
+    final cached = _merchantListCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) < _merchantListCacheTtl) {
+      return RepoResult.ok(List<UserMerchant>.of(cached.items));
+    }
+
     final params = {'type': type};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
@@ -73,7 +82,12 @@ class UserRepository {
           .map((e) => UserMerchant.fromJson(e as Map<String, dynamic>))
           .toList();
       final unique = _dedupeMerchants(list);
-      return RepoResult.ok(unique.isEmpty ? _fallbackMerchants(type) : unique);
+      final items = unique.isEmpty ? _fallbackMerchants(type) : unique;
+      _merchantListCache[cacheKey] = _MerchantListCacheEntry(
+        List<UserMerchant>.of(items),
+        DateTime.now(),
+      );
+      return RepoResult.ok(items);
     } catch (_) {
       return RepoResult.ok(_fallbackMerchants(type));
     }
@@ -105,6 +119,16 @@ class UserRepository {
     } catch (_) {
       return RepoResult.ok(_fallbackMerchants(type).first);
     }
+  }
+
+  static String _merchantListCacheKey(
+    String type,
+    double? latitude,
+    double? longitude,
+  ) {
+    final lat = latitude == null ? 'none' : latitude.toStringAsFixed(3);
+    final lng = longitude == null ? 'none' : longitude.toStringAsFixed(3);
+    return '$type:$lat:$lng';
   }
 
   static Future<RepoResult<List<BillingRecord>>> getBillings() async {
@@ -749,6 +773,29 @@ class UserRepository {
     }
   }
 
+  static Future<RepoResult<Order>> extendCateringSubscription(
+    String orderId, {
+    required int days,
+  }) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'extend_subscription',
+      'days': days,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperpanjang langganan');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status langganan terbaru');
+    }
+  }
+
   static Future<RepoResult<UserMerchantReviewState>> submitMerchantRating({
     required String type,
     required String merchantId,
@@ -1077,4 +1124,11 @@ class UserRepository {
       ),
     ];
   }
+}
+
+class _MerchantListCacheEntry {
+  const _MerchantListCacheEntry(this.items, this.createdAt);
+
+  final List<UserMerchant> items;
+  final DateTime createdAt;
 }

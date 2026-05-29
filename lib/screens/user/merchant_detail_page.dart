@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/payment_methods.dart';
@@ -190,6 +191,17 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     }
 
     if (!mounted) return;
+    if (_merchant.type == 'catering') {
+      final existingMessage = await _existingCateringOrderMessage();
+      if (!mounted) return;
+      if (existingMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(existingMessage)),
+        );
+        return;
+      }
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Mengirim pesanan ke merchant...')),
     );
@@ -222,6 +234,25 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.error ?? 'Gagal membuat pesanan')),
     );
+  }
+
+  Future<String?> _existingCateringOrderMessage() async {
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
+    if (!result.isSuccess) return null;
+    final active = (result.data ?? const []).where((subscription) {
+      final status = subscription.subscriptionStatus.toLowerCase();
+      return subscription.isActive ||
+          status == 'pending' ||
+          status == 'pending_payment';
+    }).toList();
+    if (active.isEmpty) return null;
+    final item = active.first;
+    final product = item.productName.isNotEmpty
+        ? item.productName
+        : item.packageLabel.isNotEmpty
+            ? item.packageLabel
+            : 'catering';
+    return 'Kamu masih punya pesanan/langganan $product. Gunakan menu perpanjang di detail langganan agar jadwal tidak bentrok.';
   }
 
   Future<void> _submitReview() async {
@@ -515,7 +546,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     return _promoPrice;
   }
 
-  double get _discountAmount => (_price - _displayPrice).clamp(0, double.infinity);
+  double get _discountAmount =>
+      (_price - _displayPrice).clamp(0, double.infinity);
 
   @override
   Widget build(BuildContext context) {
@@ -570,6 +602,30 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 1.45,
               ),
             ),
+            if (_isCatering) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _ProductInfoChip(
+                    icon: Icons.star_rounded,
+                    label:
+                        '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                    color: const Color(0xFFFFB300),
+                  ),
+                  _ProductInfoChip(
+                    icon: Icons.delivery_dining_rounded,
+                    label: widget.item.mealDeliveryCount >= 2
+                        ? '2x makan/hari'
+                        : '1x makan/hari',
+                    color: UserTheme.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _CateringDeliveryInfoBox(item: widget.item),
+            ],
             if (_showPromo) ...[
               const SizedBox(height: 10),
               Container(
@@ -595,6 +651,17 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                     color: UserTheme.primary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
+                  ),
+                ),
+              ],
+              if (_isCatering && _hasWeekdayPackage && _cateringDays == 20) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Catatan: promo dihitung berdasarkan paket Full Day (30 hari).',
+                  style: TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.3,
                   ),
                 ),
               ],
@@ -631,8 +698,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               if (_hasWeekdayPackage)
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
-                    ButtonSegment(value: 30, label: Text('Full Day')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
+                    ButtonSegment(value: 30, label: Text('Full Day 30 hari')),
                   ],
                   selected: {_cateringDays},
                   onSelectionChanged: (value) {
@@ -642,7 +709,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               const SizedBox(height: 8),
               Text(
                 _hasWeekdayPackage && _cateringDays == 20
-                    ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+                    ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
                     : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
                 style: const TextStyle(color: UserTheme.muted, fontSize: 12),
               ),
@@ -731,6 +798,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   double? _deliveryLatitude;
   double? _deliveryLongitude;
   bool _didLoadProfile = false;
+  String? _sheetError;
 
   bool get _isLaundry => widget.merchant.type == 'laundry';
 
@@ -755,7 +823,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   @override
   void initState() {
     super.initState();
-    _paymentMethod = _isLaundry ? 'cod' : 'gopay';
+    _paymentMethod = _isLaundry ? 'cod' : '';
     _cateringDays = widget.initialCateringDays ?? 30;
     final initial = widget.initialItem ?? _items.first;
     if (_isLaundry) {
@@ -826,10 +894,37 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     return item.cateringPriceForDays(_cateringDays);
   }
 
+  double _displayLaundryPrice(MerchantMenuItem item) {
+    if (item.hasPromo && (item.promoPrice ?? 0) > 0) {
+      return item.promoPrice!;
+    }
+    return item.price;
+  }
+
   List<MerchantMenuItem> get _selectedItems {
     if (_isLaundry) {
       return _items
           .where((item) => _selectedLaundryIds.contains(item.id))
+          .map(
+            (item) => MerchantMenuItem(
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              price: _displayLaundryPrice(item),
+              imageUrl: item.imageUrl,
+              category: item.category,
+              unit: item.unit,
+              price20Days: item.price20Days,
+              price30Days: item.price30Days,
+              packageDeliveryType: item.packageDeliveryType,
+              hasPromo: item.hasPromo,
+              originalPrice: item.originalPrice,
+              promoPrice: item.promoPrice,
+              promoDiscountAmount: item.promoDiscountAmount,
+              promoLabel: item.promoLabel,
+              promoDescription: item.promoDescription,
+            ),
+          )
           .toList();
     }
     final selected = _selectedCateringItem;
@@ -866,7 +961,12 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       _addressCtrl.text = result.address;
       _deliveryLatitude = result.latitude;
       _deliveryLongitude = result.longitude;
+      _sheetError = null;
     });
+  }
+
+  void _showSheetError(String message) {
+    setState(() => _sheetError = message);
   }
 
   String _laundryServiceEstimateFor(List<MerchantMenuItem> items) {
@@ -876,23 +976,38 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     return category;
   }
 
+  bool _isValidPhoneNumber(String value) {
+    final phone = value.trim();
+    if (phone.isEmpty) return false;
+    final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final hasValidPrefix = digits.startsWith('08') || digits.startsWith('628');
+    return hasValidPrefix && digits.length >= 10 && digits.length <= 15;
+  }
+
   void _submit() {
     final selectedItems = _selectedItems;
     if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih minimal satu layanan laundry')),
-      );
+      _showSheetError('Pilih minimal satu layanan laundry');
       return;
     }
     if (!_isLaundry && _total <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih paket catering terlebih dahulu')),
-      );
+      _showSheetError('Pilih paket catering terlebih dahulu');
       return;
     }
     if (_addressCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alamat tujuan wajib diisi')),
+      _showSheetError('Alamat tujuan wajib diisi');
+      return;
+    }
+    final customerName = _nameCtrl.text.trim();
+    final validName = RegExp(r"^[A-Za-z .'-]{2,}$").hasMatch(customerName) &&
+        RegExp(r'[A-Za-z]').hasMatch(customerName);
+    if (_isLaundry && !validName) {
+      _showSheetError('Nama penerima hanya boleh huruf dan spasi');
+      return;
+    }
+    if (!_isValidPhoneNumber(_phoneCtrl.text)) {
+      _showSheetError(
+        'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...',
       );
       return;
     }
@@ -903,7 +1018,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         (selectedCatering?.hasWeekdayPrice ?? false);
     final cateringNote = widget.merchant.type == 'catering'
         ? (useWeekday
-            ? 'Paket Weekday: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
+            ? 'Paket Weekday 30 hari: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
             : 'Paket Full Day: dikirim setiap hari, termasuk Sabtu dan Minggu.')
         : '';
     final notes = [
@@ -923,10 +1038,10 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
             ? _laundryServiceEstimateFor(selectedItems)
-            : (useWeekday ? 'Paket Weekday' : 'Paket Full Day'),
+            : (useWeekday ? 'Paket Weekday 30 Hari' : 'Paket Full Day'),
         paymentMethod: _paymentMethod,
-        subscriptionDays: _isLaundry ? null : (useWeekday ? 20 : 30),
-        customerName: _nameCtrl.text.trim(),
+        subscriptionDays: _isLaundry ? null : 30,
+        customerName: customerName,
         customerPhone: _phoneCtrl.text.trim(),
         notes: notes,
       ),
@@ -967,13 +1082,17 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
             const SizedBox(height: 14),
+            if (_sheetError != null) ...[
+              _SheetErrorBanner(message: _sheetError!),
+              const SizedBox(height: 14),
+            ],
             if (widget.initialItem != null) ...[
-              _lockedItemSummary(widget.initialItem!),
+              lockedItemSummary(widget.initialItem!),
               if (!_isLaundry && widget.initialItem!.hasWeekdayPrice) ...[
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
                     ButtonSegment(value: 30, label: Text('Full Day')),
                   ],
                   selected: {_cateringDays},
@@ -983,14 +1102,19 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 ),
               ],
             ] else if (_isLaundry)
-              _laundryItemPicker()
+              laundryItemPicker()
             else
-              _cateringItemPicker(),
+              cateringItemPicker(),
             const SizedBox(height: 18),
             _CheckoutField(
               controller: _nameCtrl,
               label: 'Nama Penerima',
               icon: Icons.person_outline_rounded,
+              readOnly: !_isLaundry,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.allow(RegExp(r"[A-Za-z .'-]")),
+                LengthLimitingTextInputFormatter(60),
+              ],
             ),
             const SizedBox(height: 12),
             _CheckoutField(
@@ -998,31 +1122,64 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               label: 'Nomor Telepon',
               icon: Icons.phone_outlined,
               keyboardType: TextInputType.phone,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(15),
+              ],
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _paymentOptions.contains(_paymentMethod)
-                  ? _paymentMethod
-                  : _paymentOptions.first,
-              decoration: _checkoutDecoration(
-                label: 'Metode Pembayaran',
-                icon: Icons.payments_outlined,
+            if (_isLaundry) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _paymentOptions.contains(_paymentMethod)
+                    ? _paymentMethod
+                    : _paymentOptions.first,
+                decoration: _checkoutDecoration(
+                  label: 'Metode Pembayaran',
+                  icon: Icons.payments_outlined,
+                ),
+                items: _paymentOptions
+                    .map(
+                      (method) => DropdownMenuItem(
+                        value: method,
+                        child: Text(
+                          '${PaymentMethodHelper.getDisplayName(method)} (${PaymentMethodHelper.getCategory(method)})',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _paymentMethod = value);
+                },
               ),
-              items: _paymentOptions
-                  .map(
-                    (method) => DropdownMenuItem(
-                      value: method,
+              const SizedBox(height: 18),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F8FD),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD8E5F4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.payments_outlined, color: UserTheme.primary),
+                    SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        '${PaymentMethodHelper.getDisplayName(method)} (${PaymentMethodHelper.getCategory(method)})',
+                        'Metode pembayaran dipilih setelah merchant menyetujui pesanan.',
+                        style: TextStyle(
+                          color: UserTheme.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => _paymentMethod = value);
-              },
-            ),
-            const SizedBox(height: 18),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             _CheckoutField(
               controller: _addressCtrl,
               label: 'Alamat Tujuan',
@@ -1114,11 +1271,33 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Expanded(
+                              const Expanded(
                                 child: Text(
-                                  'Promo (${_selectedCateringItem?.promoDescription ?? 'Promo aktif'})',
-                                  style: const TextStyle(
+                                  'Promo dipakai',
+                                  style: TextStyle(
                                     color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _selectedCateringItem?.promoDescription ??
+                                    'Promo aktif',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Potongan Promo',
+                                  style: TextStyle(
+                                    color: UserTheme.muted,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -1127,6 +1306,27 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                                 '- ${formatUserCurrency(_promoDiscount)}',
                                 style: const TextStyle(
                                   color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Total Penghematan',
+                                  style: TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '+ ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.success,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -1179,8 +1379,10 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     );
   }
 
-  Widget _lockedItemSummary(MerchantMenuItem item) {
+  Widget lockedItemSummary(MerchantMenuItem item) {
     final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+    final hasLaundryPromo =
+        _isLaundry && item.hasPromo && (item.promoPrice ?? 0) > 0;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1211,33 +1413,89 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           if (!_isLaundry) ...[
             const SizedBox(height: 6),
             Text(
-              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
               style: const TextStyle(color: UserTheme.muted),
             ),
+            const SizedBox(height: 8),
+            _CateringDeliveryInfoBox(item: item, compact: true),
           ] else ...[
             const SizedBox(height: 6),
-            Text(
-              'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
-              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
-            ),
+            if (hasLaundryPromo) ...[
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 13,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Harga promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ] else
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
+                style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+              ),
           ],
         ],
       ),
     );
   }
 
-  Widget _laundryItemPicker() {
+  Widget laundryItemPicker() {
+    final mainServiceItems = _items.where((item) {
+      final normalized = item.name.toLowerCase();
+      return normalized.contains('cuci') || item.unit.contains('kg');
+    }).toList();
+    final addonItems =
+        _items.where((item) => !mainServiceItems.contains(item)).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Pilih layanan laundry (tanpa jumlah kg). Merchant akan menimbang dan menetapkan total setelah selesai.',
+          'Pilih layanan utama dan tambahan service opsional. Merchant akan menimbang dan menetapkan total setelah selesai.',
           style: TextStyle(color: UserTheme.muted, fontSize: 12, height: 1.4),
         ),
-        const SizedBox(height: 10),
-        ..._items.map((item) {
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF4D6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE1A3)),
+          ),
+          child: const Text(
+            'Referensi harga ditampilkan per satuan. Total akhir akan ditentukan merchant setelah penimbangan.',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.3,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Layanan Utama',
+          style: TextStyle(
+            color: UserTheme.text,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...((mainServiceItems.isNotEmpty ? mainServiceItems : _items)
+            .map((item) {
           final selected = _selectedLaundryIds.contains(item.id);
           final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+          final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
           return InkWell(
             onTap: () {
               setState(() {
@@ -1280,10 +1538,26 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
-                          style: const TextStyle(color: UserTheme.muted),
-                        ),
+                        if (hasPromo) ...[
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.muted,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          Text(
+                            'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.primaryDark,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ] else
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                            style: const TextStyle(color: UserTheme.muted),
+                          ),
                         if (item.description.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
@@ -1303,12 +1577,114 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
           );
-        }),
+        })),
+        if (addonItems.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text(
+            'Tambahan Layanan (opsional)',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...addonItems.map((item) {
+            final selected = _selectedLaundryIds.contains(item.id);
+            final unitLabel = item.unit.isNotEmpty
+                ? item.unit
+                : item.category.isNotEmpty
+                    ? item.category
+                    : '/item';
+            final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
+            return InkWell(
+              onTap: () {
+                setState(() {
+                  if (selected) {
+                    _selectedLaundryIds.remove(item.id);
+                  } else {
+                    _selectedLaundryIds.add(item.id);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color:
+                      selected ? UserTheme.softBlue : const Color(0xFFF7F9FC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? UserTheme.primary : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_box_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      color: selected ? UserTheme.primary : UserTheme.muted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              color: UserTheme.text,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (hasPromo) ...[
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            Text(
+                              'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                              style: const TextStyle(color: UserTheme.muted),
+                            ),
+                          if (item.description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              item.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
 
-  Widget _cateringItemPicker() {
+  Widget cateringItemPicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1351,13 +1727,40 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
                           style: const TextStyle(color: UserTheme.muted),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _ProductInfoChip(
+                              icon: Icons.star_rounded,
+                              label:
+                                  '${item.rating.toStringAsFixed(1)} (${item.reviewCount})',
+                              color: const Color(0xFFFFB300),
+                            ),
+                            _ProductInfoChip(
+                              icon: Icons.delivery_dining_rounded,
+                              label: _cateringDeliveryFrequency(item),
+                              color: UserTheme.primary,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _cateringDeliverySchedule(item),
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         if (item.hasWeekdayPrice) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Weekday tersedia: ${formatUserCurrency(item.price20Days!)}',
+                            'Weekday 30 hari tersedia: ${formatUserCurrency(item.price20Days!)}',
                             style: const TextStyle(
                               color: UserTheme.primary,
                               fontSize: 12,
@@ -1377,7 +1780,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         if (_selectedCateringItem?.hasWeekdayPrice ?? false)
           SegmentedButton<int>(
             segments: const [
-              ButtonSegment(value: 20, label: Text('Weekday')),
+              ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
               ButtonSegment(value: 30, label: Text('Full Day')),
             ],
             selected: {_cateringDays},
@@ -1389,7 +1792,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         Text(
           _cateringDays == 20 &&
                   (_selectedCateringItem?.hasWeekdayPrice ?? false)
-              ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+              ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
               : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
           style: const TextStyle(color: UserTheme.muted, fontSize: 12),
         ),
@@ -1405,6 +1808,8 @@ class _CheckoutField extends StatelessWidget {
     required this.icon,
     this.maxLines = 1,
     this.keyboardType,
+    this.readOnly = false,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -1412,6 +1817,8 @@ class _CheckoutField extends StatelessWidget {
   final IconData icon;
   final int maxLines;
   final TextInputType? keyboardType;
+  final bool readOnly;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -1440,6 +1847,8 @@ class _CheckoutField extends StatelessWidget {
             controller: controller,
             maxLines: maxLines,
             keyboardType: keyboardType,
+            readOnly: readOnly,
+            inputFormatters: inputFormatters,
             textAlign: TextAlign.start,
             textAlignVertical: TextAlignVertical.center,
             decoration: _checkoutDecoration(multiline: true),
@@ -1451,9 +1860,51 @@ class _CheckoutField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      readOnly: readOnly,
+      inputFormatters: inputFormatters,
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,
+      ),
+    );
+  }
+}
+
+class _SheetErrorBanner extends StatelessWidget {
+  const _SheetErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC9C9)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFD82121),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF8F1A1A),
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1496,7 +1947,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = _iconForType(merchant.type);
+    final icon = iconForType(merchant.type);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1583,7 +2034,7 @@ class _HeaderCard extends StatelessWidget {
     );
   }
 
-  IconData _iconForType(String type) {
+  IconData iconForType(String type) {
     switch (type) {
       case 'laundry':
         return Icons.local_laundry_service_rounded;
@@ -1672,12 +2123,12 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   @override
   Widget build(BuildContext context) {
     if (widget.type == 'laundry') {
-      return _buildLaundryCard();
+      return buildLaundryCard();
     }
-    return _buildCateringCard();
+    return buildCateringCard();
   }
 
-  Widget _buildLaundryCard() {
+  Widget buildLaundryCard() {
     final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
     return GestureDetector(
       onTap: widget.onOrder,
@@ -1794,10 +2245,11 @@ class _MenuItemCardState extends State<_MenuItemCard> {
     );
   }
 
-  Widget _buildCateringCard() {
+  Widget buildCateringCard() {
     final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
-    final basePrice =
-        hasPromo ? (widget.item.promoPrice ?? widget.item.price) : widget.item.price;
+    final basePrice = hasPromo
+        ? (widget.item.promoPrice ?? widget.item.price)
+        : widget.item.price;
 
     return GestureDetector(
       onTap: widget.onOrder,
@@ -1829,6 +2281,26 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 fontSize: 18,
               ),
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _ProductInfoChip(
+                  icon: Icons.star_rounded,
+                  label:
+                      '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                  color: const Color(0xFFFFB300),
+                ),
+                _ProductInfoChip(
+                  icon: Icons.delivery_dining_rounded,
+                  label: _cateringDeliveryFrequency(widget.item),
+                  color: UserTheme.primary,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _CateringDeliveryInfoBox(item: widget.item),
             if (hasPromo) ...[
               const SizedBox(height: 8),
               Container(
@@ -1925,6 +2397,124 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   }
 }
 
+class _ProductInfoChip extends StatelessWidget {
+  const _ProductInfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CateringDeliveryInfoBox extends StatelessWidget {
+  const _CateringDeliveryInfoBox({
+    required this.item,
+    this.compact = false,
+  });
+
+  final MerchantMenuItem item;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3EAF4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: UserTheme.softBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.delivery_dining_rounded,
+              color: UserTheme.primary,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _cateringDeliveryFrequency(item),
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _cateringDeliverySchedule(item),
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _cateringDeliveryFrequency(MerchantMenuItem item) {
+  return item.mealDeliveryCount >= 2 ? '2x makan/hari' : '1x makan/hari';
+}
+
+String _cateringDeliverySchedule(MerchantMenuItem item) {
+  if (item.mealDeliveryCount >= 2) {
+    final second = (item.deliveryTime2 ?? '').trim().isEmpty
+        ? '15:00'
+        : item.deliveryTime2!.trim();
+    return 'Gelombang pengantaran mulai ${item.deliveryTime1} dan $second.';
+  }
+  return 'Gelombang pengantaran mulai ${item.deliveryTime1}.';
+}
+
 class _EmptyMenu extends StatelessWidget {
   const _EmptyMenu({required this.type});
 
@@ -1955,7 +2545,8 @@ class _ActivePromoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final promoItems = merchant.menuItems.where((item) => item.hasPromo).toList();
+    final promoItems =
+        merchant.menuItems.where((item) => item.hasPromo).toList();
     if (promoItems.isEmpty) return const SizedBox.shrink();
     final topPromo = promoItems.first;
     return Container(
@@ -2024,7 +2615,9 @@ class _ReviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final products = reviewState?.reviewableProducts ?? const [];
-    final myReviews = reviewState?.myReviews.where((review) => !review.isDeleted).toList() ?? const <MerchantReview>[];
+    final myReviews =
+        reviewState?.myReviews.where((review) => !review.isDeleted).toList() ??
+            const <MerchantReview>[];
     final canReview = products.isNotEmpty;
     final remainingEditAttempts = activeReview?.remainingEditAttempts ?? 0;
 
@@ -2108,13 +2701,9 @@ class _ReviewSection extends StatelessWidget {
                         },
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  activeReview == null
-                      ? 'Belum ada ulasan aktif untuk produk ini.'
-                      : (remainingEditAttempts > 0
-                          ? 'Ulasan produk ini sudah ada. Anda bisa mengedit atau menghapusnya.'
-                          : 'Batas edit ulasan tercapai. Anda tidak dapat memperbarui lagi.'),
-                  style: const TextStyle(
+                const Text(
+                  'Belum ada ulasan aktif untuk produk ini.',
+                  style: TextStyle(
                     color: UserTheme.muted,
                     fontSize: 12,
                     height: 1.35,
@@ -2170,7 +2759,8 @@ class _ReviewSection extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: isSubmitting || !canReview ||
+                  onPressed: isSubmitting ||
+                          !canReview ||
                           (activeReview != null && remainingEditAttempts <= 0)
                       ? null
                       : onSubmit,
@@ -2181,31 +2771,9 @@ class _ReviewSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(isSubmitting
-                      ? 'Menyimpan...'
-                      : activeReview == null
-                          ? 'Kirim Ulasan'
-                          : 'Update Ulasan'),
+                  child: Text(isSubmitting ? 'Menyimpan...' : 'Kirim Ulasan'),
                 ),
               ),
-              if (activeReview != null) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: isSubmitting ? null : onDelete,
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Hapus Ulasan'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -2219,7 +2787,8 @@ class _ReviewSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...myReviews.map((review) => ReviewCard(review: review, showProductName: true)),
+          ...myReviews.map(
+              (review) => ReviewCard(review: review, showProductName: true)),
         ],
         const SizedBox(height: 16),
         if (merchant.reviews.isNotEmpty)
@@ -2260,4 +2829,3 @@ class _ReviewSection extends StatelessWidget {
     );
   }
 }
-

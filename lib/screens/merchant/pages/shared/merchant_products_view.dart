@@ -232,7 +232,7 @@ class _ProductCard extends StatelessWidget {
                   top: 12,
                   right: 16,
                   child: MerchantStatusPill(
-                    label: 'Weekday tersedia',
+                    label: 'Weekday 30 hari tersedia',
                     color: MerchantPalette.text,
                     background: Colors.white.withValues(alpha: 0.92),
                   ),
@@ -280,12 +280,14 @@ class _ProductCard extends StatelessWidget {
                       ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                _ProductRatingTag(product: product),
                 if (!isLaundry) ...[
                   const SizedBox(height: 10),
                   _PackagePriceTag(
                     icon: Icons.calendar_month_rounded,
                     text:
-                        'Full Day ${formatMerchantCurrency(product.price)} - dikirim setiap hari',
+                        'Full Day 30 hari ${formatMerchantCurrency(product.price)} - dikirim setiap hari',
                     color: MerchantPalette.primary,
                     background: const Color(0xFFF3F6FF),
                     border: const Color(0xFFD8E1FF),
@@ -295,12 +297,22 @@ class _ProductCard extends StatelessWidget {
                     _PackagePriceTag(
                       icon: Icons.event_busy_rounded,
                       text:
-                          'Weekday ${formatMerchantCurrency(product.price20Days!)} - Sabtu/Minggu libur',
+                          'Weekday 30 hari ${formatMerchantCurrency(product.price20Days!)} - Sabtu/Minggu libur',
                       color: const Color(0xFF2F7D4E),
                       background: const Color(0xFFF2F7F4),
                       border: const Color(0xFFCDE3D5),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  _PackagePriceTag(
+                    icon: Icons.delivery_dining_rounded,
+                    text: product.mealDeliveryCount >= 2
+                        ? 'Pengantaran 2x per hari: ${product.deliveryTime1} dan ${product.deliveryTime2 ?? '15:00'}'
+                        : 'Pengantaran 1x per hari: ${product.deliveryTime1}',
+                    color: const Color(0xFF7C3AED),
+                    background: const Color(0xFFF6F1FF),
+                    border: const Color(0xFFE4D7FF),
+                  ),
                 ],
                 const SizedBox(height: 8),
                 Text(
@@ -325,6 +337,42 @@ class _ProductCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductRatingTag extends StatelessWidget {
+  const _ProductRatingTag({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReviews = product.reviewCount > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E5),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFFFE3A3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star_rounded, size: 17, color: Color(0xFFFFB300)),
+          const SizedBox(width: 6),
+          Text(
+            hasReviews
+                ? '${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
+                : 'Belum ada rating',
+            style: const TextStyle(
+              color: MerchantPalette.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],

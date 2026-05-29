@@ -10,6 +10,7 @@ import '../../../../data/repositories/user_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../../../widgets/location_picker_page.dart';
 import '../../merchant_ui.dart';
+import 'merchant_product_reviews_page.dart';
 
 class MerchantProfilePage extends StatefulWidget {
   const MerchantProfilePage({super.key});
@@ -35,7 +36,6 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
   String _photoUrl = '';
   double? _latitude;
   double? _longitude;
-  List<String> _categories = [];
 
   @override
   void initState() {
@@ -73,7 +73,6 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       _photoUrl = profile.photoUrl;
       _latitude = profile.latitude;
       _longitude = profile.longitude;
-      _categories = [...profile.categories];
     }
     setState(() {
       _profile = profile;
@@ -142,36 +141,6 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     });
   }
 
-  Future<void> _addCategory() async {
-    final ctrl = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Tambah kategori'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Contoh: Express'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: const Text('Tambah'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (value == null || value.isEmpty) return;
-    setState(() {
-      if (!_categories.contains(value)) _categories.add(value);
-    });
-  }
-
   Future<void> _save() async {
     final auth = AuthScope.of(context);
     if (_nameCtrl.text.trim().isEmpty) {
@@ -193,7 +162,6 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       openTime: _openCtrl.text.trim().isEmpty ? '08:00' : _openCtrl.text.trim(),
       closeTime:
           _closeCtrl.text.trim().isEmpty ? '21:00' : _closeCtrl.text.trim(),
-      categories: _categories,
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -310,7 +278,16 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
             onTap: _pickPhoto,
           ),
           const SizedBox(height: 14),
-          _PerformanceSection(profile: profile),
+          _PerformanceSection(
+            profile: profile,
+            onReviewsTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MerchantProductReviewsPage(),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 18),
           _InfoTile(
             icon: Icons.email_outlined,
@@ -350,14 +327,6 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
             onPickLocation: _pickLocation,
             onPickOpenTime: () => _pickOperationalTime(_openCtrl),
             onPickCloseTime: () => _pickOperationalTime(_closeCtrl),
-          ),
-          const SizedBox(height: 18),
-          _CategorySection(
-            categories: _categories,
-            onAdd: _addCategory,
-            onRemove: (category) {
-              setState(() => _categories.remove(category));
-            },
           ),
           const SizedBox(height: 18),
           _ActionTile(
@@ -480,9 +449,13 @@ class _MerchantProfileHeader extends StatelessWidget {
 }
 
 class _PerformanceSection extends StatelessWidget {
-  const _PerformanceSection({required this.profile});
+  const _PerformanceSection({
+    required this.profile,
+    required this.onReviewsTap,
+  });
 
   final MerchantProfile profile;
+  final VoidCallback onReviewsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -520,6 +493,7 @@ class _PerformanceSection extends StatelessWidget {
                   value: profile.reviewCount.toString(),
                   label: 'Ulasan',
                   icon: Icons.rate_review_outlined,
+                  onTap: onReviewsTap,
                 ),
               ),
             ],
@@ -535,48 +509,59 @@ class _PerformanceBox extends StatelessWidget {
     required this.value,
     required this.label,
     required this.icon,
+    this.onTap,
   });
 
   final String value;
   final String label;
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
+    return Material(
+      color: const Color(0xFFF7F9FC),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: MerchantPalette.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: MerchantPalette.primary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(icon, color: MerchantPalette.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: MerchantPalette.primary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: MerchantPalette.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: MerchantPalette.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
+              ),
+              if (onTap != null)
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: MerchantPalette.muted,
                 ),
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -705,68 +690,6 @@ class _ProfileFormCard extends StatelessWidget {
                       : closeController.text.trim(),
                   onTap: onPickCloseTime,
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CategorySection extends StatelessWidget {
-  const _CategorySection({
-    required this.categories,
-    required this.onAdd,
-    required this.onRemove,
-  });
-
-  final List<String> categories;
-  final VoidCallback onAdd;
-  final ValueChanged<String> onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [MerchantPalette.shadow(opacity: 0.05)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Kategori Layanan',
-            style: TextStyle(
-              color: MerchantPalette.text,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              ...categories.map(
-                (category) => InputChip(
-                  label: Text(category),
-                  onDeleted: () => onRemove(category),
-                  deleteIcon: const Icon(Icons.close_rounded, size: 18),
-                  backgroundColor: MerchantPalette.softBlue,
-                  labelStyle: const TextStyle(
-                    color: MerchantPalette.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  side: BorderSide.none,
-                ),
-              ),
-              ActionChip(
-                avatar: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Tambah'),
-                onPressed: onAdd,
               ),
             ],
           ),

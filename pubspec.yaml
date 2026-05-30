@@ -25,8 +25,12 @@ dependencies:
   printing: ^5.13.4
   path_provider: ^2.1.5
   share_plus: ^10.1.4
-  firebase_core: ^4.9.0
-  firebase_messaging: ^16.2.2
+  # Firebase and related plugins (merged from both branches)
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.2.10
+  firebase_auth: ^5.1.1
+  cloud_firestore: ^5.6.12
+  google_sign_in: ^6.2.1
 
 dev_dependencies:
   flutter_test:

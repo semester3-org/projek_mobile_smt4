@@ -1,4 +1,4 @@
-package com.example.projek_mobile
+package com.projek.kos
 
 import io.flutter.embedding.android.FlutterActivity
 

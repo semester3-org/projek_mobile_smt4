@@ -22,6 +22,7 @@ error_log("DEBUG: URI=$uri | Path=$path | Method=" . $_SERVER['REQUEST_METHOD'])
 
 // ── Auth endpoints (tidak perlu login) ────────────────────────────────────────
 if ($path === 'api/login')           { require_once __DIR__ . '/api/login.php';          exit; }
+if ($path === 'api/login-google')    { require_once __DIR__ . '/api/login_google.php';   exit; }
 if ($path === 'api/session')         { require_once __DIR__ . '/api/session.php';        exit; }
 if ($path === 'api/register')        { require_once __DIR__ . '/api/register.php';       exit; }
 if ($path === 'api/forgot-password') { require_once __DIR__ . '/api/forgot-password.php'; exit; }

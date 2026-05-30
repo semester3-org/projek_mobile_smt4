@@ -37,7 +37,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://10.154.208.177:8000';
+      return 'http://192.168.18.15:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {

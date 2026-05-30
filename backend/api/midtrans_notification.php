@@ -93,6 +93,23 @@ if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
         ? 'paid'
         : ($transactionStatus === 'pending' ? 'waiting_payment' : 'cancelled');
     $orderInt = (int)$orderIdForOrder;
+
+    $existingOrder = null;
+    $lookup = $conn->prepare("
+        SELECT o.id, o.order_code, o.user_id, o.payment_status,
+               m.user_id AS merchant_user_id
+        FROM orders o
+        INNER JOIN merchants m ON m.id = o.merchant_id
+        WHERE o.id = ? OR o.midtrans_order_id = ?
+        LIMIT 1
+    ");
+    if ($lookup) {
+        $lookup->bind_param('is', $orderInt, $rawMidtransOrderId);
+        $lookup->execute();
+        $existingOrder = $lookup->get_result()->fetch_assoc();
+        $lookup->close();
+    }
+
     $stmt = $conn->prepare("
         UPDATE orders
         SET payment_status = ?,
@@ -121,6 +138,36 @@ if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
 
     if ($orderPaymentStatus === 'paid') {
         merchantActivateCateringSubscription($conn, $orderInt);
+        $wasAlreadyPaid = strtolower((string)($existingOrder['payment_status'] ?? '')) === 'paid';
+        if (!$wasAlreadyPaid && $existingOrder) {
+            $orderCode = (string)($existingOrder['order_code'] ?? ('#' . $orderInt));
+            $merchantUserId = (string)($existingOrder['merchant_user_id'] ?? '');
+            $orderUserId = (string)($existingOrder['user_id'] ?? '');
+            if ($merchantUserId !== '') {
+                merchantCreateNotification(
+                    $conn,
+                    $merchantUserId,
+                    'Pembayaran pesanan berhasil',
+                    'Pembayaran Midtrans untuk ' . $orderCode . ' sudah diterima.',
+                    'payment',
+                    'Lihat Pesanan',
+                    'order:' . (string)$orderInt,
+                    'important'
+                );
+            }
+            if ($orderUserId !== '') {
+                merchantCreateNotification(
+                    $conn,
+                    $orderUserId,
+                    'Pembayaran berhasil',
+                    'Pembayaran ' . $orderCode . ' berhasil diterima. Pesanan akan dilanjutkan merchant.',
+                    'payment',
+                    'Lihat Pesanan',
+                    'order:' . (string)$orderInt,
+                    'important'
+                );
+            }
+        }
     }
 
     error_log("Midtrans order notification: Order ID $orderIdForOrder, Status $transactionStatus -> $orderPaymentStatus");

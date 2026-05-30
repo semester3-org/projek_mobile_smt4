@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../auth/auth_scope.dart';
@@ -20,10 +22,10 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   bool _loading = true;
   String? _error;
   String _filter = 'semua';
+  StreamSubscription<void>? _notificationSubscription;
 
   static const _filters = [
     ('semua', 'Semua'),
-    ('baru', 'Baru Masuk'),
     ('belum_dibaca', 'Belum Dibaca'),
     ('dibaca', 'Sudah Dibaca'),
   ];
@@ -32,13 +34,25 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   void initState() {
     super.initState();
     _load();
+    _notificationSubscription =
+        MerchantRepository.notificationCountChanges.listen((_) {
+      if (mounted) _load(silent: true);
+    });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getNotifications();
     if (!mounted) return;
     setState(() {
@@ -107,11 +121,8 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   }
 
   List<MerchantNotification> get _visibleItems {
-    final now = DateTime.now();
     return _items.where((item) {
       switch (_filter) {
-        case 'baru':
-          return now.difference(item.createdAt).inHours < 24;
         case 'belum_dibaca':
           return item.isUnread;
         case 'dibaca':
@@ -133,6 +144,7 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
         actionIcon: Icons.refresh_rounded,
         onAction: _load,
       ),
+      onRefresh: _load,
       children: [
         if (_loading)
           const Padding(
@@ -152,7 +164,8 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
               Expanded(
                 child: MerchantFilterChips(
                   labels: _filters.map((item) => item.$2).toList(),
-                  selectedIndex: _filters.indexWhere((item) => item.$1 == _filter),
+                  selectedIndex:
+                      _filters.indexWhere((item) => item.$1 == _filter),
                   onSelected: (index) =>
                       setState(() => _filter = _filters[index].$1),
                 ),
@@ -170,25 +183,22 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
           ),
           const SizedBox(height: 8),
           if (visibleItems.isEmpty)
-          const MerchantCard(
-            child: Text(
-              'Belum ada notifikasi.',
-              style: TextStyle(color: MerchantPalette.muted),
-            ),
-          )
+            const MerchantCard(
+              child: Text(
+                'Belum ada notifikasi.',
+                style: TextStyle(color: MerchantPalette.muted),
+              ),
+            )
           else
-          ...visibleItems.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: _NotificationTile(
-                item: item,
-                onTap: () => _openNotification(item),
-                onOpenOrder: item.orderIdFromAction == null
-                    ? null
-                    : () => _openOrderDetail(item.orderIdFromAction!),
+            ...visibleItems.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: _NotificationTile(
+                  item: item,
+                  onTap: () => _openNotification(item),
+                ),
               ),
             ),
-          ),
         ],
         const MerchantBottomSpacer(),
       ],
@@ -200,39 +210,41 @@ class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.item,
     required this.onTap,
-    this.onOpenOrder,
   });
 
   final MerchantNotification item;
   final VoidCallback onTap;
-  final VoidCallback? onOpenOrder;
 
   @override
   Widget build(BuildContext context) {
-    final unread = item.status == 'baru';
+    final unread = item.isUnread;
+    final icon = _iconFor(item);
+    final title = _displayTitle(item.title);
+    final message = _displayMessage(item.message);
     return MerchantCard(
       onTap: onTap,
       padding: const EdgeInsets.all(18),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color:
-                  unread ? MerchantPalette.softBlue : const Color(0xFFF0F2F6),
-              borderRadius: BorderRadius.circular(12),
+          if (icon != null) ...[
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F2F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.black),
             ),
-            child: Icon(_iconFor(item.type), color: MerchantPalette.primary),
-          ),
-          const SizedBox(width: 14),
+            const SizedBox(width: 14),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.title,
+                  title,
                   style: const TextStyle(
                     color: MerchantPalette.text,
                     fontSize: 16,
@@ -241,7 +253,7 @@ class _NotificationTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  item.message,
+                  message,
                   style: const TextStyle(
                     color: MerchantPalette.muted,
                     height: 1.35,
@@ -256,17 +268,6 @@ class _NotificationTile extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (onOpenOrder != null) ...[
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: onOpenOrder,
-                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                      label: const Text('Lihat Detail Pesanan'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -284,17 +285,51 @@ class _NotificationTile extends StatelessWidget {
     );
   }
 
-  IconData _iconFor(String type) {
-    switch (type) {
-      case 'payment':
-        return Icons.payments_outlined;
-      case 'promo':
-        return Icons.local_offer_outlined;
-      case 'review':
-        return Icons.star_outline_rounded;
-      default:
-        return Icons.receipt_long_outlined;
+  IconData? _iconFor(MerchantNotification item) {
+    final type = item.type;
+    final text = '${item.type} ${item.title} ${item.message}'.toLowerCase();
+    if (type == 'promo' || text.contains('promo') || text.contains('diskon')) {
+      return Icons.local_offer_outlined;
     }
+    if (text.contains('laundry') && text.contains('selesai')) {
+      return Icons.task_alt_rounded;
+    }
+    if (type == 'order' ||
+        text.contains('pesanan baru') ||
+        text.contains('pesanan dibuat') ||
+        text.contains('menunggu konfirmasi')) {
+      return Icons.receipt_long_outlined;
+    }
+    if (text.contains('status') ||
+        text.contains('diproses') ||
+        text.contains('diterima') ||
+        text.contains('siap diantar')) {
+      return Icons.sync_alt_rounded;
+    }
+    if (type == 'payment' ||
+        text.contains('bayar') ||
+        text.contains('pembayaran')) {
+      return Icons.payments_outlined;
+    }
+    if (type == 'review') {
+      return Icons.star_outline_rounded;
+    }
+    return null;
+  }
+
+  String _displayTitle(String title) {
+    return title
+        .replaceAll('Total laundry sudah ditetapkan',
+            'Total pembayaran telah ditentukan')
+        .replaceAll(
+            'Total laundry ditetapkan', 'Total pembayaran telah ditentukan');
+  }
+
+  String _displayMessage(String message) {
+    return message
+        .replaceAll('Total laundry sudah ditetapkan',
+            'Total pembayaran laundry telah ditentukan.')
+        .replaceAll('siap dibayar', 'siap untuk dibayar');
   }
 
   String _timeLabel(DateTime time) {

@@ -31,11 +31,12 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
   Timer? _debounce;
   List<MerchantOrder> _orders = [];
   bool _loading = true;
+  bool _loadingRequest = false;
   String? _error;
   int _selectedFilter = 0;
 
   List<String> get _filters => widget.isLaundry
-      ? const ['Semua', 'Pending', 'Diproses', 'Selesai']
+      ? const ['Semua', 'Konfirmasi', 'Berjalan', 'Selesai']
       : const [
           'Semua',
           'Pending',
@@ -66,6 +67,8 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
   }
 
   Future<void> _load({bool silent = false}) async {
+    if (_loadingRequest) return;
+    _loadingRequest = true;
     if (!silent) {
       setState(() {
         _loading = true;
@@ -81,6 +84,7 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
       _orders = result.data ?? [];
       if (!silent) _error = result.error;
       _loading = false;
+      _loadingRequest = false;
     });
   }
 
@@ -106,18 +110,39 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
     _debounce = Timer(const Duration(milliseconds: 350), _load);
   }
 
+  void _showTimedSnackBar(String message, {SnackBarAction? action}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: action,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout);
+    });
+  }
+
   Future<void> _process(MerchantOrder order) async {
     final result = await MerchantRepository.updateOrder(
       id: order.id,
       nextStatus: true,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.isSuccess
-            ? 'Pesanan ${order.code} diperbarui'
-            : result.error ?? 'Gagal memproses pesanan'),
-      ),
+    final updated = result.data ?? order;
+    _showTimedSnackBar(
+      result.isSuccess
+          ? 'Pesanan ${order.code} diperbarui. Detail menampilkan alur lengkap.'
+          : result.error ?? 'Gagal memproses pesanan',
+      action: result.isSuccess
+          ? SnackBarAction(
+              label: 'Lihat Detail',
+              onPressed: () => _openDetail(updated),
+            )
+          : null,
     );
     if (result.isSuccess && result.data != null) {
       setState(() {
@@ -213,13 +238,77 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
     }
   }
 
-  Future<void> _openDetail(MerchantOrder order) async {
+  Future<void> _handleLaundryCardAction(MerchantOrder order) async {
+    if (_isLaundryWeighingStep(order)) {
+      await _openDetail(order, focus: MerchantOrderDetailFocus.weighing);
+      return;
+    }
+
+    if (_isLaundryWaitingPayment(order)) {
+      _showDetailSuggestion(
+        order,
+        'Pesanan masih menunggu pembayaran user. Buka detail untuk melihat milestone dan status pembayaran.',
+      );
+      return;
+    }
+
+    if (!_canAdvanceLaundryFromCard(order)) {
+      await _openDetail(order);
+      return;
+    }
+
+    final result = await MerchantRepository.updateOrder(
+      id: order.id,
+      nextStatus: true,
+    );
+    if (!mounted) return;
+    final updated = result.data ?? order;
+    if (result.isSuccess && result.data != null) {
+      setState(() {
+        final idx = _orders.indexWhere((o) => o.id == order.id);
+        if (idx >= 0) _orders[idx] = result.data!;
+      });
+    } else if (result.isSuccess) {
+      _load(silent: true);
+    }
+
+    _showTimedSnackBar(
+      result.isSuccess
+          ? 'Pesanan ${order.code} diperbarui. Detail menampilkan milestone lengkap.'
+          : result.error ?? 'Gagal memperbarui pesanan',
+      action: result.isSuccess
+          ? SnackBarAction(
+              label: 'Lihat Detail',
+              onPressed: () => _openDetail(
+                updated,
+                focus: _detailFocusFor(updated),
+              ),
+            )
+          : null,
+    );
+  }
+
+  void _showDetailSuggestion(MerchantOrder order, String message) {
+    _showTimedSnackBar(
+      message,
+      action: SnackBarAction(
+        label: 'Buka Detail',
+        onPressed: () => _openDetail(order, focus: _detailFocusFor(order)),
+      ),
+    );
+  }
+
+  Future<void> _openDetail(
+    MerchantOrder order, {
+    MerchantOrderDetailFocus? focus,
+  }) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => MerchantOrderDetailPage(
           isLaundry: widget.isLaundry,
           orderId: order.id,
+          initialFocus: focus,
         ),
       ),
     );
@@ -296,15 +385,18 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
               padding: const EdgeInsets.only(bottom: 18),
               child: _MerchantOrderCard(
                 order: order,
-                onProcess: order.statusGroup == 'done' ||
-                        order.statusGroup == 'cancelled' ||
-                        (!widget.isLaundry &&
-                            order.statusGroup == 'waiting_payment') ||
-                        (!widget.isLaundry &&
-                            order.statusGroup == 'today_delivery') ||
-                        !order.canApprove
-                    ? null
-                    : () => _process(order),
+                onProcess: widget.isLaundry
+                    ? (order.statusGroup == 'done' ||
+                            order.statusGroup == 'cancelled'
+                        ? null
+                        : () => _handleLaundryCardAction(order))
+                    : (order.statusGroup == 'done' ||
+                            order.statusGroup == 'cancelled' ||
+                            order.statusGroup == 'waiting_payment' ||
+                            order.statusGroup == 'today_delivery' ||
+                            !order.canApprove
+                        ? null
+                        : () => _process(order)),
                 onCompleteDelivery: (milestone) =>
                     _completeDelivery(order, milestone),
                 onReject: order.serviceType == 'catering' &&
@@ -406,7 +498,7 @@ class _MerchantOrderCard extends StatelessWidget {
                   ? order.paymentMethodLabel
                   : PaymentMethodHelper.getDisplayName(order.paymentMethod),
               if (order.paymentStatusLabel.isNotEmpty) order.paymentStatusLabel,
-            ].join(' · '),
+            ].join(' - '),
           ),
           if (order.serviceType == 'catering' &&
               order.deliveryMilestones.isNotEmpty) ...[
@@ -419,55 +511,72 @@ class _MerchantOrderCard extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  formatMerchantCurrency(order.totalAmount),
-                  style: const TextStyle(
-                    color: MerchantPalette.primary,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                  ),
+          if (onProcess != null &&
+              (order.serviceType != 'catering' ||
+                  order.statusGroup != 'today_delivery')) ...[
+            _CardActionHint(
+              text: _laundryCardActionAdvice(order),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Text(
+            _orderTotalText(order),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: MerchantPalette.primary,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                TextButton(
+                  onPressed: onDetail,
+                  child: const Text('Detail'),
                 ),
-              ),
-              TextButton(
-                onPressed: onDetail,
-                child: const Text('Detail'),
-              ),
-              if (onReject != null) ...[
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: onReject,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: MerchantPalette.danger,
-                    side: BorderSide(
-                      color: MerchantPalette.danger.withValues(alpha: 0.35),
+                if (onReject != null)
+                  OutlinedButton(
+                    onPressed: onReject,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: MerchantPalette.danger,
+                      side: BorderSide(
+                        color: MerchantPalette.danger.withValues(alpha: 0.35),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                    child: const Text('Tolak'),
+                  ),
+                if (onProcess != null &&
+                    (order.serviceType != 'catering' ||
+                        order.statusGroup != 'today_delivery'))
+                  FilledButton(
+                    onPressed: onProcess,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: MerchantPalette.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      _actionLabel(order),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  child: const Text('Tolak'),
-                ),
               ],
-              if (onProcess != null &&
-                  (order.serviceType != 'catering' ||
-                      order.statusGroup != 'today_delivery')) ...[
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: onProcess,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: MerchantPalette.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(_actionLabel(order, onProcess)),
-                ),
-              ],
-            ],
+            ),
           ),
         ],
       ),
@@ -475,8 +584,55 @@ class _MerchantOrderCard extends StatelessWidget {
   }
 }
 
+class _CardActionHint extends StatelessWidget {
+  const _CardActionHint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: MerchantPalette.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: MerchantPalette.primary.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 16,
+              color: MerchantPalette.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$text Detail pesanan tetap bisa dibuka untuk melihat milestone lengkap.',
+                style: const TextStyle(
+                  color: MerchantPalette.primary,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 String _serviceEstimateText(MerchantOrder order) {
   if (order.serviceType == 'laundry') {
+    if (order.estimatedFinishAt != null) {
+      return 'Estimasi selesai: ${_formatDateTime(order.estimatedFinishAt!)}';
+    }
     final label = order.serviceEstimateLabel.isNotEmpty
         ? order.serviceEstimateLabel
         : order.estimatedTime;
@@ -495,14 +651,102 @@ String _serviceEstimateText(MerchantOrder order) {
       : order.estimatedTime;
 }
 
-String _actionLabel(MerchantOrder order, VoidCallback? onProcess) {
+String _orderTotalText(MerchantOrder order) {
+  if (order.serviceType == 'laundry' &&
+      (order.totalAmount <= 0 ||
+          order.paymentStatus.toLowerCase() == 'awaiting_weighing')) {
+    return 'Total belum ditentukan';
+  }
+  return formatMerchantCurrency(order.totalAmount);
+}
+
+String _formatDateTime(DateTime date) {
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(date.day)}/${two(date.month)}/${date.year} ${two(date.hour)}:${two(date.minute)}';
+}
+
+String _actionLabel(MerchantOrder order) {
   if (order.statusGroup == 'done') return 'Selesai';
+  if (order.statusGroup == 'cancelled') return 'Dibatalkan';
+  if (order.serviceType == 'laundry') {
+    final payment = order.paymentStatus.toLowerCase();
+    if (order.status == 'pending') return 'Terima Pesanan';
+    if (payment == 'awaiting_weighing' || order.totalAmount <= 0) {
+      return 'Timbang & Total Bayar';
+    }
+    if (order.status == 'accepted' &&
+        (payment == 'waiting_payment' || payment == 'unpaid')) {
+      return 'Lihat Pembayaran';
+    }
+    if (order.status == 'accepted' &&
+        ['paid', 'payment_submitted', 'cod'].contains(payment)) {
+      return 'Mulai Proses Laundry';
+    }
+    if (order.status == 'processing') return 'Tandai Siap Diantar';
+    if (order.status == 'delivered') return 'Tandai Selesai';
+    return 'Kelola Pesanan';
+  }
   if (!order.canApprove) return 'Menunggu Bayar';
   if (order.serviceType == 'catering' && order.status == 'pending') {
     return 'Setujui';
   }
   if (order.status == 'pending') return 'Approve';
-  return 'Proses';
+  return 'Kelola Pesanan';
+}
+
+bool _isLaundryWeighingStep(MerchantOrder order) {
+  final payment = order.paymentStatus.toLowerCase();
+  return order.serviceType == 'laundry' &&
+      order.status != 'pending' &&
+      (payment == 'awaiting_weighing' || order.totalAmount <= 0);
+}
+
+bool _isLaundryWaitingPayment(MerchantOrder order) {
+  final payment = order.paymentStatus.toLowerCase();
+  return order.serviceType == 'laundry' &&
+      order.status == 'accepted' &&
+      (payment == 'waiting_payment' || payment == 'unpaid');
+}
+
+bool _canAdvanceLaundryFromCard(MerchantOrder order) {
+  if (order.serviceType != 'laundry') return false;
+  if (order.statusGroup == 'done' || order.statusGroup == 'cancelled') {
+    return false;
+  }
+  final payment = order.paymentStatus.toLowerCase();
+  if (order.status == 'pending') return true;
+  if (order.status == 'accepted') {
+    return ['paid', 'payment_submitted', 'cod'].contains(payment);
+  }
+  return order.status == 'processing' || order.status == 'delivered';
+}
+
+MerchantOrderDetailFocus? _detailFocusFor(MerchantOrder order) {
+  return _isLaundryWeighingStep(order)
+      ? MerchantOrderDetailFocus.weighing
+      : null;
+}
+
+String _laundryCardActionAdvice(MerchantOrder order) {
+  if (order.serviceType != 'laundry') {
+    if (order.status == 'pending') {
+      return 'Pesanan bisa disetujui langsung dari kartu ini.';
+    }
+    return 'Aksi cepat ini melanjutkan pesanan ke tahap berikutnya.';
+  }
+  if (order.status == 'pending') {
+    return 'Pesanan akan diterima dan masuk ke tahap penimbangan.';
+  }
+  if (order.status == 'accepted') {
+    return 'Pembayaran sudah siap. Pesanan akan masuk ke tahap proses laundry.';
+  }
+  if (order.status == 'processing') {
+    return 'Gunakan aksi ini jika laundry sudah selesai diproses dan siap dikirim.';
+  }
+  if (order.status == 'delivered') {
+    return 'Gunakan aksi ini setelah pesanan sudah diterima pelanggan.';
+  }
+  return 'Aksi ini akan melanjutkan status pesanan ke tahap berikutnya.';
 }
 
 class _DeliveryMilestones extends StatelessWidget {

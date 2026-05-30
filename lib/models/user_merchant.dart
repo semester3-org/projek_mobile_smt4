@@ -1,3 +1,52 @@
+class MerchantMenuAddon {
+  const MerchantMenuAddon({
+    required this.id,
+    required this.name,
+    required this.price,
+    this.pricingType = 'flat',
+    this.pricingTypeLabel = 'Flat Price',
+    this.unit = 'fixed',
+    this.isActive = true,
+  });
+
+  final String id;
+  final String name;
+  final double price;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final String unit;
+  final bool isActive;
+
+  factory MerchantMenuAddon.fromJson(Map<String, dynamic> json) {
+    final isActiveRaw = json['isActive'];
+    return MerchantMenuAddon(
+      id: (json['id'] ?? '').toString(),
+      name: json['name'] as String? ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      pricingType: json['pricingType'] as String? ?? 'flat',
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? 'Flat Price',
+      unit: json['unit'] as String? ?? 'fixed',
+      isActive: isActiveRaw is bool
+          ? isActiveRaw
+          : isActiveRaw is num
+              ? isActiveRaw.toInt() == 1
+              : true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'price': price,
+      'pricingType': pricingType,
+      'pricingTypeLabel': pricingTypeLabel,
+      'unit': unit,
+      'isActive': isActive,
+    };
+  }
+}
+
 class MerchantMenuItem {
   const MerchantMenuItem({
     required this.id,
@@ -19,8 +68,14 @@ class MerchantMenuItem {
     this.originalPrice,
     this.promoPrice,
     this.promoDiscountAmount,
+    this.promoDiscountType,
+    this.promoDiscountValue,
     this.promoLabel,
     this.promoDescription,
+    this.pricingType = '',
+    this.pricingTypeLabel = '',
+    this.durationLabel = '',
+    this.addons = const [],
   });
 
   final String id;
@@ -46,8 +101,14 @@ class MerchantMenuItem {
   final double? originalPrice;
   final double? promoPrice;
   final double? promoDiscountAmount;
+  final String? promoDiscountType;
+  final double? promoDiscountValue;
   final String? promoLabel;
   final String? promoDescription;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final String durationLabel;
+  final List<MerchantMenuAddon> addons;
 
   bool get hasWeekdayPrice => price20Days != null && price20Days! > 0;
 
@@ -69,6 +130,7 @@ class MerchantMenuItem {
     final price30 = (json['price30Days'] as num?)?.toDouble() ??
         (json['price'] as num?)?.toDouble() ??
         0;
+    final addonsRaw = json['addons'] as List<dynamic>? ?? const [];
     return MerchantMenuItem(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
@@ -89,8 +151,20 @@ class MerchantMenuItem {
       originalPrice: (json['originalPrice'] as num?)?.toDouble(),
       promoPrice: (json['promoPrice'] as num?)?.toDouble(),
       promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
+      promoDiscountType: json['promoDiscountType'] as String?,
+      promoDiscountValue: (json['promoDiscountValue'] as num?)?.toDouble(),
       promoLabel: json['promoLabel'] as String?,
       promoDescription: json['promoDescription'] as String?,
+      pricingType: json['pricingType'] as String? ?? '',
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? '',
+      durationLabel: json['durationLabel'] as String? ?? '',
+      addons: addonsRaw
+          .whereType<Map>()
+          .map((addon) => MerchantMenuAddon.fromJson(
+                Map<String, dynamic>.from(addon),
+              ))
+          .where((addon) => addon.id.isNotEmpty && addon.name.isNotEmpty)
+          .toList(),
     );
   }
 
@@ -115,8 +189,14 @@ class MerchantMenuItem {
       'originalPrice': originalPrice,
       'promoPrice': promoPrice,
       'promoDiscountAmount': promoDiscountAmount,
+      'promoDiscountType': promoDiscountType,
+      'promoDiscountValue': promoDiscountValue,
       'promoLabel': promoLabel,
       'promoDescription': promoDescription,
+      'pricingType': pricingType,
+      'pricingTypeLabel': pricingTypeLabel,
+      'durationLabel': durationLabel,
+      'addons': addons.map((addon) => addon.toJson()).toList(),
     };
   }
 }

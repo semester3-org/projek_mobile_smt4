@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/api_service.dart';
 import '../../models/catering_package_category.dart';
 import '../../models/catering_subscriber.dart';
@@ -9,8 +11,22 @@ class MerchantRepository {
   MerchantRepository._();
 
   static const Duration _shortCacheTtl = Duration(seconds: 3);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
   static _DashboardCacheEntry? _dashboardCache;
   static final Map<String, _MerchantOrdersCacheEntry> _ordersCache = {};
+  static int? _unreadNotificationCountCache;
+  static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
+
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
 
   static Future<RepoResult<MerchantDashboard>> getDashboard() async {
     final cached = _dashboardCache;
@@ -93,6 +109,7 @@ class MerchantRepository {
     bool nextStatus = false,
     double? laundryWeightKg,
     double? laundryTotalAmount,
+    List<String> laundryAddonIds = const [],
     String? deliveryLogId,
   }) async {
     _clearOrderCaches();
@@ -101,10 +118,10 @@ class MerchantRepository {
       if (status != null) 'status': status,
       if (estimatedTime != null) 'estimatedTime': estimatedTime,
       if (nextStatus) 'action': 'next',
-      if (laundryWeightKg != null && laundryTotalAmount != null)
-        'action': 'set_laundry_total',
+      if (laundryWeightKg != null) 'action': 'set_laundry_total',
       if (laundryWeightKg != null) 'weightKg': laundryWeightKg,
       if (laundryTotalAmount != null) 'totalAmount': laundryTotalAmount,
+      if (laundryAddonIds.isNotEmpty) 'addonIds': laundryAddonIds,
       if (deliveryLogId != null) 'deliveryLogId': deliveryLogId,
     });
     if (!res.success) {
@@ -198,6 +215,10 @@ class MerchantRepository {
     double? price20Days,
     required String category,
     required String unit,
+    String pricingType = 'per_kg',
+    int? durationValue,
+    String durationUnit = 'day',
+    List<MerchantLaundryAddon> addons = const [],
     required String imageUrl,
     required bool isActive,
     int mealDeliveryCount = 1,
@@ -212,6 +233,10 @@ class MerchantRepository {
       if (price20Days != null) 'price20Days': price20Days,
       'category': category,
       'unit': unit,
+      'pricingType': pricingType,
+      if (durationValue != null) 'durationValue': durationValue,
+      'durationUnit': durationUnit,
+      if (addons.isNotEmpty) 'addons': addons.map((e) => e.toJson()).toList(),
       'imageUrl': imageUrl,
       'isActive': isActive,
       'mealDeliveryCount': mealDeliveryCount,
@@ -358,6 +383,7 @@ class MerchantRepository {
     double? minOrderAmount,
     double? maxDiscountAmount,
     String? name,
+    String? userId,
   }) async {
     final items = productIds
         .where((id) => id.isNotEmpty)
@@ -375,6 +401,7 @@ class MerchantRepository {
       if (minOrderAmount != null) 'minOrderAmount': minOrderAmount,
       if (maxDiscountAmount != null) 'maxDiscountAmount': maxDiscountAmount,
       if (name != null && name.isNotEmpty) 'name': name,
+      if (userId != null && userId.isNotEmpty) 'userId': userId,
     };
     if (merchantId != null && merchantId.isNotEmpty) {
       payload['merchantId'] = merchantId;
@@ -440,9 +467,13 @@ class MerchantRepository {
     }
   }
 
-  static Future<RepoResult<List<MerchantNotification>>>
-      getNotifications() async {
-    final res = await ApiService.get('api/merchant_notifications');
+  static Future<RepoResult<List<MerchantNotification>>> getNotifications({
+    int limit = 30,
+  }) async {
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memuat notifikasi');
     }
@@ -465,6 +496,8 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
+    _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -475,13 +508,41 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal membaca semua notifikasi');
     }
+    _unreadNotificationCountCache = 0;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
-    final result = await getNotifications();
-    return (result.data ?? const <MerchantNotification>[])
-        .any((item) => item.isUnread);
+    return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
+  static Future<int> unreadNotificationCount() async {
+    final cachedAt = _unreadNotificationCountCachedAt;
+    final cached = _unreadNotificationCountCache;
+    if (cachedAt != null &&
+        cached != null &&
+        DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
+      return cached;
+    }
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
+    _unreadNotificationCountCache = count;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    return count;
   }
 
   static Future<RepoResult<List<CateringSubscriber>>> getCateringSubscribers({

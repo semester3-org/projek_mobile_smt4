@@ -161,7 +161,7 @@ try {
                 merchantSendJson(false, null, 'Database error', 500);
             }
             $stmt->bind_param(
-                'sddssssisssisisss',
+                'sddssssisssisissss',
                 $name,
                 $price,
                 $price20Value,

@@ -1,44 +1,26 @@
 {
   "project_info": {
-    "project_number": "46013103292",
-    "project_id": "ngekos-fffbe",
-    "storage_bucket": "ngekos-fffbe.firebasestorage.app"
+    "project_number": "474454721171",
+    "project_id": "ngekos-app-project",
+    "storage_bucket": "ngekos-app-project.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:46013103292:android:fe09962a25f1cbeb6064b9",
+        "mobilesdk_app_id": "1:474454721171:android:f5e9bff2c70d10172f0366",
         "android_client_info": {
-          "package_name": "com.projek.kos"
+          "package_name": "com.example.projek_mobile"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "46013103292-8qpvmqqg12rlr299q6gb1b06ekm8h0mn.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.projek.kos",
-            "certificate_hash": "a5c710ed1d74ee4fe2747c118f3691b48bea2c62"
-          }
-        },
-        {
-          "client_id": "46013103292-8sjl53g2t66nadilakg7m02dieqfqave.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDXJIeMz1HnNe1I8SUaw4yFf3lPj4C7o-M"
+          "current_key": "AIzaSyC37Ab8-9Gxc9XCd3jPvTus8kV1EPM9yoE"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "46013103292-8sjl53g2t66nadilakg7m02dieqfqave.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

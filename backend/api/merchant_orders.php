@@ -23,6 +23,37 @@ try {
         $search = trim($_GET['search'] ?? '');
         $status = in_array($status, ['pending', 'waiting_payment', 'today_delivery', 'processing', 'done'], true) ? $status : null;
 
+        if (($_GET['sync'] ?? '') === '1' && $id === '' && $status === null && $search === '') {
+            $stmt = $conn->prepare("
+                SELECT id, order_code, status, payment_status, total_harga,
+                       updated_at, laundry_weight_kg, subtotal_amount,
+                       promo_discount_amount
+                FROM orders
+                WHERE merchant_id = ?
+                  AND (COALESCE(extension_parent_order_id, 0) = 0 OR status <> 'done')
+                ORDER BY updated_at DESC, id DESC
+            ");
+            if (!$stmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $stmt->bind_param('s', $merchantId);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            $data = array_map(fn($row) => [
+                'id' => (string)($row['id'] ?? ''),
+                'code' => (string)($row['order_code'] ?? ''),
+                'status' => (string)($row['status'] ?? ''),
+                'paymentStatus' => (string)($row['payment_status'] ?? ''),
+                'totalAmount' => (float)($row['total_harga'] ?? 0),
+                'updatedAt' => $row['updated_at'] ?? null,
+                'actualWeight' => isset($row['laundry_weight_kg']) ? (float)$row['laundry_weight_kg'] : null,
+                'subtotalAmount' => (float)($row['subtotal_amount'] ?? 0),
+                'promoDiscountAmount' => (float)($row['promo_discount_amount'] ?? 0),
+            ], $rows);
+            merchantSendJson(true, $data, 'Sinkronisasi pesanan merchant berhasil');
+        }
+
         $pendingActivation = $conn->prepare("
             SELECT id
             FROM orders
@@ -102,19 +133,32 @@ try {
                 merchantSendJson(false, null, 'Pesanan dibatalkan tidak bisa diproses', 400);
             }
             $isCatering = strtolower((string)($current[0]['serviceType'] ?? '')) === 'catering';
+            $isLaundry = !$isCatering;
+            $currentStatus = strtolower((string)($current[0]['status'] ?? ''));
+            $paymentStatus = strtolower((string)($current[0]['paymentStatus'] ?? ''));
+            if ($isLaundry && $currentStatus === 'accepted') {
+                if ($paymentStatus === 'awaiting_weighing' || (float)($current[0]['totalAmount'] ?? 0) <= 0) {
+                    merchantSendJson(false, null, 'Lengkapi penimbangan dan total pembayaran terlebih dahulu', 400);
+                }
+                if (in_array($paymentStatus, ['waiting_payment', 'unpaid'], true)) {
+                    merchantSendJson(false, null, 'Pesanan masih menunggu pembayaran user', 400);
+                }
+            }
             $status = merchantNextStatus($current[0]['status'], $isCatering);
         }
 
         if ($action === 'set_laundry_total') {
             $weightKg = (float)($body['weightKg'] ?? 0);
             $totalAmount = (float)($body['totalAmount'] ?? 0);
+            $addonIds = is_array($body['addonIds'] ?? null) ? $body['addonIds'] : [];
             $orderIdInt = (int)($current[0]['id'] ?? 0);
             merchantFinalizeLaundryOrder(
                 $conn,
                 $orderIdInt,
                 $merchantId,
                 $weightKg,
-                $totalAmount
+                $totalAmount,
+                $addonIds
             );
             $updated = merchantOrderQuery($conn, $merchantId, $id);
             merchantSendJson(true, $updated[0] ?? $current[0], 'Total laundry berhasil disimpan');
@@ -215,6 +259,22 @@ try {
             $stmt->execute();
             $stmt->close();
 
+            $userId = merchantQueryValue($conn, 'SELECT user_id FROM orders WHERE id = ?', 'i', [$orderIdInt]);
+            if ($userId) {
+                $orderCode = (string)($current[0]['code'] ?? ('#' . $orderIdInt));
+                $slotText = $slotNumber > 1 ? ' sesi ' . $slotNumber : '';
+                merchantCreateNotification(
+                    $conn,
+                    (string)$userId,
+                    'Pengantaran catering selesai',
+                    $orderCode . ' pengantaran hari ini' . $slotText . ' sudah ditandai selesai oleh merchant.',
+                    'order',
+                    'Lihat Detail',
+                    'order:' . (string)$orderIdInt,
+                    'high'
+                );
+            }
+
             $updated = merchantOrderQuery($conn, $merchantId, $id);
             merchantSendJson(true, $updated[0] ?? $current[0], 'Pengantaran berhasil ditandai selesai');
         }
@@ -254,7 +314,8 @@ try {
                     ($current[0]['code'] ?? ('#' . $orderIdInt)) . ' ditolak. Alasan: ' . $reason,
                     'order',
                     'Lihat Detail',
-                    'order:' . (string)$orderIdInt
+                    'order:' . (string)$orderIdInt,
+                    'high'
                 );
             }
 
@@ -328,14 +389,51 @@ try {
 
         $userId = merchantQueryValue($conn, 'SELECT user_id FROM orders WHERE id = ?', 'i', [(int)$data['id']]);
         if ($userId && $status !== '') {
+            $serviceType = strtolower((string)($data['serviceType'] ?? $current[0]['serviceType'] ?? ''));
+            $code = (string)($data['code'] ?? ('#' . $data['id']));
+            $title = 'Status pesanan diperbarui';
+            $message = $code . ' sekarang ' . merchantStatusLabel($status) . '.';
+            $importance = 'normal';
+
+            if ($serviceType === 'laundry') {
+                $importance = in_array($status, ['accepted', 'processing', 'delivered', 'done'], true)
+                    ? 'high'
+                    : 'normal';
+                if ($status === 'accepted') {
+                    $title = 'Pesanan laundry diterima';
+                    $message = 'Merchant telah menerima ' . $code . '. Pesanan akan masuk ke tahap berikutnya.';
+                } elseif ($status === 'processing') {
+                    $title = 'Laundry sedang diproses';
+                    $message = $code . ' sedang diproses oleh merchant.';
+                } elseif ($status === 'delivered') {
+                    $title = 'Laundry siap diantar';
+                    $message = $code . ' sudah siap diantar ke alamat tujuan.';
+                } elseif ($status === 'done') {
+                    $title = 'Laundry selesai';
+                    $message = $code . ' sudah selesai. Terima kasih sudah menggunakan layanan laundry.';
+                }
+            } elseif ($serviceType === 'catering') {
+                $importance = in_array($status, ['accepted', 'done'], true)
+                    ? 'high'
+                    : 'normal';
+                if ($status === 'accepted') {
+                    $title = 'Pesanan catering diterima';
+                    $message = 'Merchant telah menerima ' . $code . '. Silakan lanjutkan pembayaran jika belum dibayar.';
+                } elseif ($status === 'done') {
+                    $title = 'Pesanan catering selesai';
+                    $message = $code . ' sudah ditandai selesai oleh merchant.';
+                }
+            }
+
             merchantCreateNotification(
                 $conn,
                 (string)$userId,
-                'Status pesanan diperbarui',
-                $data['code'] . ' sekarang ' . merchantStatusLabel($status) . '.',
+                $title,
+                $message,
                 'order',
                 'Lihat Detail',
-                'order:' . (string)$data['id']
+                'order:' . (string)$data['id'],
+                $importance
             );
         }
 

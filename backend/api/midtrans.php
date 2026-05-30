@@ -63,23 +63,40 @@ function midtransEnabledPayments(string $paymentMethod): array {
     if (textContains($normalizedMethod, 'cod') || textContains($normalizedMethod, 'cash')) {
         sendError('COD tidak diproses melalui Midtrans', 400);
     }
-    if (textContains($normalizedMethod, 'shopeepay')) {
-        return ['shopeepay', 'qris'];
+    if (textContains($normalizedMethod, 'bca')) {
+        return ['bca_va'];
     }
-    if (textContains($normalizedMethod, 'bca') ||
-        textContains($normalizedMethod, 'mandiri') ||
-        textContains($normalizedMethod, 'virtual account') ||
+    if (textContains($normalizedMethod, 'bni')) {
+        return ['bni_va'];
+    }
+    if (textContains($normalizedMethod, 'mandiri') || textContains($normalizedMethod, 'echannel')) {
+        return ['echannel'];
+    }
+    if (textContains($normalizedMethod, 'cimb')) {
+        return ['cimb_clicks'];
+    }
+    if (textContains($normalizedMethod, 'qris')) {
+        return ['qris'];
+    }
+    if (textContains($normalizedMethod, 'gopay')) {
+        return ['gopay'];
+    }
+    if (textContains($normalizedMethod, 'shopeepay')) {
+        return ['shopeepay'];
+    }
+    if (textContains($normalizedMethod, 'ovo') ||
+        textContains($normalizedMethod, 'dana') ||
+        textContains($normalizedMethod, 'linkaja')) {
+        return ['qris'];
+    }
+    if (textContains($normalizedMethod, 'virtual account') ||
         textContains($normalizedMethod, 'bank') ||
         textContains($normalizedMethod, 'transfer')) {
         return ['bank_transfer'];
     }
-    if (textContains($normalizedMethod, 'qris') ||
-        textContains($normalizedMethod, 'gopay') ||
-        textContains($normalizedMethod, 'ovo') ||
-        textContains($normalizedMethod, 'dana') ||
-        textContains($normalizedMethod, 'e-wallet') ||
+    if (textContains($normalizedMethod, 'e-wallet') ||
         textContains($normalizedMethod, 'ewallet')) {
-        return ['gopay', 'qris', 'shopeepay'];
+        return ['qris'];
     }
     if (textContains($normalizedMethod, 'credit') ||
         textContains($normalizedMethod, 'debit') ||
@@ -274,8 +291,13 @@ if ($action === 'create_order_payment') {
     }
 
     $currentPaymentStatus = strtolower((string)($order['payment_status'] ?? ''));
-    if (in_array($currentPaymentStatus, ['paid', 'payment_submitted'], true)) {
+    $currentOrderStatus = strtolower((string)($order['status'] ?? ''));
+    if ($currentPaymentStatus === 'paid') {
         sendError('Pembayaran pesanan sudah tercatat', 400);
+    }
+    if (in_array($currentPaymentStatus, ['cancelled'], true) ||
+        in_array($currentOrderStatus, ['done', 'completed', 'cancelled'], true)) {
+        sendError('Pesanan sudah selesai atau tidak dapat dibayar', 400);
     }
 
     $serviceType = strtolower((string)($order['service_type'] ?? $order['merchant_type'] ?? ''));
@@ -294,7 +316,9 @@ if ($action === 'create_order_payment') {
     $enabledPayments = midtransEnabledPayments($paymentMethod);
     $amount = (int)round((float)($order['total_harga'] ?? 0));
     if ($amount <= 0) {
-        sendError('Total pesanan tidak valid', 400);
+        sendError($serviceType === 'laundry'
+            ? 'Total laundry belum ditentukan merchant'
+            : 'Total pesanan tidak valid', 400);
     }
 
     $orderIdInt = (int)$order['id'];
@@ -400,10 +424,31 @@ if ($action === 'sync_order_status') {
         require_once __DIR__ . '/merchant_helpers.php';
         merchantEnsureSchema($conn);
 
+        $existingOrder = null;
+        $lookup = $conn->prepare("
+            SELECT o.id, o.order_code, o.payment_status, o.service_type,
+                   m.user_id AS merchant_user_id
+            FROM orders o
+            INNER JOIN merchants m ON m.id = o.merchant_id
+            WHERE (o.midtrans_order_id = ? OR o.id = ?)
+              AND o.user_id = ?
+            LIMIT 1
+        ");
+        if ($lookup) {
+            $orderIdForLookup = $orderId ?? 0;
+            $lookup->bind_param('sis', $midtransOrderId, $orderIdForLookup, $userId);
+            $lookup->execute();
+            $existingOrder = $lookup->get_result()->fetch_assoc();
+            $lookup->close();
+        }
+        if (!$existingOrder) {
+            sendError('Pesanan Midtrans tidak ditemukan', 404);
+        }
+
         $stmt = $conn->prepare("
             UPDATE orders
             SET payment_status = ?,
-                payment_method = IF(? = '', payment_method, ?),
+                payment_method = IF(? = '' OR ? = 'bank_transfer', payment_method, ?),
                 paid_at = IF(? = 'paid', COALESCE(paid_at, NOW()), paid_at),
                 subscription_status = IF(
                     service_type = 'catering'
@@ -420,31 +465,43 @@ if ($action === 'sync_order_status') {
             sendError('Database error: ' . $conn->error, 500);
         }
         $orderIdForBind = $orderId ?? 0;
-        $stmt->bind_param('ssssssis', $localStatus, $paymentType, $paymentType, $localStatus, $localStatus, $midtransOrderId, $orderIdForBind, $userId);
+        $stmt->bind_param('sssssssis', $localStatus, $paymentType, $paymentType, $paymentType, $localStatus, $localStatus, $midtransOrderId, $orderIdForBind, $userId);
         $stmt->execute();
         $affectedRows = $stmt->affected_rows;
         $stmt->close();
 
-        if ($localStatus === 'paid') {
+        $wasAlreadyPaid = strtolower((string)($existingOrder['payment_status'] ?? '')) === 'paid';
+        if ($localStatus === 'paid' && !$wasAlreadyPaid) {
             if ($orderIdForBind > 0) {
                 merchantActivateCateringSubscription($conn, $orderIdForBind);
             }
-            $merchantUserId = merchantQueryValue(
-                $conn,
-                'SELECT m.user_id FROM orders o INNER JOIN merchants m ON m.id = o.merchant_id WHERE (o.midtrans_order_id = ? OR o.id = ?) LIMIT 1',
-                'si',
-                [$midtransOrderId, $orderIdForBind]
-            );
+            $merchantUserId = $existingOrder['merchant_user_id'] ?? null;
+            $orderCode = $existingOrder['order_code'] ?? ('#' . $orderIdForBind);
             if ($merchantUserId) {
                 merchantCreateNotification(
                     $conn,
                     (string)$merchantUserId,
                     'Pembayaran pesanan berhasil',
-                    'Pembayaran Midtrans untuk pesanan user sudah diterima.',
+                    'Pembayaran Midtrans untuk ' . $orderCode . ' sudah diterima.',
                     'payment',
                     'Lihat Pesanan',
-                    'order:' . (string)$orderIdForBind
+                    'order:' . (string)$orderIdForBind,
+                    'important'
                 );
+            }
+            merchantCreateNotification(
+                $conn,
+                (string)$userId,
+                'Pembayaran berhasil',
+                'Pembayaran ' . $orderCode . ' berhasil diterima. Pesanan akan dilanjutkan merchant.',
+                'payment',
+                'Lihat Pesanan',
+                'order:' . (string)$orderIdForBind,
+                'important'
+            );
+        } elseif ($localStatus === 'paid') {
+            if ($orderIdForBind > 0) {
+                merchantActivateCateringSubscription($conn, $orderIdForBind);
             }
         }
 

@@ -20,13 +20,27 @@ class UserRepository {
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
   static const Duration _merchantListCacheTtl = Duration(seconds: 25);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
   static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
+  static int? _unreadNotificationCountCache;
+  static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();
 
   static Stream<void> get profileRefreshRequests =>
       _profileRefreshController.stream;
+
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
 
   static void requestProfileRefresh() {
     if (!_profileRefreshController.isClosed) {
@@ -55,15 +69,17 @@ class UserRepository {
     String type, {
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
     final cacheKey = _merchantListCacheKey(type, latitude, longitude);
     final cached = _merchantListCache[cacheKey];
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         DateTime.now().difference(cached.createdAt) < _merchantListCacheTtl) {
       return RepoResult.ok(List<UserMerchant>.of(cached.items));
     }
 
-    final params = {'type': type};
+    final params = {'type': type, 'summary': '1'};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
       params['lng'] = longitude.toString();
@@ -284,6 +300,7 @@ class UserRepository {
     required String paymentMethod,
     int? subscriptionDays,
     Map<String, int>? quantities,
+    List<String> addonIds = const [],
     String? customerName,
     String? customerPhone,
     String? notes,
@@ -301,6 +318,8 @@ class UserRepository {
       'customerName': customerName ?? '',
       'customerPhone': customerPhone ?? '',
       'notes': notes ?? '',
+      if (merchant.type == 'laundry' && addonIds.isNotEmpty)
+        'addonIds': addonIds,
       'items': items
           .map((item) => {
                 'productId': item.id,
@@ -442,20 +461,31 @@ class UserRepository {
     }
   }
 
-  static Future<RepoResult<List<AppNotification>>> getNotifications() async {
-    final res = await ApiService.get('api/user_notifications');
+  static Future<RepoResult<List<AppNotification>>> getNotifications({
+    bool allowFallback = true,
+    int limit = 30,
+  }) async {
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackNotifications());
+      return allowFallback
+          ? RepoResult.ok(_fallbackNotifications())
+          : RepoResult.fail(res.message ?? 'Gagal memuat notifikasi');
     }
 
     try {
       final list = (res.data!['data'] as List)
           .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list.isEmpty ? _fallbackNotifications() : list);
+      return RepoResult.ok(
+          list.isEmpty && allowFallback ? _fallbackNotifications() : list);
     } catch (_) {
-      return RepoResult.ok(_fallbackNotifications());
+      return allowFallback
+          ? RepoResult.ok(_fallbackNotifications())
+          : const RepoResult.fail('Gagal membaca notifikasi');
     }
   }
 
@@ -467,6 +497,8 @@ class UserRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
+    _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -477,13 +509,60 @@ class UserRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal membaca semua notifikasi');
     }
+    _unreadNotificationCountCache = 0;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
-    final result = await getNotifications();
-    return (result.data ?? const <AppNotification>[])
-        .any((notification) => notification.isUnread);
+    return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
+  static Future<int> unreadNotificationCount() async {
+    final cachedAt = _unreadNotificationCountCachedAt;
+    final cached = _unreadNotificationCountCache;
+    if (cachedAt != null &&
+        cached != null &&
+        DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
+      return cached;
+    }
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
+    _unreadNotificationCountCache = count;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    return count;
+  }
+
+  static Future<RepoResult<bool>> updateNotificationPresence({
+    required bool isActive,
+    String? fcmToken,
+    String platform = 'flutter',
+  }) async {
+    final payload = <String, dynamic>{
+      'isActive': isActive,
+      'platform': platform,
+      if (fcmToken != null && fcmToken.trim().isNotEmpty)
+        'fcmToken': fcmToken.trim(),
+    };
+    final res =
+        await ApiService.post('api/user_notification_presence', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperbarui notifikasi');
+    }
+    return const RepoResult.ok(true);
   }
 
   static Future<RepoResult<UserProfile>> getProfile({
@@ -536,6 +615,7 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       final profile = UserProfile.fromJson(data);
       await _saveLocalProfile(profile);
+      _merchantListCache.clear();
       requestProfileRefresh();
       return RepoResult.ok(profile);
     } catch (_) {

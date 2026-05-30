@@ -94,7 +94,10 @@ try {
         ], 'Preview promo kosong');
     }
 
-    $userId = (string)($payload['sub'] ?? '');
+    $role = strtolower((string)($payload['role'] ?? ''));
+    $userId = $role === 'merchant'
+        ? trim((string)($body['userId'] ?? ''))
+        : (string)($payload['sub'] ?? '');
     $best = merchantBestPromoForCheckout($conn, $merchantId, $userId, $subtotal, $items);
     if ($best === null) {
         merchantSendJson(true, [

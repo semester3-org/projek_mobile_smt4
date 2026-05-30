@@ -7,6 +7,7 @@ import '../../core/payment_methods.dart';
 import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
+import '../../widgets/location_view_page.dart';
 import '../shared/transaction_receipt_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
@@ -20,33 +21,49 @@ class UserOrderDetailPage extends StatefulWidget {
   State<UserOrderDetailPage> createState() => _UserOrderDetailPageState();
 }
 
-class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
+class _UserOrderDetailPageState extends State<UserOrderDetailPage>
+    with WidgetsBindingObserver {
   late Order _order;
   bool _confirmingPayment = false;
   bool _openingPayment = false;
-  bool _syncingPayment = false;
+  bool _autoSyncingPayment = false;
+  bool _paymentSuccessShown = false;
   bool _cancellingSubscription = false;
   bool _extendingSubscription = false;
   bool _cancellingOrder = false;
   bool _loadingReceipt = false;
+  Timer? _paymentAutoRefreshTimer;
+  int _paymentAutoRefreshAttempts = 0;
 
   @override
   void initState() {
     super.initState();
     _order = widget.order;
+    WidgetsBinding.instance.addObserver(this);
 
     // Use RealtimeService untuk real-time order updates
     RealtimeService().startUserOrderPolling();
     RealtimeService().addEventListener('order_status_updated', _refreshOrder);
+    _maybeStartPaymentAutoRefresh();
   }
 
   @override
   void dispose() {
+    _paymentAutoRefreshTimer?.cancel();
     // Stop real-time polling dan remove listeners
     RealtimeService()
         .removeEventListener('order_status_updated', _refreshOrder);
     RealtimeService().stopUserOrderPolling();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshOrder());
+      unawaited(_syncPaymentStatusSilently());
+    }
   }
 
   Future<void> _refreshOrder() async {
@@ -54,6 +71,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
     final result = await UserRepository.getOrderDetail(id);
     if (!mounted || result.data == null) return;
     setState(() => _order = result.data!);
+    _maybeStartPaymentAutoRefresh();
   }
 
   Future<void> _confirmPayment() async {
@@ -78,7 +96,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
 
   Future<void> _payWithMidtrans() async {
     final id = _order.databaseId ?? _order.id;
-    final paymentMethod = await _pickPaymentMethod();
+    final paymentMethod =
+        _preferredMidtransPaymentMethod() ?? await _pickPaymentMethod();
     if (paymentMethod == null) return;
     if (!mounted) return;
     setState(() => _openingPayment = true);
@@ -121,6 +140,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       return;
     }
     if (midtransOrderId.isNotEmpty) {
+      _maybeStartPaymentAutoRefresh();
       await _pollOrderPaymentStatus(midtransOrderId);
     } else {
       await _refreshOrder();
@@ -138,6 +158,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       await _refreshOrder();
       if (!mounted) return;
       if (_order.isPaid) {
+        _paymentSuccessShown = true;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Pembayaran berhasil. Status pesanan diperbarui.'),
@@ -217,26 +238,88 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
     );
   }
 
-  Future<void> _syncPaymentStatus() async {
+  String? _preferredMidtransPaymentMethod() {
+    final raw = (_order.paymentMethod ?? '').trim().toLowerCase();
+    if (raw.isEmpty || PaymentMethodHelper.isCashOnDelivery(raw)) {
+      return null;
+    }
+    final known = PaymentMethodHelper.checkoutOptionKeys(isLaundry: false);
+    if (known.contains(raw)) return raw;
+    if (raw.contains('bca')) return 'bca';
+    if (raw.contains('mandiri') || raw.contains('echannel')) return 'mandiri';
+    if (raw.contains('bni')) return 'bni';
+    if (raw.contains('cimb')) return 'cimb';
+    if (raw.contains('gopay')) return 'gopay';
+    if (raw.contains('shopee')) return 'shopeepay';
+    if (raw.contains('ovo')) return 'ovo';
+    if (raw.contains('dana')) return 'dana';
+    if (raw.contains('linkaja')) return 'linkaja';
+    if (raw.contains('qris')) return 'qris';
+    return null;
+  }
+
+  String get _midtransActionLabel {
+    final method = _preferredMidtransPaymentMethod();
+    if (method == null) return 'Pilih Pembayaran Midtrans';
+    return 'Bayar ${PaymentMethodHelper.getDisplayName(method)}';
+  }
+
+  bool get _shouldAutoSyncPayment {
+    final payment = (_order.paymentStatus ?? '').toLowerCase();
+    final merchant = (_order.merchantStatus ?? '').toLowerCase();
+    final completed = _order.status == 'completed' ||
+        merchant == 'done' ||
+        merchant == 'completed';
+    return (_order.midtransOrderId ?? '').isNotEmpty &&
+        !_order.isCashOnDelivery &&
+        !_order.isPaid &&
+        _order.totalAmount > 0 &&
+        !completed &&
+        payment != 'cancelled';
+  }
+
+  void _maybeStartPaymentAutoRefresh() {
+    if (!_shouldAutoSyncPayment) {
+      _paymentAutoRefreshTimer?.cancel();
+      _paymentAutoRefreshTimer = null;
+      return;
+    }
+    if (_paymentAutoRefreshTimer != null) return;
+    _paymentAutoRefreshAttempts = 0;
+    _paymentAutoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_paymentAutoRefreshAttempts >= 24) {
+        _paymentAutoRefreshTimer?.cancel();
+        _paymentAutoRefreshTimer = null;
+        return;
+      }
+      _paymentAutoRefreshAttempts++;
+      unawaited(_syncPaymentStatusSilently());
+    });
+    unawaited(_syncPaymentStatusSilently());
+  }
+
+  Future<void> _syncPaymentStatusSilently() async {
+    if (!_shouldAutoSyncPayment || _autoSyncingPayment) return;
     final midtransOrderId = _order.midtransOrderId ?? '';
     if (midtransOrderId.isEmpty) return;
-    setState(() => _syncingPayment = true);
-    final result = await UserRepository.syncOrderMidtransStatus(
-      midtransOrderId: midtransOrderId,
-    );
-    if (!mounted) return;
-    setState(() => _syncingPayment = false);
-    await _refreshOrder();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.isSuccess
-              ? 'Status pembayaran diperbarui'
-              : result.error ?? 'Gagal mengecek status pembayaran',
-        ),
-      ),
-    );
+    _autoSyncingPayment = true;
+    try {
+      await UserRepository.syncOrderMidtransStatus(
+        midtransOrderId: midtransOrderId,
+      );
+      await _refreshOrder();
+      if (!mounted) return;
+      if (_order.isPaid && !_paymentSuccessShown) {
+        _paymentSuccessShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pembayaran berhasil. Status pesanan diperbarui.'),
+          ),
+        );
+      }
+    } finally {
+      _autoSyncingPayment = false;
+    }
   }
 
   Future<void> _cancelOrder() async {
@@ -259,7 +342,33 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
     );
   }
 
+  Future<void> _openDeliveryLocation() async {
+    final lat = _order.deliveryLatitude;
+    final lng = _order.deliveryLongitude;
+    final address = (_order.deliveryAddress ?? '').trim();
+    if (lat == null || lng == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LocationViewPage(
+          title: 'Lokasi Pengiriman',
+          address: address,
+          latitude: lat,
+          longitude: lng,
+          primaryColor: UserTheme.primary,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openReceipt() async {
+    if (!_order.canDownloadReceipt) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Struk tersedia setelah pembayaran selesai'),
+        ),
+      );
+      return;
+    }
     final id = _order.databaseId ?? _order.id;
     setState(() => _loadingReceipt = true);
     final result = await UserRepository.getTransactionReceipt(id);
@@ -324,6 +433,32 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
 
   int _extensionDaysFor(Order order) {
     return 30;
+  }
+
+  bool get _canConfirmManualPayment {
+    return false;
+  }
+
+  bool get _canPayViaMidtrans {
+    final payment = (_order.paymentStatus ?? '').toLowerCase();
+    final merchant = (_order.merchantStatus ?? '').toLowerCase();
+    final completed = _order.status == 'completed' ||
+        merchant == 'done' ||
+        merchant == 'completed';
+    if (_order.isCashOnDelivery ||
+        _order.awaitingWeighing ||
+        _order.totalAmount <= 0 ||
+        _order.isPaid ||
+        completed ||
+        payment == 'cancelled') {
+      return false;
+    }
+    if (_order.isCateringSubscription && merchant != 'accepted') {
+      return false;
+    }
+    return _order.readyToPay ||
+        _order.needsOnlinePayment ||
+        payment == 'payment_submitted';
   }
 
   @override
@@ -417,13 +552,10 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
               if (order.deliveryLatitude != null &&
                   order.deliveryLongitude != null) ...[
                 const SizedBox(height: 12),
-                Text(
-                  'Koordinat: ${order.deliveryLatitude!.toStringAsFixed(6)}, ${order.deliveryLongitude!.toStringAsFixed(6)}',
-                  style: const TextStyle(
-                    color: UserTheme.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
+                OutlinedButton.icon(
+                  onPressed: _openDeliveryLocation,
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Lihat Lokasi'),
                 ),
               ],
             ],
@@ -450,11 +582,57 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
               ),
               const SizedBox(height: 10),
               Text(
-                order.needsPaymentConfirmation
-                    ? 'Pastikan pembayaran dikonfirmasi agar laundry dapat diproses.'
-                    : 'Status pembayaran tercatat di sistem pesanan.',
+                _canConfirmManualPayment
+                    ? 'Lakukan pembayaran sesuai metode di atas, lalu konfirmasi agar merchant dapat memproses pesanan.'
+                    : _canPayViaMidtrans
+                        ? 'Lanjutkan ke Midtrans sesuai metode yang dipilih. Status pembayaran akan diperbarui otomatis setelah transaksi berhasil.'
+                        : 'Status pembayaran tercatat di sistem pesanan.',
                 style: const TextStyle(color: UserTheme.muted, height: 1.4),
               ),
+              if (_canConfirmManualPayment) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _confirmingPayment ? null : _confirmPayment,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: UserTheme.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                    ),
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                    label: Text(
+                      _confirmingPayment
+                          ? 'Mengirim...'
+                          : 'Konfirmasi Setelah Bayar',
+                    ),
+                  ),
+                ),
+              ],
+              if (_canPayViaMidtrans) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _openingPayment ? null : _payWithMidtrans,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: UserTheme.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                    ),
+                    icon: const Icon(Icons.account_balance_wallet_outlined),
+                    label: Text(
+                      _openingPayment
+                          ? 'Membuka Midtrans...'
+                          : _midtransActionLabel,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           if (order.isCateringSubscription) ...[
@@ -462,73 +640,34 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
             _SubscriptionInfoCard(order: order),
           ],
           const SizedBox(height: 28),
-          if (order.readyToPay || order.needsOnlinePayment) ...[
-            FilledButton.icon(
-              onPressed: _openingPayment ? null : _payWithMidtrans,
-              style: FilledButton.styleFrom(
-                backgroundColor: UserTheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 17),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-              icon: const Icon(Icons.account_balance_wallet_outlined),
-              label: Text(
-                _openingPayment ? 'Membuka Midtrans...' : 'Bayar via Midtrans',
-              ),
-            ),
-            if ((order.midtransOrderId ?? '').isNotEmpty) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _syncingPayment ? null : _syncPaymentStatus,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: UserTheme.primaryDark,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                ),
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text(
-                  _syncingPayment ? 'Mengecek...' : 'Cek Status Pembayaran',
-                ),
-              ),
-            ],
-          ] else if (order.needsPaymentConfirmation)
-            FilledButton(
-              onPressed: _confirmingPayment ? null : _confirmPayment,
-              style: FilledButton.styleFrom(
-                backgroundColor: UserTheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 17),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-              child: Text(
-                _confirmingPayment ? 'Mengirim...' : 'Saya Sudah Bayar',
-              ),
-            )
-          else
+          if ((order.midtransOrderId ?? '').isNotEmpty &&
+              !order.isPaid &&
+              !order.isCashOnDelivery) ...[
+            const _PaymentAutoRefreshNotice(),
+          ] else if (!_canPayViaMidtrans && !_canConfirmManualPayment)
             _PaymentStatusNotice(order: order),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _loadingReceipt ? null : _openReceipt,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: UserTheme.primaryDark,
-              padding: const EdgeInsets.symmetric(vertical: 17),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
+          if (order.canDownloadReceipt)
+            OutlinedButton.icon(
+              onPressed: _loadingReceipt ? null : _openReceipt,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: UserTheme.primaryDark,
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
               ),
-            ),
-            icon: _loadingReceipt
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.receipt_long_outlined),
-            label: Text(_loadingReceipt ? 'Menyiapkan...' : 'Unduh Struk'),
-          ),
+              icon: _loadingReceipt
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.receipt_long_outlined),
+              label: Text(_loadingReceipt ? 'Menyiapkan...' : 'Unduh Struk'),
+            )
+          else
+            _ReceiptUnavailableNotice(order: order),
           const SizedBox(height: 12),
           if (order.canExtendCateringSubscription) ...[
             OutlinedButton.icon(
@@ -631,7 +770,7 @@ class _ReadyToPayBanner extends StatelessWidget {
           Text(
             order.isCateringSubscription
                 ? 'Pesanan disetujui merchant'
-                : 'Total laundry sudah ditetapkan',
+                : 'Total pembayaran telah ditentukan',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,
@@ -642,7 +781,7 @@ class _ReadyToPayBanner extends StatelessWidget {
           Text(
             order.isCateringSubscription
                 ? 'Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran untuk mengaktifkan jadwal catering.'
-                : 'Merchant selesai menimbang. Total bayar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran sekarang.',
+                : 'Merchant telah menetapkan total pembayaran laundry Anda sebesar ${formatUserCurrency(order.totalAmount)}. Silakan lakukan pembayaran sekarang.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.92),
               height: 1.4,
@@ -838,7 +977,7 @@ class _OrderStatusCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
-                'Menunggu merchant menentukan total akhir laundry.',
+                'Menunggu merchant menentukan total pembayaran laundry.',
                 style: TextStyle(
                   color: UserTheme.primaryDark,
                   fontSize: 13,
@@ -869,10 +1008,10 @@ class _OrderProgressBar extends StatelessWidget {
   final String? merchantStatus;
 
   static const _steps = [
-    ('pending', 'Menunggu Konfirmasi'),
+    ('pending', 'Konfirmasi'),
     ('accepted', 'Diterima'),
-    ('processing', 'Diproses'),
-    ('delivered', 'Siap Diantar'),
+    ('processing', 'Proses'),
+    ('delivered', 'Diantar'),
     ('done', 'Selesai'),
   ];
 
@@ -922,13 +1061,20 @@ class _OrderProgressBar extends StatelessWidget {
             final index = _steps.indexOf(step);
             final active = current >= index;
             return Expanded(
-              child: Text(
-                step.$2,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: active ? UserTheme.primaryDark : UserTheme.muted,
-                  fontSize: 11,
-                  fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    step.$2,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: active ? UserTheme.primaryDark : UserTheme.muted,
+                      fontSize: 11,
+                      fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             );
@@ -944,32 +1090,37 @@ class _LaundryServiceInfoCard extends StatelessWidget {
 
   final Order order;
 
-  String get _estimatedLabel {
-    if (order.deliveryDate != null) {
-      return formatShortDate(order.deliveryDate!);
-    }
+  String get _durationLabel {
     if (order.serviceEstimateLabel?.trim().isNotEmpty == true) {
-      return order.serviceEstimateLabel!;
+      return order.serviceEstimateLabel!.trim();
     }
     if (order.estimatedTime?.trim().isNotEmpty == true) {
-      return order.estimatedTime!;
+      return order.estimatedTime!.trim();
     }
-    return 'Estimasi selesai akan diinformasikan merchant';
+    return '';
+  }
+
+  String get _estimatedLabel {
+    final finishAt = order.estimatedFinishAt;
+    final duration = _durationLabel;
+    if (finishAt != null) {
+      final dateLabel = _formatLongIndonesianDate(finishAt);
+      return duration.isEmpty ? dateLabel : '$dateLabel (± $duration)';
+    }
+    if (duration.isNotEmpty) return duration;
+    return 'Akan diinformasikan merchant';
   }
 
   @override
   Widget build(BuildContext context) {
-    final serviceLabel = order.serviceEstimateLabel?.trim().isNotEmpty == true
-        ? order.serviceEstimateLabel!
-        : order.items.isNotEmpty
-            ? order.items.first.name
-            : 'Layanan Laundry';
+    final serviceLabel =
+        order.items.isNotEmpty ? order.items.first.name : 'Layanan Laundry';
 
     return _InfoCard(
       icon: Icons.local_laundry_service_outlined,
       title: 'Detail Laundry',
       children: [
-        _SubscriptionLine(label: 'Layanan', value: serviceLabel),
+        _SubscriptionLine(label: 'Jenis Layanan', value: serviceLabel),
         const SizedBox(height: 10),
         _SubscriptionLine(
           label: 'Estimasi Selesai',
@@ -1000,13 +1151,23 @@ class _OrderItemsCard extends StatelessWidget {
     final subtotal =
         order.subtotalAmount > 0 ? order.subtotalAmount : itemsSubtotal;
     final promoDiscount = order.promoDiscountAmount;
-    final additionalItems =
-        order.items.length > 1 ? order.items.sublist(1) : const <OrderItem>[];
-    final additionalTotal =
-        additionalItems.fold<double>(0, (sum, item) => sum + item.subtotal);
-    final showSingleItemPromo =
-        order.hasPromo && promoDiscount > 0 && order.items.length == 1;
-    final isWaitingFinalPrice = order.awaitingWeighing && subtotal == 0;
+    final isLaundry = order.isLaundry;
+    final mainItems = isLaundry && order.items.isNotEmpty
+        ? <OrderItem>[order.items.first]
+        : order.items;
+    final additionalItems = isLaundry && order.items.length > 1
+        ? order.items.sublist(1)
+        : const <OrderItem>[];
+    final waitingLaundryTotal =
+        isLaundry && (order.awaitingWeighing || order.totalAmount <= 0);
+    final showSingleItemPromo = !isLaundry &&
+        order.hasPromo &&
+        promoDiscount > 0 &&
+        order.items.length == 1;
+    final isWaitingFinalPrice = waitingLaundryTotal;
+    final hasPromoDiscount = order.hasPromo && promoDiscount > 0;
+    final showSubtotal =
+        isLaundry ? isWaitingFinalPrice || hasPromoDiscount : true;
 
     return Container(
       decoration: BoxDecoration(
@@ -1018,22 +1179,22 @@ class _OrderItemsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.fromLTRB(20, 20, 20, 18),
             child: Text(
               'Rincian Item',
               style: TextStyle(
                 color: UserTheme.text,
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
           Divider(color: Colors.blueGrey.shade50, height: 1),
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                ...order.items.asMap().entries.map(
+                ...mainItems.asMap().entries.map(
                   (entry) {
                     final index = entry.key;
                     final item = entry.value;
@@ -1051,8 +1212,8 @@ class _OrderItemsCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 52,
-                            height: 52,
+                            width: 46,
+                            height: 46,
                             decoration: BoxDecoration(
                               color: UserTheme.softBlue,
                               borderRadius: BorderRadius.circular(12),
@@ -1068,48 +1229,30 @@ class _OrderItemsCard extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        item.name,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w800,
-                                          color: UserTheme.text,
-                                        ),
-                                      ),
-                                    ),
-                                    if (index > 0) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFEFF7ED),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: const Text(
-                                          'Tambahan',
-                                          style: TextStyle(
-                                            color: Color(0xFF2E7D32),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: UserTheme.text,
+                                  ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  showSingleItemPromo
-                                      ? '${item.quantity} pcs x ${formatUserCurrency(displayUnit)} (promo)'
-                                      : '${item.quantity} pcs x ${formatUserCurrency(item.price)}',
-                                  style:
-                                      const TextStyle(color: UserTheme.muted),
+                                  isLaundry
+                                      ? _laundryItemDetailLabel(
+                                          order,
+                                          item,
+                                          waitingLaundryTotal,
+                                        )
+                                      : showSingleItemPromo
+                                          ? '${item.quantity} pcs x ${formatUserCurrency(displayUnit)} (promo)'
+                                          : '${item.quantity} pcs x ${formatUserCurrency(item.price)}',
+                                  style: const TextStyle(
+                                    color: UserTheme.muted,
+                                    fontSize: 13,
+                                    height: 1.3,
+                                  ),
                                 ),
                                 if (showSingleItemPromo) ...[
                                   const SizedBox(height: 3),
@@ -1134,16 +1277,28 @@ class _OrderItemsCard extends StatelessWidget {
                                     ),
                                   ),
                                 ],
+                                if (index == 0 &&
+                                    additionalItems.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  ...additionalItems.map(
+                                    _AddonItemLine.new,
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                          Text(
-                            formatUserCurrency(displaySubtotal),
-                            style: const TextStyle(
-                              color: UserTheme.text,
-                              fontWeight: FontWeight.w800,
+                          if (!waitingLaundryTotal) ...[
+                            const SizedBox(width: 12),
+                            Text(
+                              formatUserCurrency(displaySubtotal),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: UserTheme.text,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     );
@@ -1159,25 +1314,25 @@ class _OrderItemsCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const Text(
-                      'Menunggu merchant menentukan total akhir laundry.',
+                      'Merchant akan menentukan total pembayaran laundry setelah proses penimbangan.',
                       style: TextStyle(
                         color: UserTheme.primaryDark,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         height: 1.4,
                       ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 10),
-                _TotalRow(label: 'Subtotal Layanan', value: subtotal),
-                if (additionalItems.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                if (showSubtotal) ...[
+                  const SizedBox(height: 10),
                   _TotalRow(
-                    label: 'Tambahan Layanan',
-                    value: additionalTotal,
+                    label: 'Subtotal',
+                    value: subtotal,
+                    valueText: waitingLaundryTotal ? 'Belum tersedia' : null,
                   ),
                 ],
-                if (order.hasPromo && promoDiscount > 0) ...[
+                if (hasPromoDiscount) ...[
                   const SizedBox(height: 10),
                   _TotalRow(
                     label: order.promoName?.isNotEmpty == true
@@ -1194,6 +1349,133 @@ class _OrderItemsCard extends StatelessWidget {
                   valueText:
                       isWaitingFinalPrice ? 'Menunggu penimbangan' : null,
                   strong: true,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _laundryTariffLabel(OrderItem item) {
+  if (item.price <= 0) {
+    return 'Harga akan dihitung setelah penimbangan';
+  }
+  final unit = _orderPricingUnit(item);
+  return 'Tarif ${formatUserCurrency(item.price)}$unit';
+}
+
+String _laundryItemDetailLabel(
+  Order order,
+  OrderItem item,
+  bool waitingFinalPrice,
+) {
+  if (waitingFinalPrice) return _laundryTariffLabel(item);
+  if (item.price <= 0) return 'Harga layanan';
+
+  final unit = _orderPricingUnit(item);
+  final priceLabel = '${formatUserCurrency(item.price)}$unit';
+  if (unit == '/kg') {
+    final weight = order.actualWeight ?? item.quantityValue;
+    if (weight > 0) {
+      return '${_formatLaundryQuantity(weight)} kg × $priceLabel';
+    }
+  }
+
+  if (unit == '/item') {
+    final quantity =
+        item.quantityValue > 0 ? item.quantityValue : item.quantity.toDouble();
+    if (quantity > 0) {
+      return '${_formatLaundryQuantity(quantity)} item × $priceLabel';
+    }
+  }
+
+  if (unit.isEmpty) {
+    return 'Harga tetap ${formatUserCurrency(item.price)}';
+  }
+  return _laundryTariffLabel(item);
+}
+
+String _orderPricingUnit(OrderItem item) {
+  final rawUnit = item.unit.trim();
+  if (rawUnit.isNotEmpty && rawUnit != 'fixed') {
+    return rawUnit.startsWith('/') ? rawUnit : '/$rawUnit';
+  }
+  switch (item.pricingType) {
+    case 'per_item':
+      return '/item';
+    case 'flat':
+      return '';
+    default:
+      return '/kg';
+  }
+}
+
+String _formatLaundryQuantity(double value) {
+  final rounded = value.roundToDouble();
+  if ((value - rounded).abs() < 0.001) {
+    return rounded.toInt().toString();
+  }
+  return value.toStringAsFixed(1);
+}
+
+String _formatLongIndonesianDate(DateTime date) {
+  const months = [
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+  return '${date.day} ${months[date.month - 1]} ${date.year}';
+}
+
+class _AddonItemLine extends StatelessWidget {
+  const _AddonItemLine(this.item);
+
+  final OrderItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = item.subtotal > 0 ? item.subtotal : item.price;
+    final title = amount > 0
+        ? '${item.name} (+${formatUserCurrency(amount)})'
+        : item.name;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(top: 8),
+            decoration: const BoxDecoration(
+              color: UserTheme.primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ],
             ),
@@ -1221,28 +1503,65 @@ class _TotalRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: strong ? UserTheme.text : UserTheme.muted,
-              fontSize: strong ? 16 : 14,
-              fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+    final resolvedValue = valueText ?? formatUserCurrency(value);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tight = constraints.maxWidth < 330 || resolvedValue.length > 18;
+        if (tight) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: strong ? UserTheme.text : UserTheme.muted,
+                  fontSize: strong ? 15 : 13,
+                  fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  resolvedValue,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: valueColor ??
+                        (strong ? UserTheme.primaryDark : UserTheme.text),
+                    fontSize: strong ? 17 : 13,
+                    fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: strong ? UserTheme.text : UserTheme.muted,
+                  fontSize: strong ? 15 : 13,
+                  fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
             ),
-          ),
-        ),
-        Text(
-          valueText ?? formatUserCurrency(value),
-          style: TextStyle(
-            color:
-                valueColor ?? (strong ? UserTheme.primaryDark : UserTheme.text),
-            fontSize: strong ? 18 : 14,
-            fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
-          ),
-        ),
-      ],
+            Text(
+              resolvedValue,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor ??
+                    (strong ? UserTheme.primaryDark : UserTheme.text),
+                fontSize: strong ? 17 : 13,
+                fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1280,6 +1599,81 @@ class _PaymentStatusNotice extends StatelessWidget {
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentAutoRefreshNotice extends StatelessWidget {
+  const _PaymentAutoRefreshNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF7FF),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFFD2EAFF)),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Status pembayaran dicek otomatis. Setelah transaksi berhasil, pesanan langsung diperbarui.',
+              style: TextStyle(
+                color: UserTheme.primaryDark,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceiptUnavailableNotice extends StatelessWidget {
+  const _ReceiptUnavailableNotice({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = order.awaitingWeighing || order.totalAmount <= 0
+        ? 'Struk tersedia setelah merchant menentukan total dan pembayaran selesai.'
+        : 'Struk tersedia setelah pembayaran selesai.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F4FF),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFFC8E3FF)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: UserTheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: UserTheme.primaryDark,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
               ),
             ),
           ),

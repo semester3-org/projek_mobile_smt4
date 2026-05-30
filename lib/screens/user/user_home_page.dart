@@ -31,8 +31,8 @@ class _UserHomePageState extends State<UserHomePage> {
   UserDashboard? _dashboard;
   bool _loading = true;
   bool _didLoad = false;
+  bool _loadingDashboard = false;
   StreamSubscription<void>? _dashboardRefreshSub;
-  Timer? _homePollTimer;
 
   @override
   void initState() {
@@ -42,16 +42,13 @@ class _UserHomePageState extends State<UserHomePage> {
     });
     RealtimeService().startUserOrderPolling();
     RealtimeService().addEventListener('order_status_updated', _load);
-    _homePollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) _load(silent: true);
-    });
   }
 
   @override
   void dispose() {
     _dashboardRefreshSub?.cancel();
-    _homePollTimer?.cancel();
     RealtimeService().removeEventListener('order_status_updated', _load);
+    RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
 
@@ -64,6 +61,8 @@ class _UserHomePageState extends State<UserHomePage> {
   }
 
   Future<void> _load({bool silent = false}) async {
+    if (_loadingDashboard) return;
+    _loadingDashboard = true;
     final session = AuthScope.of(context).session;
     final displayName = session?.displayName ?? 'User';
     if (!silent) {
@@ -78,6 +77,7 @@ class _UserHomePageState extends State<UserHomePage> {
     setState(() {
       _dashboard = result.data ?? UserDashboard.fallback(displayName);
       _loading = false;
+      _loadingDashboard = false;
     });
   }
 

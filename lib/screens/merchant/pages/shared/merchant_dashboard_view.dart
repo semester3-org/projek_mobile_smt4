@@ -25,37 +25,43 @@ class MerchantDashboardView extends StatefulWidget {
 class _MerchantDashboardViewState extends State<MerchantDashboardView> {
   MerchantDashboard? _dashboard;
   bool _loading = true;
+  bool _loadingRequest = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _load();
-    
-    // Start real-time polling untuk dashboard
+
     RealtimeService().startMerchantDashboardPolling();
-    RealtimeService().addEventListener('dashboard_updated', _load);
+    RealtimeService().addEventListener('dashboard_updated', _silentLoad);
   }
 
   @override
   void dispose() {
-    // Stop real-time polling dan remove listeners
-    RealtimeService().removeEventListener('dashboard_updated', _load);
+    RealtimeService().removeEventListener('dashboard_updated', _silentLoad);
     RealtimeService().stopMerchantDashboardPolling();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _silentLoad() => _load(silent: true);
+
+  Future<void> _load({bool silent = false}) async {
+    if (_loadingRequest) return;
+    _loadingRequest = true;
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getDashboard();
     if (!mounted) return;
     setState(() {
       _dashboard = result.data;
-      _error = result.error;
+      if (!silent) _error = result.error;
       _loading = false;
+      _loadingRequest = false;
     });
   }
 

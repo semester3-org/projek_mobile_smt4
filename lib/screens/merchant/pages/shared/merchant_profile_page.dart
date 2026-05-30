@@ -658,9 +658,9 @@ class _ProfileFormCard extends StatelessWidget {
           ),
           if (latitude != null && longitude != null) ...[
             const SizedBox(height: 8),
-            Text(
-              'Koordinat: ${latitude!.toStringAsFixed(5)}, ${longitude!.toStringAsFixed(5)}',
-              style: const TextStyle(
+            const Text(
+              'Titik map sudah dipilih.',
+              style: TextStyle(
                 color: MerchantPalette.muted,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,

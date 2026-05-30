@@ -37,6 +37,7 @@ try {
     if ($ratingFilter < 0 || $ratingFilter > 5) {
         $ratingFilter = 0;
     }
+    $merchantRatingSummary = merchantRatingSummary($conn, $merchantId);
 
     $stmt = $conn->prepare("
         SELECT p.*,
@@ -85,8 +86,20 @@ try {
         $reviews = $reviewStmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $reviewStmt->close();
 
+        if ($ratingFilter > 0 && empty($reviews)) {
+            continue;
+        }
+
+        $productPayload = merchantProductPayload($product);
+        $productPayload['rating'] = isset($product['rating'])
+            ? round((float)$product['rating'], 1)
+            : 0.0;
+        $productPayload['reviewCount'] = (int)($product['review_count'] ?? 0);
+        $productPayload['merchantRating'] = (float)($merchantRatingSummary['rating'] ?? 0);
+        $productPayload['merchantReviewCount'] = (int)($merchantRatingSummary['reviewCount'] ?? 0);
+
         $data[] = [
-            'product' => merchantProductPayload($product),
+            'product' => $productPayload,
             'reviews' => array_map('merchantReviewPayloadForProduct', $reviews),
         ];
     }

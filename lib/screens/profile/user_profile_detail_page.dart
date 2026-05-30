@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../core/user_location_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
 import '../user/user_theme.dart';
@@ -390,6 +391,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     setState(() => _saving = false);
 
     if (result.isSuccess && result.data != null) {
+      UserLocationService.invalidate();
       await auth.updateDisplayName(result.data!.displayName);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -834,7 +836,9 @@ class _LocationPickerPageState extends State<_LocationPickerPage> {
       }
 
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       ).timeout(const Duration(seconds: 12));
 
       if (!mounted) return;
@@ -907,7 +911,9 @@ class _LocationPickerPageState extends State<_LocationPickerPage> {
   void _saveLocation() {
     Navigator.of(context).pop(
       _PickedLocation(
-        address: _address.trim().isEmpty ? _coordinateLabel(_selectedPoint) : _address,
+        address: _address.trim().isEmpty
+            ? _coordinateLabel(_selectedPoint)
+            : _address,
         latitude: _selectedPoint.latitude,
         longitude: _selectedPoint.longitude,
       ),

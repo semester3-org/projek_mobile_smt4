@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/catering_package_category.dart';
-import '../../../../models/laundry_service_estimate.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
 
@@ -30,6 +29,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   final _categoryCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _price20Ctrl = TextEditingController();
+  final _durationCtrl = TextEditingController();
   final _deliveryTime1Ctrl = TextEditingController();
   final _deliveryTime2Ctrl = TextEditingController();
   final _unitCtrl = TextEditingController();
@@ -40,10 +40,11 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   bool _saving = false;
   bool _showWeekdayPrice = false;
   int _mealDeliveryCount = 1;
-  List<LaundryServiceEstimate> _estimates = [];
   List<CateringPackageCategory> _packageCategories = [];
-  String? _selectedEstimate;
   String? _selectedPackageCategory;
+  String _pricingType = 'per_kg';
+  String _durationUnit = 'day';
+  final List<_EditableLaundryAddon> _addons = [];
 
   bool get _isEdit => widget.product != null;
 
@@ -53,10 +54,16 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     final product = widget.product;
     _nameCtrl.text = product?.name ?? '';
     _categoryCtrl.text = product?.category ?? '';
-    _selectedEstimate =
-        product?.category.isNotEmpty == true ? product!.category : null;
     if (widget.isLaundry) {
-      _loadEstimates();
+      _pricingType = product?.pricingType ?? 'per_kg';
+      _durationCtrl.text = product?.durationValue == null
+          ? ''
+          : product!.durationValue!.toString();
+      _durationUnit = product?.durationUnit == 'hour' ? 'hour' : 'day';
+      _addons.addAll(
+        (product?.addons ?? const <MerchantLaundryAddon>[])
+            .map(_EditableLaundryAddon.fromModel),
+      );
     } else if (_categoryCtrl.text.isEmpty) {
       _loadPackageCategories();
     } else {
@@ -79,25 +86,13 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     }
     _deliveryTime1Ctrl.text = product?.deliveryTime1 ?? '07:00';
     _deliveryTime2Ctrl.text = product?.deliveryTime2 ?? '15:00';
-    _unitCtrl.text = product?.unit ?? (widget.isLaundry ? '/kg' : '');
+    _unitCtrl.text =
+        widget.isLaundry ? pricingUnitFor(_pricingType) : product?.unit ?? '';
     if (!widget.isLaundry) {
       _unitCtrl.text = 'Paket bulanan';
     }
     _descriptionCtrl.text = product?.description ?? '';
     _imageUrl = product?.imageUrl ?? '';
-  }
-
-  Future<void> _loadEstimates() async {
-    final result = await MerchantRepository.getLaundryEstimates();
-    if (!mounted) return;
-    final items = (result.data ?? []).where((e) => e.isActive).toList();
-    setState(() {
-      _estimates = items;
-      if (_selectedEstimate == null && items.isNotEmpty) {
-        _selectedEstimate = items.first.serviceName;
-        _categoryCtrl.text = _selectedEstimate!;
-      }
-    });
   }
 
   Future<void> _loadPackageCategories() async {
@@ -119,10 +114,14 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _categoryCtrl.dispose();
     _priceCtrl.dispose();
     _price20Ctrl.dispose();
+    _durationCtrl.dispose();
     _deliveryTime1Ctrl.dispose();
     _deliveryTime2Ctrl.dispose();
     _unitCtrl.dispose();
     _descriptionCtrl.dispose();
+    for (final addon in _addons) {
+      addon.dispose();
+    }
     super.dispose();
   }
 
@@ -137,6 +136,19 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     final ext = file.name.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
     setState(() {
       _imageUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    });
+  }
+
+  void _addAddon() {
+    setState(() {
+      _addons.add(_EditableLaundryAddon.empty());
+    });
+  }
+
+  void _removeAddon(_EditableLaundryAddon addon) {
+    setState(() {
+      _addons.remove(addon);
+      addon.dispose();
     });
   }
 
@@ -166,12 +178,10 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
       );
       return;
     }
-    if (widget.isLaundry &&
-        (_selectedEstimate == null || _selectedEstimate!.isEmpty)) {
+    final durationValue = int.tryParse(_durationCtrl.text.trim()) ?? 0;
+    if (widget.isLaundry && durationValue <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pilih estimasi waktu layanan terlebih dahulu'),
-        ),
+        const SnackBar(content: Text('Estimasi durasi wajib diisi')),
       );
       return;
     }
@@ -184,6 +194,24 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
         ),
       );
       return;
+    }
+    final addons = <MerchantLaundryAddon>[];
+    for (final addon in _addons) {
+      final parsed = addon.toModel();
+      final hasAnyInput = addon.nameCtrl.text.trim().isNotEmpty ||
+          addon.priceCtrl.text.trim().isNotEmpty;
+      if (parsed == null) {
+        if (hasAnyInput) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nama dan harga additional service wajib lengkap'),
+            ),
+          );
+          return;
+        }
+        continue;
+      }
+      addons.add(parsed);
     }
 
     setState(() => _saving = true);
@@ -203,9 +231,15 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
               ? '15:00'
               : _deliveryTime2Ctrl.text.trim()),
       category: widget.isLaundry
-          ? (_selectedEstimate ?? _categoryCtrl.text.trim())
+          ? (widget.product?.category.isNotEmpty == true
+              ? widget.product!.category
+              : 'Layanan Laundry')
           : (_selectedPackageCategory ?? _categoryCtrl.text.trim()),
-      unit: widget.isLaundry ? _unitCtrl.text.trim() : 'Paket bulanan',
+      unit: widget.isLaundry ? pricingUnitFor(_pricingType) : 'Paket bulanan',
+      pricingType: _pricingType,
+      durationValue: widget.isLaundry ? durationValue : null,
+      durationUnit: widget.isLaundry ? _durationUnit : 'day',
+      addons: widget.isLaundry ? addons : const [],
       imageUrl: _imageUrl,
       isActive: true,
     );
@@ -214,7 +248,11 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
 
     if (result.isSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Produk berhasil disimpan')),
+        SnackBar(
+          content: Text(widget.isLaundry
+              ? 'Layanan berhasil disimpan'
+              : 'Produk berhasil disimpan'),
+        ),
       );
       Navigator.pop(context, true);
       return;
@@ -345,45 +383,65 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
         _Input(controller: _nameCtrl),
         const SizedBox(height: 22),
         if (widget.isLaundry) ...[
-          const _FieldLabel('Estimasi Waktu Layanan'),
+          const _FieldLabel('Pricing Type'),
           const SizedBox(height: 8),
-          if (_estimates.isEmpty)
-            const Text(
-              'Tambahkan estimasi di halaman Kelola Layanan terlebih dahulu.',
-              style: TextStyle(color: MerchantPalette.muted, fontSize: 13),
-            )
-          else
-            DropdownButtonFormField<String>(
-              initialValue: _selectedEstimate != null &&
-                      _estimates.any((e) => e.serviceName == _selectedEstimate)
-                  ? _selectedEstimate
-                  : _estimates.first.serviceName,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFFF7F9FC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'per_kg', label: Text('Per Kg')),
+              ButtonSegment(value: 'per_item', label: Text('Per Item')),
+              ButtonSegment(value: 'flat', label: Text('Flat Price')),
+            ],
+            selected: {_pricingType},
+            onSelectionChanged: (value) {
+              setState(() {
+                _pricingType = value.first;
+                _unitCtrl.text = pricingUnitFor(_pricingType);
+              });
+            },
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Estimasi Durasi'),
+                    const SizedBox(height: 8),
+                    _Input(
+                      controller: _durationCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              items: _estimates
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e.serviceName,
-                      child: Text(
-                        '${e.serviceName} (${e.estimateLabel.isNotEmpty ? e.estimateLabel : '${e.minHours}-${e.maxHours} jam'})',
-                      ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Unit Durasi'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _durationUnit,
+                      decoration: _dropdownDecoration(),
+                      items: const [
+                        DropdownMenuItem(value: 'day', child: Text('Hari')),
+                        DropdownMenuItem(value: 'hour', child: Text('Jam')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _durationUnit = value);
+                      },
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _selectedEstimate = value;
-                  _categoryCtrl.text = value;
-                });
-              },
-            ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ] else ...[
           const _FieldLabel('Kategori Paket'),
           const SizedBox(height: 8),
@@ -430,6 +488,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
           Row(
             children: [
               Expanded(
+                flex: 3,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -444,18 +503,25 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
+                flex: 2,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _FieldLabel('Satuan'),
+                    const _FieldLabel('Satuan Otomatis'),
                     const SizedBox(height: 8),
-                    _Input(controller: _unitCtrl),
+                    _UnitPreview(value: pricingUnitFor(_pricingType)),
                   ],
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 22),
+          _LaundryAddonsEditor(
+            addons: _addons,
+            onAdd: _addAddon,
+            onRemove: _removeAddon,
           ),
         ] else ...[
           const _FieldLabel(
@@ -574,6 +640,60 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   }
 }
 
+class _EditableLaundryAddon {
+  _EditableLaundryAddon({
+    required this.id,
+    required String name,
+    required double price,
+    required this.pricingType,
+  })  : nameCtrl = TextEditingController(text: name),
+        priceCtrl = TextEditingController(
+          text: price <= 0 ? '' : _formatThousands(price.toStringAsFixed(0)),
+        );
+
+  factory _EditableLaundryAddon.empty() {
+    return _EditableLaundryAddon(
+      id: '',
+      name: '',
+      price: 0,
+      pricingType: 'flat',
+    );
+  }
+
+  factory _EditableLaundryAddon.fromModel(MerchantLaundryAddon addon) {
+    return _EditableLaundryAddon(
+      id: addon.id,
+      name: addon.name,
+      price: addon.price,
+      pricingType: addon.pricingType,
+    );
+  }
+
+  final String id;
+  final TextEditingController nameCtrl;
+  final TextEditingController priceCtrl;
+  String pricingType;
+
+  MerchantLaundryAddon? toModel() {
+    final name = nameCtrl.text.trim();
+    final price = _parseCurrencyText(priceCtrl.text);
+    if (name.isEmpty || price <= 0) return null;
+    return MerchantLaundryAddon(
+      id: id,
+      name: name,
+      price: price,
+      pricingType: pricingType,
+      pricingTypeLabel: pricingTypeLabelFor(pricingType),
+      unit: pricingUnitFor(pricingType),
+    );
+  }
+
+  void dispose() {
+    nameCtrl.dispose();
+    priceCtrl.dispose();
+  }
+}
+
 class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.label);
 
@@ -587,6 +707,200 @@ class _FieldLabel extends StatelessWidget {
         color: MerchantPalette.muted,
         fontSize: 12,
         fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _UnitPreview extends StatelessWidget {
+  const _UnitPreview({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 54),
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F6FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC9D3E1)),
+      ),
+      child: Text(
+        value,
+        style: const TextStyle(
+          color: MerchantPalette.text,
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _LaundryAddonsEditor extends StatefulWidget {
+  const _LaundryAddonsEditor({
+    required this.addons,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<_EditableLaundryAddon> addons;
+  final VoidCallback onAdd;
+  final ValueChanged<_EditableLaundryAddon> onRemove;
+
+  @override
+  State<_LaundryAddonsEditor> createState() => _LaundryAddonsEditorState();
+}
+
+class _LaundryAddonsEditorState extends State<_LaundryAddonsEditor> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _FieldLabel('Additional Service')),
+            TextButton.icon(
+              onPressed: widget.onAdd,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Tambah'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (widget.addons.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F9FC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE1E7F0)),
+            ),
+            child: const Text(
+              'Belum ada tambahan layanan untuk layanan ini.',
+              style: TextStyle(
+                color: MerchantPalette.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          )
+        else
+          ...widget.addons.map(
+            (addon) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _AddonRow(
+                addon: addon,
+                onChanged: () => setState(() {}),
+                onRemove: () => widget.onRemove(addon),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AddonRow extends StatelessWidget {
+  const _AddonRow({
+    required this.addon,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final _EditableLaundryAddon addon;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E7F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: _FieldLabel('Nama Tambahan')),
+              IconButton(
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline_rounded),
+                color: MerchantPalette.danger,
+                tooltip: 'Hapus additional service',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _Input(controller: addon.nameCtrl),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Harga'),
+                    const SizedBox(height: 8),
+                    _Input(
+                      controller: addon.priceCtrl,
+                      keyboardType: TextInputType.number,
+                      prefix: 'Rp',
+                      inputFormatters: const [_ThousandsInputFormatter()],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _FieldLabel('Tipe Harga'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: addon.pricingType,
+                      decoration: _dropdownDecoration(fillColor: Colors.white),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'per_kg', child: Text('Per Kg')),
+                        DropdownMenuItem(
+                          value: 'per_item',
+                          child: Text('Per Item'),
+                        ),
+                        DropdownMenuItem(value: 'flat', child: Text('Flat')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        addon.pricingType = value;
+                        onChanged();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Satuan: ${pricingUnitFor(addon.pricingType)}',
+            style: const TextStyle(
+              color: MerchantPalette.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -675,6 +989,26 @@ class _TimePickField extends StatelessWidget {
       ],
     );
   }
+}
+
+InputDecoration _dropdownDecoration({Color fillColor = Colors.white}) {
+  return InputDecoration(
+    filled: true,
+    fillColor: fillColor,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFC9D3E1)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFC9D3E1)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: MerchantPalette.primary, width: 1.4),
+    ),
+  );
 }
 
 class _Input extends StatelessWidget {
@@ -772,4 +1106,11 @@ String _formatThousands(String value) {
     }
   }
   return buffer.toString();
+}
+
+double _parseCurrencyText(String value) {
+  return double.tryParse(
+        value.replaceAll('.', '').replaceAll(',', '.').trim(),
+      ) ??
+      0;
 }

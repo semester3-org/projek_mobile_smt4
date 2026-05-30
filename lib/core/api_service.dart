@@ -23,6 +23,8 @@ class ApiResponse<T> {
 }
 
 class ApiService {
+  static final http.Client _client = http.Client();
+
   // ── Base URL ───────────────────────────────────────────────────────────────
   // Server:
   // - Laptop saja: php -S localhost:8000 router.php
@@ -37,7 +39,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://192.168.0.118:8000';
+      return 'http://10.205.144.61:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {
@@ -77,12 +79,12 @@ class ApiService {
         'displayName': displayName.trim(),
         'role': role.toLowerCase(),
       };
-      
+
       if (merchantType != null) {
         body['merchantType'] = merchantType.toLowerCase();
       }
-      
-      final response = await http
+
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/register'),
             headers: _publicHeaders,
@@ -91,7 +93,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -99,12 +104,15 @@ class ApiService {
         'success': data['success'] == true,
         'data': data['data'],
         'message': data['message'] ??
-            (data['success'] == true ? 'Registrasi berhasil' : 'Registrasi gagal'),
+            (data['success'] == true
+                ? 'Registrasi berhasil'
+                : 'Registrasi gagal'),
       };
     } on SocketException {
       return {
         'success': false,
-        'message': 'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -118,7 +126,7 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/login'),
             headers: _publicHeaders,
@@ -130,7 +138,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -160,7 +171,8 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': 'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -176,7 +188,7 @@ class ApiService {
         return {'success': false, 'message': 'Token tidak ditemukan'};
       }
 
-      final response = await http
+      final response = await _client
           .get(
             Uri.parse('$baseUrl/api/session'),
             headers: await _authHeaders(),
@@ -184,7 +196,10 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -205,7 +220,9 @@ class ApiService {
         'success': data['success'] == true,
         'data': data['data'],
         'message': data['message'] ??
-            (data['success'] == true ? 'Session masih aktif' : 'Session tidak valid'),
+            (data['success'] == true
+                ? 'Session masih aktif'
+                : 'Session tidak valid'),
       };
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
@@ -217,7 +234,7 @@ class ApiService {
       final token = await AuthStorage.getToken();
       if (token == null || token.isEmpty) return;
 
-      await http
+      await _client
           .delete(
             Uri.parse('$baseUrl/api/session'),
             headers: await _authHeaders(),
@@ -232,7 +249,7 @@ class ApiService {
     required String email,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/forgot-password'),
             headers: _publicHeaders,
@@ -241,7 +258,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
       final data = jsonDecode(response.body);
       return {
@@ -260,7 +280,7 @@ class ApiService {
     required String newPassword,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/reset-password'),
             headers: _publicHeaders,
@@ -273,7 +293,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
       final data = jsonDecode(response.body);
       return {
@@ -299,7 +322,7 @@ class ApiService {
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await http
+      final response = await _client
           .get(uri, headers: await _authHeaders())
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
@@ -317,7 +340,7 @@ class ApiService {
     Map<String, dynamic> body,
   ) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/$endpoint'),
             headers: await _authHeaders(),
@@ -344,7 +367,7 @@ class ApiService {
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await http
+      final response = await _client
           .put(uri, headers: await _authHeaders(), body: jsonEncode(body))
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
@@ -366,7 +389,7 @@ class ApiService {
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await http
+      final response = await _client
           .delete(uri, headers: await _authHeaders())
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
@@ -379,7 +402,8 @@ class ApiService {
     }
   }
 
-  static ApiResponse<Map<String, dynamic>> _parseResponse(http.Response response) {
+  static ApiResponse<Map<String, dynamic>> _parseResponse(
+      http.Response response) {
     try {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       return ApiResponse(

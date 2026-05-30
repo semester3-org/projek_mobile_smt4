@@ -28,6 +28,82 @@ function merchantNormalizeDate(?string $value): ?string {
     return $time ? date('Y-m-d H:i:s', $time) : null;
 }
 
+function merchantPromoDateOverlaps(?string $startA, ?string $endA, ?string $startB, ?string $endB): bool {
+    $aStart = $startA ? strtotime($startA) : PHP_INT_MIN;
+    $aEnd = $endA ? strtotime($endA) : PHP_INT_MAX;
+    $bStart = $startB ? strtotime($startB) : PHP_INT_MIN;
+    $bEnd = $endB ? strtotime($endB) : PHP_INT_MAX;
+    return $aStart <= $bEnd && $bStart <= $aEnd;
+}
+
+function merchantPromoResolvedProductIds(mysqli $conn, array $promo): array {
+    $promoId = (int)($promo['id'] ?? 0);
+    $ids = $promoId > 0 ? merchantPromoProductIds($conn, $promoId) : [];
+    $mainProductId = (int)($promo['product_id'] ?? 0);
+    if (empty($ids) && $mainProductId > 0) {
+        $ids = [(string)$mainProductId];
+    }
+    return array_values(array_unique(array_map('strval', $ids)));
+}
+
+function merchantPromoEnsureNoActiveTargetConflict(
+    mysqli $conn,
+    string $merchantId,
+    string $currentPromoId,
+    ?int $nullableProductId,
+    array $productIds,
+    ?string $startAt,
+    ?string $endAt,
+    int $isActive,
+    string $status
+): void {
+    if ($isActive !== 1 || $status !== 'active') return;
+
+    $targetIds = array_values(array_unique(array_map('strval', $productIds)));
+    if (empty($targetIds) && $nullableProductId !== null && $nullableProductId > 0) {
+        $targetIds = [(string)$nullableProductId];
+    }
+    $targetsAllProducts = empty($targetIds);
+
+    $stmt = $conn->prepare("
+        SELECT id, name, product_id, start_at, end_at
+        FROM merchant_promos
+        WHERE merchant_id = ?
+          AND CAST(id AS CHAR) <> ?
+          AND is_active = 1
+          AND status = 'active'
+          AND (end_at IS NULL OR end_at >= NOW())
+    ");
+    if (!$stmt) {
+        merchantSendJson(false, null, 'Gagal memvalidasi promo aktif', 500);
+    }
+    $stmt->bind_param('ss', $merchantId, $currentPromoId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    foreach ($rows as $row) {
+        if (!merchantPromoDateOverlaps($startAt, $endAt, $row['start_at'] ?? null, $row['end_at'] ?? null)) {
+            continue;
+        }
+        $existingTargetIds = merchantPromoResolvedProductIds($conn, $row);
+        $existingTargetsAllProducts = empty($existingTargetIds);
+        $hasTargetConflict = $targetsAllProducts ||
+            $existingTargetsAllProducts ||
+            !empty(array_intersect($targetIds, $existingTargetIds));
+
+        if ($hasTargetConflict) {
+            $promoName = trim((string)($row['name'] ?? 'promo aktif'));
+            merchantSendJson(
+                false,
+                null,
+                'Produk ini sudah memiliki promo aktif (' . $promoName . '). Nonaktifkan promo tersebut sebelum membuat promo baru untuk target yang sama.',
+                409
+            );
+        }
+    }
+}
+
 try {
     $payload = merchantRequireMerchant();
     $merchant = merchantCurrent($conn, $payload);
@@ -227,6 +303,18 @@ try {
             }
         }
 
+        merchantPromoEnsureNoActiveTargetConflict(
+            $conn,
+            $merchantId,
+            $id,
+            $nullableProductId,
+            $productIds,
+            $startAt,
+            $endAt,
+            $isActive,
+            $requestedStatus
+        );
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("
                 INSERT INTO merchant_promos
@@ -336,16 +424,21 @@ try {
             : (!$wasActiveBeforeUpdate && $promo['status'] === 'active');
         if ($shouldBroadcastPromo) {
             $users = $conn->query("SELECT id FROM users WHERE role = 'user'");
+            $promoTitle = $name !== '' ? $name : 'Promo baru';
+            $promoMessage = $description !== ''
+                ? $description
+                : 'Promo sudah aktif. Cek produk yang sedang promo sebelum periode berakhir.';
             if ($users) {
                 while ($user = $users->fetch_assoc()) {
                     merchantCreateNotification(
                         $conn,
                         (string)$user['id'],
-                        'Promo baru dari ' . ($merchant['business_name'] ?? 'merchant'),
-                        $name . ' sudah aktif. Cek produk yang sedang promo sebelum periode berakhir.',
+                        $promoTitle,
+                        $promoMessage,
                         'promo',
                         'Lihat Promo',
-                        'merchant:' . $merchantId
+                        'promo:' . $merchantId,
+                        'high'
                     );
                 }
             }

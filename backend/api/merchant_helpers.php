@@ -144,8 +144,10 @@ function merchantEnsurePerformanceIndexes(mysqli $conn): void {
     merchantAddIndex($conn, 'catering_places', 'idx_catering_places_merchant', '`merchant_id`');
     merchantAddIndex($conn, 'products', 'idx_products_merchant_active_updated', '`merchant_id`, `is_active`, `updated_at`, `id`');
     merchantAddIndex($conn, 'orders', 'idx_orders_merchant_status_payment', '`merchant_id`, `status`, `payment_status`, `created_at`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_merchant_updated', '`merchant_id`, `updated_at`, `id`');
     merchantAddIndex($conn, 'orders', 'idx_orders_merchant_service_subs', '`merchant_id`, `service_type`, `subscription_start_date`, `subscription_end_date`');
     merchantAddIndex($conn, 'orders', 'idx_orders_user_service_status_payment', '`user_id`, `service_type`, `status`, `payment_status`');
+    merchantAddIndex($conn, 'orders', 'idx_orders_user_updated', '`user_id`, `updated_at`, `id`');
     merchantAddIndex($conn, 'orders', 'idx_orders_extension_status', '`extension_parent_order_id`, `status`');
     merchantAddIndex($conn, 'orders', 'idx_orders_midtrans', '`midtrans_order_id`');
     merchantAddIndex($conn, 'order_items', 'idx_order_items_order_product', '`order_id`, `product_id`');
@@ -157,6 +159,7 @@ function merchantEnsurePerformanceIndexes(mysqli $conn): void {
     merchantAddIndex($conn, 'catering_delivery_logs', 'idx_delivery_merchant_date_status', '`merchant_id`, `delivery_date`, `status`');
     merchantAddIndex($conn, 'catering_delivery_logs', 'idx_delivery_order_date_status', '`order_id`, `delivery_date`, `status`');
     merchantAddIndex($conn, 'app_notifications', 'idx_notifications_user_created', '`user_id`, `created_at`');
+    merchantAddIndex($conn, 'user_notification_devices', 'idx_notification_devices_user_active', '`user_id`, `is_active`, `last_seen_at`');
 }
 
 function merchantEnsureSchema(mysqli $conn): void {
@@ -414,10 +417,76 @@ function merchantEnsureSchema(mysqli $conn): void {
         'FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL'
     );
 
+    if (!merchantTableExists($conn, 'app_notifications')) {
+        $conn->query("
+            CREATE TABLE app_notifications (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(64) NOT NULL,
+                title VARCHAR(160) NOT NULL,
+                message TEXT NOT NULL,
+                type VARCHAR(30) DEFAULT NULL,
+                status VARCHAR(30) DEFAULT 'baru',
+                action_text VARCHAR(80) DEFAULT NULL,
+                action_url VARCHAR(160) DEFAULT NULL,
+                importance VARCHAR(20) DEFAULT 'normal',
+                read_at TIMESTAMP NULL DEFAULT NULL,
+                seen_in_app_at TIMESTAMP NULL DEFAULT NULL,
+                delivered_push_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                KEY idx_notifications_user_created (user_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+
     if (merchantTableExists($conn, 'app_notifications')) {
         merchantAddColumn($conn, 'app_notifications', 'type', "`type` VARCHAR(30) DEFAULT NULL");
+        merchantAddColumn($conn, 'app_notifications', 'status', "`status` VARCHAR(30) DEFAULT 'baru'");
         merchantAddColumn($conn, 'app_notifications', 'action_text', "`action_text` VARCHAR(80) DEFAULT NULL");
         merchantAddColumn($conn, 'app_notifications', 'action_url', "`action_url` VARCHAR(160) DEFAULT NULL");
+        merchantAddColumn($conn, 'app_notifications', 'importance', "`importance` VARCHAR(20) DEFAULT 'normal'");
+        merchantAddColumn($conn, 'app_notifications', 'read_at', "`read_at` TIMESTAMP NULL DEFAULT NULL");
+        merchantAddColumn($conn, 'app_notifications', 'seen_in_app_at', "`seen_in_app_at` TIMESTAMP NULL DEFAULT NULL");
+        merchantAddColumn($conn, 'app_notifications', 'delivered_push_at', "`delivered_push_at` TIMESTAMP NULL DEFAULT NULL");
+        merchantAddColumn($conn, 'app_notifications', 'created_at', "`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+        merchantAddColumn($conn, 'app_notifications', 'updated_at', "`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    }
+
+    if (!merchantTableExists($conn, 'user_app_presence')) {
+        $conn->query("
+            CREATE TABLE user_app_presence (
+                user_id VARCHAR(64) PRIMARY KEY,
+                is_active TINYINT(1) NOT NULL DEFAULT 0,
+                last_seen_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+
+    if (!merchantTableExists($conn, 'user_notification_devices')) {
+        $conn->query("
+            CREATE TABLE user_notification_devices (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(64) NOT NULL,
+                fcm_token VARCHAR(512) NOT NULL,
+                platform VARCHAR(30) DEFAULT 'flutter',
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                last_seen_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_notification_token (fcm_token),
+                KEY idx_notification_devices_user_active (user_id, is_active, last_seen_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
+    if (merchantTableExists($conn, 'user_notification_devices') &&
+        merchantColumnExists($conn, 'user_notification_devices', 'fcm_token')) {
+        try {
+            @$conn->query("ALTER TABLE user_notification_devices MODIFY fcm_token VARCHAR(512) NOT NULL");
+        } catch (Throwable $e) {
+            // Existing installs should keep working even if the index length cannot be changed.
+        }
     }
 
     if (merchantTableExists($conn, 'users')) {
@@ -1421,7 +1490,7 @@ function merchantLaundryStatusLabel(array $row): string {
     if ($status === 'accepted' && ($payment === 'awaiting_weighing' || $total <= 0)) {
         return 'Menunggu Penimbangan';
     }
-    if ($status === 'accepted' && !in_array($payment, ['paid'], true)) {
+    if ($status === 'accepted' && in_array($payment, ['waiting_payment', 'unpaid'], true)) {
         return 'Menunggu Pembayaran';
     }
     if ($status === 'accepted') return 'Diterima';
@@ -1459,7 +1528,7 @@ function merchantFinalizeLaundryOrder(
 
     $paymentStatus = strtolower((string)($order['payment_status'] ?? ''));
     if ($paymentStatus !== 'awaiting_weighing' && (float)($order['total_harga'] ?? 0) > 0) {
-        merchantSendJson(false, null, 'Total laundry sudah ditetapkan', 400);
+        merchantSendJson(false, null, 'Total pembayaran sudah ditentukan', 400);
     }
 
     $conn->begin_transaction();
@@ -1709,9 +1778,9 @@ function merchantFinalizeLaundryOrder(
             merchantCreateNotification(
                 $conn,
                 $userId,
-                'Total laundry sudah ditetapkan',
+                'Total pembayaran telah ditentukan',
                 'Pesanan ' . ($orderCode !== '' ? $orderCode : ('#' . $orderId)) .
-                    ' sebesar Rp ' . $amountText . ' siap dibayar. Silakan buka detail pesanan.',
+                    ' sebesar Rp ' . $amountText . ' siap untuk dibayar. Silakan buka detail pesanan.',
                 'payment',
                 'Bayar sekarang',
                 'order:' . $orderId
@@ -1915,6 +1984,7 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
     return [
         'id' => (string)$orderId,
         'code' => $code,
+        'customerUserId' => (string)($row['user_id'] ?? ''),
         'customerName' => $row['customer_name'] ?? 'Pelanggan',
         'customerPhone' => $row['customer_phone'] ?? '',
         'customerEmail' => $row['customer_email'] ?? '',
@@ -2405,14 +2475,28 @@ function merchantProfilePayload(mysqli $conn, array $merchant): array {
     ];
 }
 
-function merchantCreateNotification(mysqli $conn, string $userId, string $title, string $message, string $type = 'info', ?string $actionText = null, ?string $actionUrl = null): void {
-    if (!merchantTableExists($conn, 'app_notifications')) return;
+function merchantCreateNotification(mysqli $conn, string $userId, string $title, string $message, string $type = 'info', ?string $actionText = null, ?string $actionUrl = null, string $importance = 'normal', bool $dispatch = true): int {
+    if (!merchantTableExists($conn, 'app_notifications')) return 0;
 
+    $importance = merchantNormalizeNotificationImportance($importance);
     $hasType = merchantColumnExists($conn, 'app_notifications', 'type');
     $hasAction = merchantColumnExists($conn, 'app_notifications', 'action_text');
     $hasActionUrl = merchantColumnExists($conn, 'app_notifications', 'action_url');
+    $hasImportance = merchantColumnExists($conn, 'app_notifications', 'importance');
+    $notificationId = 0;
 
-    if ($hasType && $hasAction && $hasActionUrl) {
+    if ($hasType && $hasAction && $hasActionUrl && $hasImportance) {
+        $stmt = $conn->prepare("
+            INSERT INTO app_notifications (user_id, title, message, type, action_text, action_url, importance, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ");
+        if ($stmt) {
+            $stmt->bind_param('sssssss', $userId, $title, $message, $type, $actionText, $actionUrl, $importance);
+            $stmt->execute();
+            $notificationId = (int)$conn->insert_id;
+            $stmt->close();
+        }
+    } elseif ($hasType && $hasAction && $hasActionUrl) {
         $stmt = $conn->prepare("
             INSERT INTO app_notifications (user_id, title, message, type, action_text, action_url, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
@@ -2420,12 +2504,10 @@ function merchantCreateNotification(mysqli $conn, string $userId, string $title,
         if ($stmt) {
             $stmt->bind_param('ssssss', $userId, $title, $message, $type, $actionText, $actionUrl);
             $stmt->execute();
+            $notificationId = (int)$conn->insert_id;
             $stmt->close();
         }
-        return;
-    }
-
-    if ($hasType && $hasAction) {
+    } elseif ($hasType && $hasAction) {
         $stmt = $conn->prepare("
             INSERT INTO app_notifications (user_id, title, message, type, action_text, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, NOW(), NOW())
@@ -2433,20 +2515,526 @@ function merchantCreateNotification(mysqli $conn, string $userId, string $title,
         if ($stmt) {
             $stmt->bind_param('sssss', $userId, $title, $message, $type, $actionText);
             $stmt->execute();
+            $notificationId = (int)$conn->insert_id;
             $stmt->close();
         }
-        return;
+    } else {
+        $stmt = $conn->prepare("
+            INSERT INTO app_notifications (user_id, title, message, created_at, updated_at)
+            VALUES (?, ?, ?, NOW(), NOW())
+        ");
+        if ($stmt) {
+            $stmt->bind_param('sss', $userId, $title, $message);
+            $stmt->execute();
+            $notificationId = (int)$conn->insert_id;
+            $stmt->close();
+        }
     }
 
-    $stmt = $conn->prepare("
-        INSERT INTO app_notifications (user_id, title, message, created_at, updated_at)
-        VALUES (?, ?, ?, NOW(), NOW())
-    ");
-    if ($stmt) {
-        $stmt->bind_param('sss', $userId, $title, $message);
-        $stmt->execute();
-        $stmt->close();
+    if ($dispatch) {
+        merchantDispatchImportantNotification($conn, $notificationId, $userId, $title, $message, $type, $actionUrl, $importance);
     }
+    return $notificationId;
+}
+
+function merchantNormalizeNotificationImportance(string $importance): string {
+    $value = strtolower(trim($importance));
+    return in_array($value, ['low', 'normal', 'high', 'important'], true) ? $value : 'normal';
+}
+
+function merchantNotificationIsImportant(string $type, string $title, string $message, string $importance): bool {
+    $importance = merchantNormalizeNotificationImportance($importance);
+    if (in_array($importance, ['high', 'important'], true)) return true;
+
+    $type = strtolower(trim($type));
+    $haystack = strtolower($type . ' ' . $title . ' ' . $message);
+
+    if ($type === 'payment') return true;
+
+    if ($type === 'promo') {
+        foreach (['promo baru', 'promo spesial', 'promo besar', 'diskon', 'potongan'] as $term) {
+            if (str_contains($haystack, $term)) return true;
+        }
+        return false;
+    }
+
+    if (in_array($type, ['order', 'laundry'], true)) {
+        foreach ([
+            'diterima',
+            'total pembayaran',
+            'pembayaran berhasil',
+            'diverifikasi',
+            'diproses',
+            'siap diantar',
+            'pengiriman',
+            'selesai',
+        ] as $term) {
+            if (str_contains($haystack, $term)) return true;
+        }
+    }
+
+    return false;
+}
+
+function merchantUserIsActiveInApp(mysqli $conn, string $userId): bool {
+    if (!merchantTableExists($conn, 'user_app_presence')) return false;
+
+    $stmt = $conn->prepare("
+        SELECT is_active, last_seen_at
+        FROM user_app_presence
+        WHERE user_id = ?
+        LIMIT 1
+    ");
+    if (!$stmt) return false;
+    $stmt->bind_param('s', $userId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row || (int)($row['is_active'] ?? 0) !== 1) return false;
+
+    $lastSeen = strtotime((string)($row['last_seen_at'] ?? ''));
+    return $lastSeen !== false && $lastSeen >= (time() - 45);
+}
+
+function merchantNotificationDeviceTokens(mysqli $conn, string $userId): array {
+    if (!merchantTableExists($conn, 'user_notification_devices')) return [];
+
+    $stmt = $conn->prepare("
+        SELECT fcm_token
+        FROM user_notification_devices
+        WHERE user_id = ? AND is_active = 1 AND fcm_token <> ''
+        ORDER BY last_seen_at DESC
+        LIMIT 10
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param('s', $userId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    $tokens = [];
+    foreach ($rows as $row) {
+        $token = trim((string)($row['fcm_token'] ?? ''));
+        if ($token !== '') $tokens[] = $token;
+    }
+    return array_values(array_unique($tokens));
+}
+
+function merchantDispatchImportantNotification(mysqli $conn, int $notificationId, string $userId, string $title, string $message, string $type, ?string $actionUrl, string $importance): array {
+    if (!merchantNotificationIsImportant($type, $title, $message, $importance)) {
+        return [
+            'sent' => false,
+            'skipped' => 'not_important',
+            'message' => 'Event tidak termasuk notifikasi penting',
+        ];
+    }
+
+    return merchantDispatchNotificationPush($conn, $notificationId, $userId, $title, $message, $type, $actionUrl);
+}
+
+function merchantDispatchNotificationPush(mysqli $conn, int $notificationId, string $userId, string $title, string $message, string $type, ?string $actionUrl, bool $forcePush = false): array {
+    if (merchantUserIsActiveInApp($conn, $userId)) {
+        if ($notificationId > 0 && merchantColumnExists($conn, 'app_notifications', 'seen_in_app_at')) {
+            $stmt = $conn->prepare("UPDATE app_notifications SET seen_in_app_at = COALESCE(seen_in_app_at, NOW()) WHERE id = ?");
+            if ($stmt) {
+                $stmt->bind_param('i', $notificationId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
+        if (!$forcePush) {
+            return [
+                'sent' => false,
+                'skipped' => 'active_in_app',
+                'message' => 'User sedang aktif di aplikasi, push tidak dikirim',
+            ];
+        }
+    }
+
+    $tokens = merchantNotificationDeviceTokens($conn, $userId);
+    if (empty($tokens)) {
+        return [
+            'sent' => false,
+            'skipped' => 'no_device_token',
+            'message' => 'Belum ada FCM token aktif untuk user ini',
+            'fcm' => merchantFcmConfigStatus(),
+        ];
+    }
+
+    $sent = false;
+    $results = [];
+    foreach ($tokens as $token) {
+        $result = merchantSendFcmNotificationDetailed($token, $title, $message, [
+            'notificationId' => (string)$notificationId,
+            'type' => $type,
+            'actionUrl' => $actionUrl ?? '',
+        ]);
+        if (merchantFcmResultIndicatesInvalidToken($result)) {
+            merchantDeactivateNotificationToken($conn, $token);
+            $result['tokenDeactivated'] = true;
+        }
+        $results[] = $result;
+        $sent = !empty($result['ok']) || $sent;
+    }
+
+    if ($sent && $notificationId > 0 && merchantColumnExists($conn, 'app_notifications', 'delivered_push_at')) {
+        $stmt = $conn->prepare("UPDATE app_notifications SET delivered_push_at = COALESCE(delivered_push_at, NOW()) WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param('i', $notificationId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    return [
+        'sent' => $sent,
+        'tokenCount' => count($tokens),
+        'results' => $results,
+        'fcm' => merchantFcmConfigStatus(),
+    ];
+}
+
+function merchantFcmResultIndicatesInvalidToken(array $result): bool {
+    if (!empty($result['ok'])) return false;
+    $text = strtolower(json_encode($result, JSON_UNESCAPED_UNICODE) ?: '');
+    foreach (['unregistered', 'not registered', 'registration-token-not-registered', 'invalid-registration-token', 'invalid argument', 'invalidargument', 'requested entity was not found'] as $term) {
+        if (str_contains($text, $term)) return true;
+    }
+    return false;
+}
+
+function merchantDeactivateNotificationToken(mysqli $conn, string $token): void {
+    if (!merchantTableExists($conn, 'user_notification_devices') || $token === '') return;
+    $stmt = $conn->prepare("
+        UPDATE user_notification_devices
+        SET is_active = 0, updated_at = NOW()
+        WHERE fcm_token = ?
+    ");
+    if (!$stmt) return;
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $stmt->close();
+}
+
+function merchantSendFcmNotification(string $token, string $title, string $message, array $data = []): bool {
+    $result = merchantSendFcmNotificationDetailed($token, $title, $message, $data);
+    return !empty($result['ok']);
+}
+
+function merchantSendFcmNotificationDetailed(string $token, string $title, string $message, array $data = []): array {
+    if (!function_exists('curl_init')) {
+        return [
+            'ok' => false,
+            'method' => 'none',
+            'error' => 'PHP cURL extension belum aktif',
+        ];
+    }
+
+    $serviceAccount = merchantFirebaseServiceAccount();
+    $projectId = merchantEnv('FIREBASE_PROJECT_ID') ?: merchantEnv('FCM_PROJECT_ID') ?: (string)($serviceAccount['project_id'] ?? '');
+    $accessToken = merchantFirebaseAccessToken($serviceAccount);
+    if ($projectId !== '' && $accessToken !== '') {
+        return merchantSendFcmV1NotificationDetailed($projectId, $accessToken, $token, $title, $message, $data);
+    }
+
+    $legacyKey = merchantEnv('FCM_SERVER_KEY') ?: merchantEnv('FIREBASE_SERVER_KEY') ?: '';
+    if ($legacyKey !== '') {
+        return merchantSendFcmLegacyNotificationDetailed($token, $title, $message, $data);
+    }
+
+    return [
+        'ok' => false,
+        'method' => 'none',
+        'error' => 'Credential Firebase backend belum tersedia',
+        'config' => merchantFcmConfigStatus(),
+    ];
+}
+
+function merchantFcmConfigStatus(): array {
+    $path = merchantFirebaseCredentialPath();
+    $localConfig = merchantFirebaseLocalConfig();
+    $serviceAccount = merchantFirebaseServiceAccount();
+    $projectId = merchantEnv('FIREBASE_PROJECT_ID')
+        ?: merchantEnv('FCM_PROJECT_ID')
+        ?: (string)($localConfig['project_id'] ?? '')
+        ?: (string)($serviceAccount['project_id'] ?? '');
+    $hasClientEmail = trim((string)($serviceAccount['client_email'] ?? '')) !== '';
+    $hasPrivateKey = trim((string)($serviceAccount['private_key'] ?? '')) !== '';
+    $hasLegacyKey = (merchantEnv('FCM_SERVER_KEY') ?: merchantEnv('FIREBASE_SERVER_KEY') ?: '') !== '';
+
+    return [
+        'curl' => function_exists('curl_init'),
+        'openssl' => function_exists('openssl_sign'),
+        'projectId' => $projectId,
+        'credentialPathConfigured' => $path !== '',
+        'credentialPathReadable' => $path !== '' && is_readable($path),
+        'serviceAccountSource' => $path !== '' && is_readable($path)
+            ? 'file'
+            : ($hasClientEmail || $hasPrivateKey
+                ? (!empty($localConfig) ? 'local_config' : 'environment')
+                : 'none'),
+        'hasServiceAccount' => $projectId !== '' && $hasClientEmail && $hasPrivateKey,
+        'hasLegacyServerKey' => $hasLegacyKey,
+        'preferredMethod' => $projectId !== '' && $hasClientEmail && $hasPrivateKey
+            ? 'fcm_http_v1'
+            : ($hasLegacyKey ? 'legacy_server_key' : 'not_configured'),
+    ];
+}
+
+function merchantFirebaseServiceAccount(): array {
+    $localConfig = merchantFirebaseLocalConfig();
+    $path = merchantFirebaseCredentialPath();
+    if ($path !== '' && is_readable($path)) {
+        $decoded = json_decode((string)file_get_contents($path), true);
+        if (is_array($decoded)) return $decoded;
+    }
+
+    return [
+        'project_id' => merchantEnv('FIREBASE_PROJECT_ID')
+            ?: merchantEnv('FCM_PROJECT_ID')
+            ?: (string)($localConfig['project_id'] ?? ''),
+        'client_email' => merchantEnv('FIREBASE_CLIENT_EMAIL')
+            ?: (string)($localConfig['client_email'] ?? ''),
+        'private_key' => merchantEnv('FIREBASE_PRIVATE_KEY')
+            ?: (string)($localConfig['private_key'] ?? ''),
+    ];
+}
+
+function merchantFirebaseCredentialPath(): string {
+    $localConfig = merchantFirebaseLocalConfig();
+    return merchantEnv('GOOGLE_APPLICATION_CREDENTIALS')
+        ?: merchantEnv('GOOGLE_APPLICATIONS_CREDENTIALS')
+        ?: merchantEnv('FIREBASE_SERVICE_ACCOUNT_PATH')
+        ?: (string)($localConfig['service_account_path'] ?? '');
+}
+
+function merchantFirebaseLocalConfig(): array {
+    $path = __DIR__ . '/../config/firebase.local.php';
+    if (!is_readable($path)) return [];
+    $config = require $path;
+    return is_array($config) ? $config : [];
+}
+
+function merchantEnv(string $key): string {
+    $value = getenv($key);
+    if ($value !== false && $value !== '') return (string)$value;
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') return (string)$_SERVER[$key];
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') return (string)$_ENV[$key];
+    if (function_exists('apache_getenv')) {
+        $apacheValue = apache_getenv($key);
+        if ($apacheValue !== false && $apacheValue !== '') return (string)$apacheValue;
+    }
+    return '';
+}
+
+function merchantFirebaseAccessToken(array $serviceAccount): string {
+    $clientEmail = trim((string)($serviceAccount['client_email'] ?? ''));
+    $privateKey = (string)($serviceAccount['private_key'] ?? '');
+    $privateKey = str_replace('\\n', "\n", $privateKey);
+    if ($clientEmail === '' || $privateKey === '' || !function_exists('openssl_sign')) {
+        return '';
+    }
+
+    $now = time();
+    $cachePath = merchantFirebaseAccessTokenCachePath($clientEmail);
+    if ($cachePath !== '' && is_readable($cachePath)) {
+        $cached = json_decode((string)file_get_contents($cachePath), true);
+        if (is_array($cached) &&
+            !empty($cached['access_token']) &&
+            (int)($cached['expires_at'] ?? 0) > $now + 60) {
+            return (string)$cached['access_token'];
+        }
+    }
+
+    $header = ['alg' => 'RS256', 'typ' => 'JWT'];
+    $claims = [
+        'iss' => $clientEmail,
+        'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+        'aud' => 'https://oauth2.googleapis.com/token',
+        'iat' => $now,
+        'exp' => $now + 3600,
+    ];
+    $unsignedJwt = merchantBase64UrlEncode(json_encode($header)) . '.' .
+        merchantBase64UrlEncode(json_encode($claims));
+
+    $signature = '';
+    if (!openssl_sign($unsignedJwt, $signature, $privateKey, OPENSSL_ALGO_SHA256)) {
+        return '';
+    }
+    $assertion = $unsignedJwt . '.' . merchantBase64UrlEncode($signature);
+
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    if (!$ch) return '';
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion' => $assertion,
+        ]),
+    ]);
+    $response = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($response === false || $status < 200 || $status >= 300) return '';
+
+    $decoded = json_decode((string)$response, true);
+    $token = is_array($decoded) ? (string)($decoded['access_token'] ?? '') : '';
+    if ($token !== '' && $cachePath !== '') {
+        $expiresIn = max(300, (int)($decoded['expires_in'] ?? 3600));
+        @file_put_contents(
+            $cachePath,
+            json_encode([
+                'access_token' => $token,
+                'expires_at' => $now + $expiresIn - 120,
+            ]),
+            LOCK_EX
+        );
+    }
+    return $token;
+}
+
+function merchantBase64UrlEncode(string $value): string {
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function merchantFirebaseAccessTokenCachePath(string $clientEmail): string {
+    $dir = sys_get_temp_dir();
+    if ($dir === '' || !is_dir($dir) || !is_writable($dir)) return '';
+    return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR .
+        'kosfinder_fcm_' . md5($clientEmail) . '.json';
+}
+
+function merchantSendFcmV1Notification(string $projectId, string $accessToken, string $token, string $title, string $message, array $data = []): bool {
+    $result = merchantSendFcmV1NotificationDetailed($projectId, $accessToken, $token, $title, $message, $data);
+    return !empty($result['ok']);
+}
+
+function merchantSendFcmV1NotificationDetailed(string $projectId, string $accessToken, string $token, string $title, string $message, array $data = []): array {
+    $payload = [
+        'message' => [
+            'token' => $token,
+            'notification' => [
+                'title' => $title,
+                'body' => $message,
+            ],
+            'data' => array_map(static fn($value) => (string)$value, $data),
+            'android' => [
+                'priority' => 'HIGH',
+                'notification' => ['sound' => 'default'],
+            ],
+            'apns' => [
+                'payload' => [
+                    'aps' => ['sound' => 'default'],
+                ],
+            ],
+        ],
+    ];
+
+    $ch = curl_init('https://fcm.googleapis.com/v1/projects/' . rawurlencode($projectId) . '/messages:send');
+    if (!$ch) {
+        return [
+            'ok' => false,
+            'method' => 'fcm_http_v1',
+            'error' => 'Gagal membuat cURL handle',
+        ];
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $accessToken,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    ]);
+    $response = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    return [
+        'ok' => $response !== false && $status >= 200 && $status < 300,
+        'method' => 'fcm_http_v1',
+        'status' => $status,
+        'error' => $response === false ? $curlError : null,
+        'response' => is_string($response) ? substr($response, 0, 500) : null,
+    ];
+}
+
+function merchantSendFcmLegacyNotification(string $token, string $title, string $message, array $data = []): bool {
+    $result = merchantSendFcmLegacyNotificationDetailed($token, $title, $message, $data);
+    return !empty($result['ok']);
+}
+
+function merchantSendFcmLegacyNotificationDetailed(string $token, string $title, string $message, array $data = []): array {
+    $serverKey = getenv('FCM_SERVER_KEY') ?: getenv('FIREBASE_SERVER_KEY') ?: '';
+    if ($serverKey === '') {
+        return [
+            'ok' => false,
+            'method' => 'legacy_server_key',
+            'error' => 'FCM server key belum tersedia',
+        ];
+    }
+
+    $payload = [
+        'to' => $token,
+        'priority' => 'high',
+        'notification' => [
+            'title' => $title,
+            'body' => $message,
+            'sound' => 'default',
+        ],
+        'data' => array_map(static fn($value) => (string)$value, $data),
+    ];
+
+    $ch = curl_init('https://fcm.googleapis.com/fcm/send');
+    if (!$ch) {
+        return [
+            'ok' => false,
+            'method' => 'legacy_server_key',
+            'error' => 'Gagal membuat cURL handle',
+        ];
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: key=' . $serverKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    ]);
+    $response = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false || $status < 200 || $status >= 300) {
+        return [
+            'ok' => false,
+            'method' => 'legacy_server_key',
+            'status' => $status,
+            'error' => $response === false ? $curlError : null,
+            'response' => is_string($response) ? substr($response, 0, 500) : null,
+        ];
+    }
+    $decoded = json_decode((string)$response, true);
+    $ok = !isset($decoded['failure']) || (int)$decoded['failure'] === 0;
+    return [
+        'ok' => $ok,
+        'method' => 'legacy_server_key',
+        'status' => $status,
+        'error' => $ok ? null : 'FCM legacy response contains failure',
+        'response' => substr((string)$response, 0, 500),
+    ];
 }
 
 function merchantSyncPlace(mysqli $conn, array $merchant): void {

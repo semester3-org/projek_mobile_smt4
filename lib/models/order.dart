@@ -4,25 +4,39 @@ import '../core/indonesia_time.dart';
 class OrderItem {
   final String name;
   final int quantity;
+  final double quantityValue;
   final double price;
   final double subtotal;
   final String? description;
+  final String pricingType;
+  final String unit;
+  final bool isAddon;
 
   OrderItem({
     required this.name,
     required this.quantity,
+    this.quantityValue = 0,
     required this.price,
     required this.subtotal,
     this.description,
+    this.pricingType = '',
+    this.unit = '',
+    this.isAddon = false,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
     return OrderItem(
       name: json['name'] as String? ?? '',
       quantity: json['quantity'] as int? ?? 0,
+      quantityValue: (json['quantityValue'] as num?)?.toDouble() ??
+          (json['quantity'] as num?)?.toDouble() ??
+          0,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0.0,
       description: json['description'] as String?,
+      pricingType: json['pricingType'] as String? ?? '',
+      unit: json['unit'] as String? ?? '',
+      isAddon: json['isAddon'] == true || json['isAddon'] == 1,
     );
   }
 
@@ -30,9 +44,13 @@ class OrderItem {
     return {
       'name': name,
       'quantity': quantity,
+      'quantityValue': quantityValue,
       'price': price,
       'subtotal': subtotal,
       'description': description,
+      'pricingType': pricingType,
+      'unit': unit,
+      'isAddon': isAddon,
     };
   }
 }
@@ -57,6 +75,7 @@ class Order {
   final double? deliveryLatitude;
   final double? deliveryLongitude;
   final String? estimatedTime;
+  final DateTime? estimatedFinishAt;
   final String? midtransOrderId;
   final int? subscriptionDays;
   final DateTime? subscriptionStartDate;
@@ -94,6 +113,7 @@ class Order {
     this.deliveryLatitude,
     this.deliveryLongitude,
     this.estimatedTime,
+    this.estimatedFinishAt,
     this.midtransOrderId,
     this.subscriptionDays,
     this.subscriptionStartDate,
@@ -148,6 +168,11 @@ class Order {
       deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
       deliveryLongitude: deliveryLongitude,
       estimatedTime: json['estimatedTime'] as String?,
+      estimatedFinishAt: IndonesiaTime.tryParse(
+        json['estimatedFinishAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       midtransOrderId: json['midtransOrderId'] as String?,
       subscriptionDays: (json['subscriptionDays'] as num?)?.toInt(),
       subscriptionStartDate: IndonesiaTime.tryParse(
@@ -201,6 +226,7 @@ class Order {
       'deliveryLatitude': deliveryLatitude,
       'deliveryLongitude': deliveryLongitude,
       'estimatedTime': estimatedTime,
+      'estimatedFinishAt': estimatedFinishAt?.toIso8601String(),
       'midtransOrderId': midtransOrderId,
       'subscriptionDays': subscriptionDays,
       'subscriptionStartDate': subscriptionStartDate?.toIso8601String(),
@@ -239,18 +265,7 @@ class Order {
   }
 
   bool get needsPaymentConfirmation {
-    final method = (paymentMethod ?? '').toLowerCase();
-    final payment = (paymentStatus ?? '').toLowerCase();
-    final isCod = method.contains('cod') || method.contains('cash');
-    if (service == 'catering' &&
-        (merchantStatus ?? '').toLowerCase() != 'accepted') {
-      return false;
-    }
-    return !isCod &&
-        (status == 'pending' || status == 'confirmed') &&
-        (payment.isEmpty ||
-            payment == 'waiting_payment' ||
-            payment == 'unpaid');
+    return false;
   }
 
   bool get isCashOnDelivery {
@@ -260,23 +275,34 @@ class Order {
 
   bool get needsOnlinePayment {
     final payment = (paymentStatus ?? '').toLowerCase();
+    final merchant = (merchantStatus ?? '').toLowerCase();
+    final completed =
+        status == 'completed' || merchant == 'done' || merchant == 'completed';
     if (service == 'catering' &&
         (merchantStatus ?? '').toLowerCase() != 'accepted') {
       return false;
     }
     return !awaitingWeighing &&
         !isCashOnDelivery &&
-        payment != 'paid' &&
-        payment != 'payment_submitted' &&
-        payment != 'cod' &&
-        payment != 'cancelled';
+        totalAmount > 0 &&
+        !completed &&
+        !['paid', 'cod', 'cancelled'].contains(payment);
   }
 
   bool get isLaundry => service == 'laundry';
 
   bool get isPaid {
     final payment = (paymentStatus ?? '').toLowerCase();
-    return payment == 'paid' || payment == 'payment_submitted';
+    return payment == 'paid';
+  }
+
+  bool get canDownloadReceipt {
+    if (totalAmount <= 0) return false;
+    if (isPaid) return true;
+    final merchant = (merchantStatus ?? '').toLowerCase();
+    final completed =
+        status == 'completed' || merchant == 'done' || merchant == 'completed';
+    return isCashOnDelivery && completed;
   }
 
   bool get isCateringSubscription =>

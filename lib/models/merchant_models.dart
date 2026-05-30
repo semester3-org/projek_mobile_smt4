@@ -7,9 +7,13 @@ class MerchantOrderItem {
     required this.name,
     required this.description,
     required this.quantity,
+    this.quantityValue = 0,
     required this.price,
     required this.subtotal,
     required this.imageUrl,
+    this.pricingType = '',
+    this.unit = '',
+    this.isAddon = false,
   });
 
   final String id;
@@ -17,9 +21,15 @@ class MerchantOrderItem {
   final String name;
   final String description;
   final int quantity;
+  final double quantityValue;
   final double price;
   final double subtotal;
   final String imageUrl;
+  final String pricingType;
+  final String unit;
+  final bool isAddon;
+
+  String get pricingTypeLabel => pricingTypeLabelFor(pricingType);
 
   factory MerchantOrderItem.fromJson(Map<String, dynamic> json) {
     return MerchantOrderItem(
@@ -28,10 +38,88 @@ class MerchantOrderItem {
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      quantityValue: (json['quantityValue'] as num?)?.toDouble() ??
+          (json['quantity'] as num?)?.toDouble() ??
+          0,
       price: (json['price'] as num?)?.toDouble() ?? 0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
       imageUrl: json['imageUrl'] as String? ?? '',
+      pricingType: json['pricingType'] as String? ?? '',
+      unit: json['unit'] as String? ?? '',
+      isAddon: json['isAddon'] as bool? ?? false,
     );
+  }
+}
+
+class MerchantLaundryAddon {
+  const MerchantLaundryAddon({
+    required this.id,
+    required this.name,
+    required this.price,
+    required this.pricingType,
+    required this.pricingTypeLabel,
+    required this.unit,
+    this.quantity = 1,
+    this.subtotal = 0,
+    this.isActive = true,
+  });
+
+  final String id;
+  final String name;
+  final double price;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final String unit;
+  final double quantity;
+  final double subtotal;
+  final bool isActive;
+
+  factory MerchantLaundryAddon.fromJson(Map<String, dynamic> json) {
+    final pricingType = json['pricingType'] as String? ?? 'flat';
+    return MerchantLaundryAddon(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      pricingType: pricingType,
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ??
+          pricingTypeLabelFor(pricingType),
+      unit: json['unit'] as String? ?? pricingUnitFor(pricingType),
+      quantity: (json['quantity'] as num?)?.toDouble() ?? 1,
+      subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
+      isActive: json['isActive'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id.isNotEmpty) 'id': id,
+      'name': name,
+      'price': price,
+      'pricingType': pricingType,
+      'isActive': isActive,
+    };
+  }
+}
+
+String pricingTypeLabelFor(String pricingType) {
+  switch (pricingType) {
+    case 'per_item':
+      return 'Per Item';
+    case 'flat':
+      return 'Flat Price';
+    default:
+      return 'Per Kg';
+  }
+}
+
+String pricingUnitFor(String pricingType) {
+  switch (pricingType) {
+    case 'per_item':
+      return '/item';
+    case 'flat':
+      return 'fixed';
+    default:
+      return '/kg';
   }
 }
 
@@ -76,6 +164,7 @@ class MerchantOrder {
   const MerchantOrder({
     required this.id,
     required this.code,
+    this.customerUserId = '',
     required this.customerName,
     required this.customerPhone,
     required this.customerEmail,
@@ -83,11 +172,16 @@ class MerchantOrder {
     required this.serviceName,
     required this.createdAt,
     required this.estimatedTime,
+    this.estimatedFinishAt,
     required this.status,
     required this.statusLabel,
     required this.statusGroup,
     required this.deliveryAddress,
     required this.totalAmount,
+    this.subtotalAmount = 0,
+    this.promoName = '',
+    this.promoDiscountAmount = 0,
+    this.actualWeight,
     required this.paymentMethod,
     required this.paymentMethodLabel,
     required this.paymentStatus,
@@ -97,6 +191,8 @@ class MerchantOrder {
     required this.notes,
     required this.items,
     required this.deliveryMilestones,
+    this.availableAddons = const [],
+    this.selectedAddons = const [],
     this.deliveryLatitude,
     this.deliveryLongitude,
     this.midtransOrderId,
@@ -109,6 +205,7 @@ class MerchantOrder {
 
   final String id;
   final String code;
+  final String customerUserId;
   final String customerName;
   final String customerPhone;
   final String customerEmail;
@@ -116,11 +213,16 @@ class MerchantOrder {
   final String serviceName;
   final DateTime createdAt;
   final String estimatedTime;
+  final DateTime? estimatedFinishAt;
   final String status;
   final String statusLabel;
   final String statusGroup;
   final String deliveryAddress;
   final double totalAmount;
+  final double subtotalAmount;
+  final String promoName;
+  final double promoDiscountAmount;
+  final double? actualWeight;
   final String paymentMethod;
   final String paymentMethodLabel;
   final String paymentStatus;
@@ -130,6 +232,8 @@ class MerchantOrder {
   final String notes;
   final List<MerchantOrderItem> items;
   final List<MerchantDeliveryMilestone> deliveryMilestones;
+  final List<MerchantLaundryAddon> availableAddons;
+  final List<MerchantLaundryAddon> selectedAddons;
   final double? deliveryLatitude;
   final double? deliveryLongitude;
   final String? midtransOrderId;
@@ -143,11 +247,16 @@ class MerchantOrder {
     final rawItems = json['items'] as List<dynamic>? ?? const [];
     final rawMilestones =
         json['deliveryMilestones'] as List<dynamic>? ?? const [];
+    final rawAvailableAddons =
+        json['availableAddons'] as List<dynamic>? ?? const [];
+    final rawSelectedAddons =
+        json['selectedAddons'] as List<dynamic>? ?? const [];
     final deliveryAddress = json['deliveryAddress'] as String? ?? '';
     final deliveryLongitude = (json['deliveryLongitude'] as num?)?.toDouble();
     return MerchantOrder(
       id: json['id'] as String? ?? '',
       code: json['code'] as String? ?? '',
+      customerUserId: json['customerUserId'] as String? ?? '',
       customerName: json['customerName'] as String? ?? 'Pelanggan',
       customerPhone: json['customerPhone'] as String? ?? '',
       customerEmail: json['customerEmail'] as String? ?? '',
@@ -159,11 +268,21 @@ class MerchantOrder {
         longitude: deliveryLongitude,
       ),
       estimatedTime: json['estimatedTime'] as String? ?? '',
+      estimatedFinishAt: IndonesiaTime.tryParse(
+        json['estimatedFinishAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       status: json['status'] as String? ?? 'pending',
       statusLabel: json['statusLabel'] as String? ?? 'Pending',
       statusGroup: json['statusGroup'] as String? ?? 'pending',
       deliveryAddress: deliveryAddress,
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
+      subtotalAmount: (json['subtotalAmount'] as num?)?.toDouble() ?? 0,
+      promoName: json['promoName'] as String? ?? '',
+      promoDiscountAmount:
+          (json['promoDiscountAmount'] as num?)?.toDouble() ?? 0,
+      actualWeight: (json['actualWeight'] as num?)?.toDouble(),
       paymentMethod: json['paymentMethod'] as String? ?? '',
       paymentMethodLabel: json['paymentMethodLabel'] as String? ?? '',
       paymentStatus: json['paymentStatus'] as String? ?? '',
@@ -179,6 +298,14 @@ class MerchantOrder {
           .map((item) => MerchantDeliveryMilestone.fromJson(
                 item as Map<String, dynamic>,
               ))
+          .toList(),
+      availableAddons: rawAvailableAddons
+          .map((item) =>
+              MerchantLaundryAddon.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      selectedAddons: rawSelectedAddons
+          .map((item) =>
+              MerchantLaundryAddon.fromJson(item as Map<String, dynamic>))
           .toList(),
       deliveryLatitude: (json['deliveryLatitude'] as num?)?.toDouble(),
       deliveryLongitude: deliveryLongitude,
@@ -254,6 +381,14 @@ class MerchantProduct {
     this.price20Days,
     required this.category,
     required this.unit,
+    this.pricingType = 'per_kg',
+    this.pricingTypeLabel = 'Per Kg',
+    this.durationValue,
+    this.durationUnit = 'day',
+    this.durationLabel = '',
+    this.addons = const [],
+    this.hasActivePromo = false,
+    this.activePromoName = '',
     required this.imageUrl,
     required this.isActive,
     required this.serviceType,
@@ -272,6 +407,14 @@ class MerchantProduct {
   final double? price20Days;
   final String category;
   final String unit;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final int? durationValue;
+  final String durationUnit;
+  final String durationLabel;
+  final List<MerchantLaundryAddon> addons;
+  final bool hasActivePromo;
+  final String activePromoName;
   final String imageUrl;
   final bool isActive;
   final String serviceType;
@@ -283,6 +426,8 @@ class MerchantProduct {
   final int reviewCount;
 
   factory MerchantProduct.fromJson(Map<String, dynamic> json) {
+    final rawAddons = json['addons'] as List<dynamic>? ?? const [];
+    final pricingType = json['pricingType'] as String? ?? 'per_kg';
     return MerchantProduct(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
@@ -291,6 +436,18 @@ class MerchantProduct {
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       category: json['category'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
+      pricingType: pricingType,
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ??
+          pricingTypeLabelFor(pricingType),
+      durationValue: (json['durationValue'] as num?)?.toInt(),
+      durationUnit: json['durationUnit'] as String? ?? 'day',
+      durationLabel: json['durationLabel'] as String? ?? '',
+      addons: rawAddons
+          .map((item) =>
+              MerchantLaundryAddon.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      hasActivePromo: json['hasActivePromo'] as bool? ?? false,
+      activePromoName: json['activePromoName'] as String? ?? '',
       imageUrl: json['imageUrl'] as String? ?? '',
       isActive: json['isActive'] as bool? ?? true,
       serviceType: json['serviceType'] as String? ?? '',

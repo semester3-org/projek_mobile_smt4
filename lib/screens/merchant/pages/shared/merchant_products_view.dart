@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
-import '../../widgets/merchant_laundry_estimates_panel.dart';
 import 'merchant_edit_product_page.dart';
 import 'merchant_notifications_page.dart';
 
@@ -86,7 +85,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         const SizedBox(height: 8),
         Text(
           widget.isLaundry
-              ? 'Nama, deskripsi, harga, foto, dan jam operasional merchant akan tampil ke user.'
+              ? 'Atur layanan, tipe harga, estimasi durasi, tambahan layanan, deskripsi, dan foto yang tampil ke user.'
               : 'Atur paket bulanan, pilihan menu, deskripsi lauk, harga, dan foto untuk user.',
           style: const TextStyle(
             color: MerchantPalette.muted,
@@ -95,11 +94,6 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           ),
         ),
         const SizedBox(height: 24),
-        if (widget.isLaundry)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 20),
-            child: MerchantLaundryEstimatesPanel(),
-          ),
         MerchantCard(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           child: Row(
@@ -245,7 +239,7 @@ class _ProductCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Text(
@@ -254,34 +248,21 @@ class _ProductCard extends StatelessWidget {
                           color: MerchantPalette.text,
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
+                          height: 1.2,
                         ),
                       ),
                     ),
-                    if (isLaundry)
-                      Row(
-                        children: [
-                          Text(
-                            formatMerchantCurrency(product.price),
-                            style: const TextStyle(
-                              color: MerchantPalette.primary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          Text(
-                            product.unit,
-                            style: const TextStyle(
-                              color: MerchantPalette.muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
+                    if (isLaundry) ...[
+                      const SizedBox(width: 14),
+                      _LaundryPriceBlock(product: product),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 10),
-                _ProductRatingTag(product: product),
+                const SizedBox(height: 12),
+                if (isLaundry) ...[
+                  _LaundryServiceMeta(product: product),
+                ] else
+                  _ProductRatingTag(product: product),
                 if (!isLaundry) ...[
                   const SizedBox(height: 10),
                   _PackagePriceTag(
@@ -373,6 +354,136 @@ class _ProductRatingTag extends StatelessWidget {
               color: MerchantPalette.text,
               fontSize: 12,
               fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaundryPriceBlock extends StatelessWidget {
+  const _LaundryPriceBlock({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F8FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD7E8FF)),
+      ),
+      child: Text(
+        _productPriceLabel(product),
+        textAlign: TextAlign.right,
+        style: const TextStyle(
+          color: MerchantPalette.primary,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+String _productPriceLabel(MerchantProduct product) {
+  final unit = product.unit.trim();
+  if (product.pricingType == 'flat' || unit == 'fixed' || unit.isEmpty) {
+    return formatMerchantCurrency(product.price);
+  }
+  return '${formatMerchantCurrency(product.price)}$unit';
+}
+
+class _LaundryServiceMeta extends StatelessWidget {
+  const _LaundryServiceMeta({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    final addonLabel = product.addons.isEmpty
+        ? 'Tanpa tambahan'
+        : '${product.addons.length} tambahan';
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _ServiceInfoChip(
+          icon: Icons.sell_outlined,
+          text: product.pricingTypeLabel,
+          color: MerchantPalette.primary,
+        ),
+        _ServiceInfoChip(
+          icon: Icons.schedule_rounded,
+          text: product.durationLabel.isEmpty
+              ? 'Durasi belum diatur'
+              : product.durationLabel,
+          color: const Color(0xFF7C3AED),
+        ),
+        _ServiceInfoChip(
+          icon: Icons.add_circle_outline_rounded,
+          text: addonLabel,
+          color: const Color(0xFF0F766E),
+        ),
+        if (product.hasActivePromo)
+          _ServiceInfoChip(
+            icon: Icons.local_offer_outlined,
+            text: product.activePromoName.isEmpty
+                ? 'Promo aktif'
+                : product.activePromoName,
+            color: const Color(0xFFB45309),
+          ),
+        if (product.reviewCount > 0)
+          _ServiceInfoChip(
+            icon: Icons.star_rounded,
+            text:
+                '${product.rating.toStringAsFixed(1)} (${product.reviewCount})',
+            color: const Color(0xFFFFB300),
+          ),
+      ],
+    );
+  }
+}
+
+class _ServiceInfoChip extends StatelessWidget {
+  const _ServiceInfoChip({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 210),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],

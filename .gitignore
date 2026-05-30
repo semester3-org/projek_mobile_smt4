@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local secrets
+/backend/config/firebase.local.php
+/backend/config/*service-account*.json
+/backend/config/*firebase-adminsdk*.json

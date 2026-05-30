@@ -272,8 +272,8 @@ class _ProductReviewCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               product.reviewCount > 0
-                                  ? '${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
-                                  : 'Belum ada rating',
+                                  ? 'Rating toko ${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
+                                  : 'Belum ada rating toko',
                               style: const TextStyle(
                                 color: MerchantPalette.muted,
                                 fontWeight: FontWeight.w800,

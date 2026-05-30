@@ -15,9 +15,14 @@ function userOrderPaymentMethodLabel(?string $method): string {
     $key = strtolower(trim((string)$method));
   return match ($key) {
         'bca' => 'Transfer Bank BCA',
+        'bca_va' => 'Transfer Bank BCA',
         'mandiri' => 'Transfer Bank Mandiri',
+        'echannel' => 'Transfer Bank Mandiri',
         'bni' => 'Transfer Bank BNI',
+        'bni_va' => 'Transfer Bank BNI',
         'cimb' => 'Transfer Bank CIMB Niaga',
+        'cimb_clicks' => 'Transfer Bank CIMB Niaga',
+        'bank_transfer' => 'Transfer Bank',
         'gopay' => 'GoPay',
         'ovo' => 'OVO',
         'dana' => 'DANA',
@@ -33,7 +38,7 @@ function userOrderLaundryServiceEstimate(mysqli $conn, int $productId, string $f
     if ($productId <= 0) {
         return $fallback;
     }
-    $stmt = $conn->prepare('SELECT category, merchant_id FROM products WHERE id = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT category, merchant_id, duration_value, duration_unit FROM products WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return $fallback;
     }
@@ -44,35 +49,16 @@ function userOrderLaundryServiceEstimate(mysqli $conn, int $productId, string $f
     if (!$product) {
         return $fallback;
     }
+    $durationLabel = merchantDurationLabel(
+        isset($product['duration_value']) ? (int)$product['duration_value'] : null,
+        $product['duration_unit'] ?? 'day'
+    );
+    if ($durationLabel !== '') {
+        return $durationLabel;
+    }
     $category = trim((string)($product['category'] ?? ''));
     if ($category === '') {
         return $fallback;
-    }
-    if (merchantTableExists($conn, 'laundry_service_estimates')) {
-        $merchantId = (string)($product['merchant_id'] ?? '');
-        $est = $conn->prepare("
-            SELECT min_hours, max_hours, estimate_label
-            FROM laundry_service_estimates
-            WHERE merchant_id = ? AND service_name = ? AND is_active = 1
-            LIMIT 1
-        ");
-        if ($est) {
-            $est->bind_param('ss', $merchantId, $category);
-            $est->execute();
-            $row = $est->get_result()->fetch_assoc();
-            $est->close();
-            if ($row) {
-                $label = trim((string)($row['estimate_label'] ?? ''));
-                if ($label !== '') {
-                    return $label;
-                }
-                $min = (int)($row['min_hours'] ?? 0);
-                $max = (int)($row['max_hours'] ?? 0);
-                if ($min > 0 && $max > 0) {
-                    return $category . ' (' . $min . '-' . $max . ' jam)';
-                }
-            }
-        }
     }
     return $category;
 }
@@ -130,6 +116,18 @@ function userOrderPayload(mysqli $conn, array $row): array {
             $windowUntil !== null &&
             strtotime((string)$windowUntil) > time();
     }
+    $paymentRaw = strtolower((string)($order['paymentStatus'] ?? ''));
+    $methodRaw = strtolower((string)($order['paymentMethod'] ?? ''));
+    $isCod = str_contains($methodRaw, 'cod') || str_contains($methodRaw, 'cash');
+    $userPaymentStatusLabel = match ($paymentRaw) {
+        'awaiting_weighing' => 'Menunggu penimbangan',
+        'payment_submitted' => 'Menunggu verifikasi pembayaran',
+        'paid' => 'Sudah dibayar',
+        'cod' => 'Belum dibayar',
+        'cancelled' => 'Pembayaran batal',
+        'waiting_payment', 'unpaid' => $isCod ? 'Belum dibayar' : 'Menunggu pembayaran',
+        default => 'Menunggu pembayaran',
+    };
 
     return [
         'id' => $order['code'],
@@ -155,17 +153,22 @@ function userOrderPayload(mysqli $conn, array $row): array {
             'name' => $item['name'],
             'description' => $item['description'] ?? '',
             'quantity' => $item['quantity'],
+            'quantityValue' => $item['quantityValue'] ?? $item['quantity'],
             'price' => $item['price'],
             'subtotal' => $item['subtotal'],
+            'pricingType' => $item['pricingType'] ?? '',
+            'unit' => $item['unit'] ?? '',
+            'isAddon' => (bool)($item['isAddon'] ?? false),
         ], $order['items']),
         'notes' => $order['notes'],
         'paymentMethod' => $order['paymentMethod'],
         'paymentStatus' => $order['paymentStatus'],
-        'paymentStatusLabel' => $order['paymentStatusLabel'],
+        'paymentStatusLabel' => $userPaymentStatusLabel,
         'deliveryAddress' => $order['deliveryAddress'],
         'deliveryLatitude' => $order['deliveryLatitude'],
         'deliveryLongitude' => $order['deliveryLongitude'],
         'estimatedTime' => $order['estimatedTime'],
+        'estimatedFinishAt' => $order['estimatedFinishAt'] ?? null,
         'midtransOrderId' => $order['midtransOrderId'],
         'subscriptionDays' => $order['subscriptionDays'],
         'subscriptionStartDate' => $order['subscriptionStartDate'],
@@ -274,6 +277,34 @@ try {
                 merchantSendJson(false, null, 'Pesanan tidak ditemukan', 404);
             }
             merchantSendJson(true, userOrderPayload($conn, $row), 'Detail pesanan berhasil dimuat');
+        }
+
+        if (($_GET['sync'] ?? '') === '1') {
+            $stmt = $conn->prepare("
+                SELECT id, order_code, status, payment_status, total_harga,
+                       updated_at, estimated_finish_at, laundry_weight_kg
+                FROM orders
+                WHERE user_id = ?
+                ORDER BY updated_at DESC, id DESC
+            ");
+            if (!$stmt) {
+                merchantSendJson(false, null, 'Database error', 500);
+            }
+            $stmt->bind_param('s', $userId);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            $data = array_map(fn($row) => [
+                'id' => (string)($row['id'] ?? ''),
+                'code' => (string)($row['order_code'] ?? ''),
+                'status' => (string)($row['status'] ?? ''),
+                'paymentStatus' => (string)($row['payment_status'] ?? ''),
+                'totalAmount' => (float)($row['total_harga'] ?? 0),
+                'updatedAt' => $row['updated_at'] ?? null,
+                'estimatedFinishAt' => $row['estimated_finish_at'] ?? null,
+                'actualWeight' => isset($row['laundry_weight_kg']) ? (float)$row['laundry_weight_kg'] : null,
+            ], $rows);
+            merchantSendJson(true, $data, 'Sinkronisasi pesanan user berhasil');
         }
 
         $stmt = $conn->prepare("
@@ -569,13 +600,28 @@ try {
 
         $paymentMethod = (string)($row['payment_method'] ?? '');
         $method = strtolower($paymentMethod);
+        $paymentStatus = strtolower((string)($row['payment_status'] ?? ''));
+        $orderStatus = strtolower((string)($row['status'] ?? ''));
+        $serviceType = strtolower((string)($row['service_type'] ?? ''));
+        $totalAmount = (float)($row['total_harga'] ?? 0);
+        if (in_array($orderStatus, ['done', 'completed', 'cancelled'], true) ||
+            $paymentStatus === 'cancelled') {
+            merchantSendJson(false, null, 'Pesanan sudah selesai atau tidak dapat dibayar', 400);
+        }
+        if ($paymentStatus === 'paid') {
+            merchantSendJson(false, null, 'Pembayaran sudah berhasil tercatat', 400);
+        }
+        if ($totalAmount <= 0 || $paymentStatus === 'awaiting_weighing') {
+            merchantSendJson(false, null, 'Total pembayaran belum ditentukan merchant', 400);
+        }
         if (str_contains($method, 'cod') || str_contains($method, 'cash')) {
             merchantSendJson(false, null, 'Pesanan COD tidak perlu konfirmasi pembayaran di awal', 400);
         }
-        if (strtolower((string)($row['service_type'] ?? '')) === 'catering' &&
+        if ($serviceType === 'catering' &&
             strtolower((string)($row['status'] ?? '')) !== 'accepted') {
             merchantSendJson(false, null, 'Pesanan catering perlu disetujui merchant sebelum dibayar', 400);
         }
+        merchantSendJson(false, null, 'Pembayaran non-COD diproses melalui Midtrans. Silakan gunakan tombol bayar dari detail pesanan.', 400);
 
         $stmt = $conn->prepare("
             UPDATE orders
@@ -591,15 +637,24 @@ try {
         $stmt->execute();
         $stmt->close();
 
-        if (strtolower((string)($row['service_type'] ?? '')) === 'catering') {
+        $serviceType = strtolower((string)($row['service_type'] ?? ''));
+        if ($serviceType === 'catering') {
             merchantActivateCateringSubscription($conn, $orderIdInt);
         }
+
+        $orderCode = $row['order_code'] ?? ('#' . $row['id']);
+        $notificationTitle = $serviceType === 'laundry'
+            ? 'Pembayaran laundry masuk'
+            : 'Pembayaran pesanan masuk';
+        $notificationMessage = $serviceType === 'laundry'
+            ? $orderCode . ' sudah dikonfirmasi user. Silakan mulai proses laundry.'
+            : $orderCode . ' sudah dikonfirmasi user. Silakan cek dan approve pesanan.';
 
         merchantCreateNotification(
             $conn,
             (string)$row['merchant_user_id'],
-            'Pembayaran pesanan masuk',
-            ($row['order_code'] ?? ('#' . $row['id'])) . ' sudah dikonfirmasi user. Silakan cek dan approve pesanan.',
+            $notificationTitle,
+            $notificationMessage,
             'payment',
             'Lihat Pesanan',
             'order:' . (string)$row['id']
@@ -641,6 +696,17 @@ try {
     $customerPhone = trim((string)($body['customerPhone'] ?? ''));
     $notes = trim((string)($body['notes'] ?? ''));
     $items = $body['items'] ?? [];
+    $requestedAddonIds = [];
+    $addonIdsRaw = $body['addonIds'] ?? [];
+    if (is_array($addonIdsRaw)) {
+        foreach ($addonIdsRaw as $addonId) {
+            $id = (int)$addonId;
+            if ($id > 0) {
+                $requestedAddonIds[] = $id;
+            }
+        }
+        $requestedAddonIds = array_values(array_unique($requestedAddonIds));
+    }
 
     if (!$merchantId) {
         merchantSendJson(false, null, 'Merchant tidak ditemukan', 404);
@@ -722,6 +788,7 @@ try {
     $subscriptionStartDate = null;
     $subscriptionEndDate = null;
     $subscriptionStatus = null;
+    $estimatedFinishAt = null;
     if ($subscriptionDays !== null) {
         $subscriptionStartDate = null;
         $subscriptionEndDate = null;
@@ -781,6 +848,18 @@ try {
         $paymentStatus = 'awaiting_weighing';
         $firstProductId = (int)($normalizedItems[0]['productId'] ?? 0);
         $estimatedTime = userOrderLaundryServiceEstimate($conn, $firstProductId, $estimatedTime);
+        $durationStmt = $conn->prepare('SELECT duration_value, duration_unit FROM products WHERE id = ? LIMIT 1');
+        if ($durationStmt) {
+            $durationStmt->bind_param('i', $firstProductId);
+            $durationStmt->execute();
+            $durationRow = $durationStmt->get_result()->fetch_assoc();
+            $durationStmt->close();
+            if ($durationRow) {
+                $durationValue = isset($durationRow['duration_value']) ? (int)$durationRow['duration_value'] : null;
+                $durationUnit = $durationRow['duration_unit'] ?? 'day';
+                $estimatedFinishAt = merchantEstimatedFinishAt(date('Y-m-d H:i:s'), $durationValue, $durationUnit);
+            }
+        }
     } else {
         $total = $subtotal;
     }
@@ -868,18 +947,18 @@ try {
         $stmt = $conn->prepare("
             INSERT INTO orders
                 (user_id, merchant_id, total_harga, status, service_type, delivery_address,
-                 delivery_latitude, delivery_longitude, estimated_time, payment_method,
+                 delivery_latitude, delivery_longitude, estimated_time, estimated_finish_at, payment_method,
                  payment_status, customer_name, customer_phone, notes, subscription_days,
                  subscription_start_date, subscription_end_date, subscription_status,
                  promo_id, promo_name, promo_discount_amount, subtotal_amount,
                  cancellation_window_until, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     DATE_ADD(NOW(), INTERVAL 5 SECOND), NOW(), NOW())
         ");
         if (!$stmt) throw new Exception($conn->error);
         $stmt->bind_param(
-            'ssdssddssssssisssissd',
+            'ssdssddsssssssisssisdd',
             $userId,
             $merchantId,
             $total,
@@ -888,6 +967,7 @@ try {
             $deliveryLatitude,
             $deliveryLongitude,
             $estimatedTime,
+            $estimatedFinishAt,
             $paymentMethod,
             $paymentStatus,
             $customerName,
@@ -924,6 +1004,52 @@ try {
         }
         $stmt->close();
 
+        if ($isLaundryRequest && !empty($requestedAddonIds) &&
+            merchantTableExists($conn, 'laundry_order_addons') &&
+            merchantTableExists($conn, 'laundry_service_addons')) {
+            $firstProductId = (int)($normalizedItems[0]['productId'] ?? 0);
+            if ($firstProductId > 0) {
+                $idsSql = implode(',', array_map('intval', $requestedAddonIds));
+                $addonsResult = $conn->query("
+                    SELECT id, name, price, pricing_type
+                    FROM laundry_service_addons
+                    WHERE merchant_id = '" . $conn->real_escape_string($merchantId) . "'
+                      AND product_id = " . (int)$firstProductId . "
+                      AND is_active = 1
+                      AND id IN ($idsSql)
+                    ORDER BY id ASC
+                ");
+                if ($addonsResult) {
+                    $insertAddon = $conn->prepare("
+                        INSERT INTO laundry_order_addons
+                            (order_id, addon_id, name, price, pricing_type, qty, subtotal, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    if (!$insertAddon) throw new Exception($conn->error);
+                    while ($addon = $addonsResult->fetch_assoc()) {
+                        $addonId = (int)($addon['id'] ?? 0);
+                        $addonName = (string)($addon['name'] ?? '');
+                        $addonPrice = (float)($addon['price'] ?? 0);
+                        $addonPricingType = merchantNormalizePricingType($addon['pricing_type'] ?? 'flat');
+                        $pendingQty = 0.0;
+                        $pendingSubtotal = 0.0;
+                        $insertAddon->bind_param(
+                            'iisdsdd',
+                            $orderId,
+                            $addonId,
+                            $addonName,
+                            $addonPrice,
+                            $addonPricingType,
+                            $pendingQty,
+                            $pendingSubtotal
+                        );
+                        $insertAddon->execute();
+                    }
+                    $insertAddon->close();
+                }
+            }
+        }
+
         if ($promoId !== null) {
             $stmt = $conn->prepare("
                 INSERT INTO promo_usages (promo_id, user_id, order_id, created_at)
@@ -948,12 +1074,15 @@ try {
 
         $merchantUserId = merchantQueryValue($conn, 'SELECT user_id FROM merchants WHERE id = ? LIMIT 1', 's', [$merchantId]);
         if ($merchantUserId) {
+            $merchantNotificationMessage = $isLaundryRequest
+                ? $orderCode . ' menunggu konfirmasi dan penimbangan laundry.'
+                : $orderCode . ' menunggu diproses. Total Rp ' . number_format($total, 0, ',', '.');
             merchantCreateNotification(
                 $conn,
                 (string)$merchantUserId,
                 'Pesanan baru masuk',
-                $orderCode . ' menunggu diproses. Total Rp ' . number_format($total, 0, ',', '.'),
-                $paymentStatus === 'cod' ? 'order' : 'payment',
+                $merchantNotificationMessage,
+                $isLaundryRequest || $paymentStatus === 'cod' ? 'order' : 'payment',
                 'Lihat Pesanan',
                 'order:' . (string)$orderId
             );

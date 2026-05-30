@@ -44,7 +44,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     });
   }
 
-  Future<void> _openForm({MerchantPromo? promo, bool isDuplicate = false}) async {
+  Future<void> _openForm(
+      {MerchantPromo? promo, bool isDuplicate = false}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -58,7 +59,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     if (saved == true) _load();
   }
 
-  Future<void> _updateStatus(MerchantPromo promo, String newStatus, bool isActive) async {
+  Future<void> _updateStatus(
+      MerchantPromo promo, String newStatus, bool isActive) async {
     final result = await MerchantRepository.savePromo(
       id: promo.id,
       name: promo.name,
@@ -102,7 +104,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
   }
 
   String _effectiveStatus(MerchantPromo promo) {
-    if (promo.status == 'expired' || (promo.endAt != null && promo.endAt!.isBefore(DateTime.now()))) {
+    if (promo.status == 'expired' ||
+        (promo.endAt != null && promo.endAt!.isBefore(DateTime.now()))) {
       return 'expired';
     }
     // Jika backend terlambat mengupdate status string, percayakan pada field isActive
@@ -162,15 +165,35 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              _FilterChip(label: 'Semua (${_countStatus('all')})', value: 'all', groupValue: _filterStatus, onChanged: (v) => setState(() => _filterStatus = v)),
+              _FilterChip(
+                  label: 'Semua (${_countStatus('all')})',
+                  value: 'all',
+                  groupValue: _filterStatus,
+                  onChanged: (v) => setState(() => _filterStatus = v)),
               const SizedBox(width: 8),
-              _FilterChip(label: 'Aktif (${_countStatus('active')})', value: 'active', groupValue: _filterStatus, onChanged: (v) => setState(() => _filterStatus = v)),
+              _FilterChip(
+                  label: 'Aktif (${_countStatus('active')})',
+                  value: 'active',
+                  groupValue: _filterStatus,
+                  onChanged: (v) => setState(() => _filterStatus = v)),
               const SizedBox(width: 8),
-              _FilterChip(label: 'Draft (${_countStatus('draft')})', value: 'draft', groupValue: _filterStatus, onChanged: (v) => setState(() => _filterStatus = v)),
+              _FilterChip(
+                  label: 'Draft (${_countStatus('draft')})',
+                  value: 'draft',
+                  groupValue: _filterStatus,
+                  onChanged: (v) => setState(() => _filterStatus = v)),
               const SizedBox(width: 8),
-              _FilterChip(label: 'Nonaktif (${_countStatus('paused')})', value: 'paused', groupValue: _filterStatus, onChanged: (v) => setState(() => _filterStatus = v)),
+              _FilterChip(
+                  label: 'Nonaktif (${_countStatus('paused')})',
+                  value: 'paused',
+                  groupValue: _filterStatus,
+                  onChanged: (v) => setState(() => _filterStatus = v)),
               const SizedBox(width: 8),
-              _FilterChip(label: 'Expired (${_countStatus('expired')})', value: 'expired', groupValue: _filterStatus, onChanged: (v) => setState(() => _filterStatus = v)),
+              _FilterChip(
+                  label: 'Expired (${_countStatus('expired')})',
+                  value: 'expired',
+                  groupValue: _filterStatus,
+                  onChanged: (v) => setState(() => _filterStatus = v)),
             ],
           ),
         ),
@@ -185,7 +208,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_error!, style: const TextStyle(color: MerchantPalette.danger)),
+                Text(_error!,
+                    style: const TextStyle(color: MerchantPalette.danger)),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _load, child: const Text('Muat Ulang')),
               ],
@@ -197,16 +221,21 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
             child: Center(
               child: Column(
                 children: [
-                  const Icon(Icons.campaign_outlined, size: 48, color: MerchantPalette.muted),
+                  const Icon(Icons.campaign_outlined,
+                      size: 48, color: MerchantPalette.muted),
                   const SizedBox(height: 16),
                   const Text(
                     'Belum ada promo.',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: MerchantPalette.text),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: MerchantPalette.text),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'Buat promo pertama untuk meningkatkan penjualan.',
-                    style: TextStyle(color: MerchantPalette.muted, fontSize: 13),
+                    style:
+                        TextStyle(color: MerchantPalette.muted, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
@@ -393,7 +422,7 @@ class _PromoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isExpired = effectiveStatus == 'expired';
-    
+
     return Opacity(
       opacity: isExpired ? 0.6 : 1.0,
       child: MerchantCard(
@@ -409,35 +438,41 @@ class _PromoCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 if (isExpired)
-                  const Icon(Icons.lock_outline_rounded, color: MerchantPalette.muted, size: 20)
+                  const Icon(Icons.lock_outline_rounded,
+                      color: MerchantPalette.muted, size: 20)
                 else ...[
                   if (effectiveStatus == 'draft' || effectiveStatus == 'paused')
                     IconButton(
-                      icon: const Icon(Icons.play_circle_fill_rounded, color: MerchantPalette.success),
+                      icon: const Icon(Icons.play_circle_fill_rounded,
+                          color: MerchantPalette.success),
                       tooltip: 'Aktifkan Promo',
                       onPressed: onActivate,
                     ),
                   if (effectiveStatus == 'active')
                     IconButton(
-                      icon: const Icon(Icons.pause_circle_filled_rounded, color: MerchantPalette.warning),
+                      icon: const Icon(Icons.pause_circle_filled_rounded,
+                          color: MerchantPalette.warning),
                       tooltip: 'Nonaktifkan Promo',
                       onPressed: onPause,
                     ),
                   if (effectiveStatus != 'active')
                     IconButton(
-                      icon: const Icon(Icons.edit_rounded, color: MerchantPalette.primary),
+                      icon: const Icon(Icons.edit_rounded,
+                          color: MerchantPalette.primary),
                       tooltip: 'Edit Promo',
                       onPressed: onEdit,
                     ),
                   if (effectiveStatus == 'draft')
                     IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, color: MerchantPalette.danger),
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: MerchantPalette.danger),
                       tooltip: 'Hapus Promo',
                       onPressed: onDelete,
                     ),
                 ],
                 IconButton(
-                  icon: const Icon(Icons.copy_rounded, color: MerchantPalette.primary),
+                  icon: const Icon(Icons.copy_rounded,
+                      color: MerchantPalette.primary),
                   tooltip: 'Duplikat Promo',
                   onPressed: onDuplicate,
                 ),
@@ -447,7 +482,8 @@ class _PromoCard extends StatelessWidget {
             Text(
               promo.name,
               style: TextStyle(
-                color: isExpired ? const Color(0xFF757D8A) : MerchantPalette.text,
+                color:
+                    isExpired ? const Color(0xFF757D8A) : MerchantPalette.text,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
@@ -455,7 +491,8 @@ class _PromoCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               promo.description,
-              style: const TextStyle(color: MerchantPalette.muted, height: 1.35),
+              style:
+                  const TextStyle(color: MerchantPalette.muted, height: 1.35),
             ),
             const SizedBox(height: 14),
             _PromoMeta(
@@ -490,21 +527,31 @@ class _PromoCard extends StatelessWidget {
 
   String _statusLabel(String status) {
     switch (status) {
-      case 'active': return 'AKTIF';
-      case 'expired': return 'EXPIRED';
-      case 'paused': return 'NONAKTIF';
-      case 'draft': return 'DRAFT';
-      default: return 'PROMO';
+      case 'active':
+        return 'AKTIF';
+      case 'expired':
+        return 'EXPIRED';
+      case 'paused':
+        return 'NONAKTIF';
+      case 'draft':
+        return 'DRAFT';
+      default:
+        return 'PROMO';
     }
   }
 
   Color _statusColor(String status) {
     switch (status) {
-      case 'active': return MerchantPalette.success;
-      case 'expired': return MerchantPalette.muted;
-      case 'paused': return MerchantPalette.warning;
-      case 'draft': return const Color(0xFF6B7280);
-      default: return MerchantPalette.primary;
+      case 'active':
+        return MerchantPalette.success;
+      case 'expired':
+        return MerchantPalette.muted;
+      case 'paused':
+        return MerchantPalette.warning;
+      case 'draft':
+        return const Color(0xFF6B7280);
+      default:
+        return MerchantPalette.primary;
     }
   }
 }
@@ -564,11 +611,14 @@ class _PromoFormState extends State<_PromoForm> {
   TimeOfDay _startTime = TimeOfDay.now();
   TimeOfDay _endTime = const TimeOfDay(hour: 23, minute: 59);
   String _status = 'draft';
-  
+
   bool _saving = false;
   bool _hasAttemptedSubmit = false;
-  
-  bool get _isEditActive => widget.promo != null && !widget.isDuplicate && (widget.promo!.status == 'active' || widget.promo!.status == 'scheduled');
+
+  bool get _isEditActive =>
+      widget.promo != null &&
+      !widget.isDuplicate &&
+      (widget.promo!.status == 'active' || widget.promo!.status == 'scheduled');
 
   double _parseCurrency(String text) {
     String digits = text.replaceAll(RegExp(r'[^0-9]'), '');
@@ -577,13 +627,17 @@ class _PromoFormState extends State<_PromoForm> {
   }
 
   double get _discountValue => _parseCurrency(_discountCtrl.text);
-      
-  double get _maxDiscountValue => _parseCurrency(_maxDiscountCtrl.text);
-  int? get _usageLimitValue => _usageLimitCtrl.text.trim().isEmpty ? null : int.tryParse(_usageLimitCtrl.text.trim());
-  int get _perUserLimitValue => int.tryParse(_perUserLimitCtrl.text.trim()) ?? 1;
 
-  final _currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
-  
+  double get _maxDiscountValue => _parseCurrency(_maxDiscountCtrl.text);
+  int? get _usageLimitValue => _usageLimitCtrl.text.trim().isEmpty
+      ? null
+      : int.tryParse(_usageLimitCtrl.text.trim());
+  int get _perUserLimitValue =>
+      int.tryParse(_perUserLimitCtrl.text.trim()) ?? 1;
+
+  final _currencyFormatter =
+      NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
+
   String _formatCurrencyString(double value) {
     if (value == 0) return '';
     return _currencyFormatter.format(value);
@@ -593,26 +647,26 @@ class _PromoFormState extends State<_PromoForm> {
   void initState() {
     super.initState();
     final promo = widget.promo;
-    
+
     if (promo != null) {
       _nameCtrl.text = widget.isDuplicate ? '${promo.name} (Copy)' : promo.name;
       _descriptionCtrl.text = promo.description;
-      
+
       _discountType = promo.discountType;
-      
+
       if (_discountType == 'percentage') {
         _discountCtrl.text = '${promo.discountValue.toStringAsFixed(0)}%';
       } else {
         _discountCtrl.text = _formatCurrencyString(promo.discountValue);
       }
-      
+
       _maxDiscountCtrl.text = _formatCurrencyString(promo.maxDiscountAmount);
       _usageLimitCtrl.text = promo.usageLimit?.toString() ?? '';
       _perUserLimitCtrl.text = promo.perUserUsageLimit.toString();
-      
+
       _targetAllProducts = promo.targetsAllProducts;
       _selectedProductIds.addAll(promo.productIds);
-      
+
       if (!widget.isDuplicate) {
         _startAt = promo.startAt ?? _startAt;
         _endAt = promo.endAt ?? _endAt;
@@ -620,7 +674,7 @@ class _PromoFormState extends State<_PromoForm> {
         if (_status == 'expired') _status = 'draft';
       }
     }
-    
+
     if (_startAt != null) _startTime = TimeOfDay.fromDateTime(_startAt!);
     if (_endAt != null) _endTime = TimeOfDay.fromDateTime(_endAt!);
 
@@ -647,13 +701,14 @@ class _PromoFormState extends State<_PromoForm> {
     setState(() {}); // trigger realtime validation and preview update
   }
 
-  MerchantProduct? _getSampleProduct() {
+  List<MerchantProduct> _previewTargetProducts() {
     if (_targetAllProducts) {
-      return widget.products.isNotEmpty ? widget.products.first : null;
-    } else {
-      final selected = widget.products.where((p) => _selectedProductIds.contains(p.id)).toList();
-      return selected.isNotEmpty ? selected.first : null;
+      return widget.products.where((product) => product.price > 0).toList();
     }
+    return widget.products
+        .where((product) =>
+            _selectedProductIds.contains(product.id) && product.price > 0)
+        .toList();
   }
 
   DateTime _combineDateTime(DateTime date, TimeOfDay time) {
@@ -704,23 +759,29 @@ class _PromoFormState extends State<_PromoForm> {
             }).toList();
             return Padding(
               padding: EdgeInsets.only(
-                left: 20, right: 20, top: 16,
+                left: 20,
+                right: 20,
+                top: 16,
                 bottom: MediaQuery.of(context).viewInsets.bottom + 20,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Pilih Produk Promo', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+                  const Text('Pilih Produk Promo',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
                   const SizedBox(height: 12),
                   TextField(
                     controller: searchCtrl,
                     decoration: _decoration('Cari produk', null),
-                    onChanged: (value) => setModalState(() => searchQuery = value.trim().toLowerCase()),
+                    onChanged: (value) => setModalState(
+                        () => searchQuery = value.trim().toLowerCase()),
                   ),
                   const SizedBox(height: 12),
                   ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+                    constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.5),
                     child: ListView.builder(
                       shrinkWrap: true,
                       itemCount: filtered.length,
@@ -762,7 +823,9 @@ class _PromoFormState extends State<_PromoForm> {
     );
     if (selected == null) return;
     setState(() {
-      _selectedProductIds..clear()..addAll(selected);
+      _selectedProductIds
+        ..clear()
+        ..addAll(selected);
       if (_hasAttemptedSubmit) {}
     });
   }
@@ -774,13 +837,14 @@ class _PromoFormState extends State<_PromoForm> {
       // Error text will now appear under the fields
       return;
     }
-    
+
     setState(() {
       _saving = true;
       _status = targetStatus;
     });
-    
-    final productIds = _targetAllProducts ? <String>[] : _selectedProductIds.toList();
+
+    final productIds =
+        _targetAllProducts ? <String>[] : _selectedProductIds.toList();
     final result = await MerchantRepository.savePromo(
       id: widget.isDuplicate ? null : widget.promo?.id,
       name: _nameCtrl.text.trim(),
@@ -811,34 +875,59 @@ class _PromoFormState extends State<_PromoForm> {
   String? _validateForm() {
     if (_status == 'draft') return null;
     if (_nameCtrl.text.trim().isEmpty) return 'Nama promo wajib diisi';
-    if (!_targetAllProducts && _selectedProductIds.isEmpty) return 'Pilih minimal satu produk';
+    if (!_targetAllProducts && _selectedProductIds.isEmpty) {
+      return 'Pilih minimal satu produk';
+    }
     if (_discountValue <= 0) return 'Nilai diskon harus lebih dari 0';
-    if (_discountType == 'percentage' && _discountValue > 100) return 'Diskon maksimal 100%';
-    if (_discountType == 'percentage' && _maxDiscountValue <= 0) return 'Maksimal potongan wajib diisi';
-    if (_usageLimitValue != null && (_usageLimitValue ?? 0) <= 0) return 'Kuota Promo harus lebih dari 0';
+    if (_discountType == 'percentage' && _discountValue > 100) {
+      return 'Diskon maksimal 100%';
+    }
+    if (_discountType == 'percentage' && _maxDiscountValue <= 0) {
+      return 'Maksimal potongan wajib diisi';
+    }
+    if (_usageLimitValue != null && (_usageLimitValue ?? 0) <= 0) {
+      return 'Kuota Promo harus lebih dari 0';
+    }
     if (_perUserLimitValue <= 0) return 'Batas penggunaan per user minimal 1';
-    if (_startAt != null && _endAt != null && !_endAt!.isAfter(_startAt!)) return 'Tanggal akhir harus setelah tanggal mulai';
+    if (_startAt != null && _endAt != null && !_endAt!.isAfter(_startAt!)) {
+      return 'Tanggal akhir harus setelah tanggal mulai';
+    }
     return null;
   }
-  
+
   String? _errorForField(String field) {
     if (!_hasAttemptedSubmit || _status == 'draft') return null;
     if (field == 'name' && _nameCtrl.text.trim().isEmpty) return 'Wajib diisi';
     if (field == 'discount' && _discountValue <= 0) return 'Harus > 0';
-    if (field == 'discount_max' && _discountType == 'percentage' && _discountValue > 100) return 'Maks 100%';
-    if (field == 'max_amount' && _discountType == 'percentage' && _maxDiscountValue <= 0) return 'Wajib diisi';
-    if (field == 'usage' && _usageLimitValue != null && (_usageLimitValue ?? 0) <= 0) return 'Harus > 0';
+    if (field == 'discount_max' &&
+        _discountType == 'percentage' &&
+        _discountValue > 100) {
+      return 'Maks 100%';
+    }
+    if (field == 'max_amount' &&
+        _discountType == 'percentage' &&
+        _maxDiscountValue <= 0) {
+      return 'Wajib diisi';
+    }
+    if (field == 'usage' &&
+        _usageLimitValue != null &&
+        (_usageLimitValue ?? 0) <= 0) {
+      return 'Harus > 0';
+    }
     if (field == 'peruser' && _perUserLimitValue <= 0) return 'Min 1';
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool showWarning = (_discountType == 'percentage' && _discountValue >= 50);
-    
+    final bool showWarning =
+        (_discountType == 'percentage' && _discountValue >= 50);
+
     return Padding(
       padding: EdgeInsets.only(
-        left: 20, right: 20, top: 18,
+        left: 20,
+        right: 20,
+        top: 18,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: SingleChildScrollView(
@@ -847,7 +936,9 @@ class _PromoFormState extends State<_PromoForm> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              widget.promo == null || widget.isDuplicate ? 'Buat Promo Baru' : 'Edit Promo',
+              widget.promo == null || widget.isDuplicate
+                  ? 'Buat Promo Baru'
+                  : 'Edit Promo',
               style: const TextStyle(
                 color: MerchantPalette.text,
                 fontSize: 22,
@@ -855,11 +946,10 @@ class _PromoFormState extends State<_PromoForm> {
               ),
             ),
             const SizedBox(height: 18),
-            
             const _SectionTitle('SECTION 1 — INFORMASI PROMO'),
             _Input(
-              controller: _nameCtrl, 
-              label: 'Nama Promo', 
+              controller: _nameCtrl,
+              label: 'Nama Promo',
               errorText: _errorForField('name'),
             ),
             const SizedBox(height: 14),
@@ -869,7 +959,6 @@ class _PromoFormState extends State<_PromoForm> {
               maxLines: 3,
             ),
             const SizedBox(height: 24),
-            
             const _SectionTitle('SECTION 2 — TARGET PRODUK'),
             SegmentedButton<bool>(
               segments: const [
@@ -877,14 +966,18 @@ class _PromoFormState extends State<_PromoForm> {
                 ButtonSegment(value: false, label: Text('Produk Tertentu')),
               ],
               selected: {_targetAllProducts},
-              onSelectionChanged: _isEditActive ? null : (value) {
-                setState(() => _targetAllProducts = value.first);
-              },
+              onSelectionChanged: _isEditActive
+                  ? null
+                  : (value) {
+                      setState(() => _targetAllProducts = value.first);
+                    },
             ),
             if (!_targetAllProducts) ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: _isEditActive || widget.products.isEmpty ? null : _pickProducts,
+                onPressed: _isEditActive || widget.products.isEmpty
+                    ? null
+                    : _pickProducts,
                 icon: const Icon(Icons.checklist_rounded),
                 label: Text(
                   _selectedProductIds.isEmpty
@@ -892,14 +985,17 @@ class _PromoFormState extends State<_PromoForm> {
                       : '${_selectedProductIds.length} produk dipilih',
                 ),
               ),
-              if (_hasAttemptedSubmit && !_targetAllProducts && _selectedProductIds.isEmpty)
+              if (_hasAttemptedSubmit &&
+                  !_targetAllProducts &&
+                  _selectedProductIds.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 8, left: 12),
-                  child: Text('Pilih minimal satu produk', style: TextStyle(color: MerchantPalette.danger, fontSize: 12)),
+                  child: Text('Pilih minimal satu produk',
+                      style: TextStyle(
+                          color: MerchantPalette.danger, fontSize: 12)),
                 )
             ],
             const SizedBox(height: 24),
-            
             const _SectionTitle('SECTION 3 — JENIS DISKON'),
             DropdownButtonFormField<String>(
               initialValue: _discountType,
@@ -907,15 +1003,17 @@ class _PromoFormState extends State<_PromoForm> {
                 DropdownMenuItem(value: 'percentage', child: Text('Persen')),
                 DropdownMenuItem(value: 'fixed', child: Text('Nominal')),
               ],
-              onChanged: _isEditActive ? null : (value) {
-                if (value != null) {
-                  setState(() {
-                    _discountType = value;
-                    _discountCtrl.clear();
-                    _maxDiscountCtrl.clear();
-                  });
-                }
-              },
+              onChanged: _isEditActive
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() {
+                          _discountType = value;
+                          _discountCtrl.clear();
+                          _maxDiscountCtrl.clear();
+                        });
+                      }
+                    },
               decoration: _decoration('Tipe Diskon', null),
             ),
             const SizedBox(height: 14),
@@ -925,12 +1023,15 @@ class _PromoFormState extends State<_PromoForm> {
                 Expanded(
                   child: _Input(
                     controller: _discountCtrl,
-                    label: _discountType == 'percentage' ? 'Nilai Diskon (%)' : 'Nominal Potongan',
+                    label: _discountType == 'percentage'
+                        ? 'Nilai Diskon (%)'
+                        : 'Nominal Potongan',
                     keyboardType: TextInputType.number,
-                    inputFormatters: _discountType == 'fixed' 
-                        ? [_CurrencyInputFormatter()] 
+                    inputFormatters: _discountType == 'fixed'
+                        ? [_CurrencyInputFormatter()]
                         : [_PercentageInputFormatter()],
-                    errorText: _errorForField('discount') ?? _errorForField('discount_max'),
+                    errorText: _errorForField('discount') ??
+                        _errorForField('discount_max'),
                     enabled: !_isEditActive,
                   ),
                 ),
@@ -956,23 +1057,27 @@ class _PromoFormState extends State<_PromoForm> {
                 decoration: BoxDecoration(
                   color: MerchantPalette.warning.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: MerchantPalette.warning.withValues(alpha: 0.5)),
+                  border: Border.all(
+                      color: MerchantPalette.warning.withValues(alpha: 0.5)),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: MerchantPalette.warning, size: 20),
+                    Icon(Icons.warning_amber_rounded,
+                        color: MerchantPalette.warning, size: 20),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Diskon besar dapat mengurangi keuntungan penjualan. Gunakan diskon tinggi dengan pertimbangan margin produk.',
-                        style: TextStyle(color: MerchantPalette.warning, fontSize: 12, height: 1.3),
+                        style: TextStyle(
+                            color: MerchantPalette.warning,
+                            fontSize: 12,
+                            height: 1.3),
                       ),
                     ),
                   ],
                 ),
               ),
             const SizedBox(height: 24),
-            
             const _SectionTitle('SECTION 4 — USAGE SETTINGS'),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -999,10 +1104,10 @@ class _PromoFormState extends State<_PromoForm> {
             const SizedBox(height: 10),
             const Text(
               'Promo akan otomatis berhenti setelah mencapai batas penggunaan. Batas per user mencegah penggunaan promo berulang oleh user yang sama.',
-              style: TextStyle(color: MerchantPalette.muted, fontSize: 12, height: 1.3),
+              style: TextStyle(
+                  color: MerchantPalette.muted, fontSize: 12, height: 1.3),
             ),
             const SizedBox(height: 24),
-            
             const _SectionTitle('SECTION 5 — PERIODE PROMO'),
             Row(
               children: [
@@ -1010,7 +1115,9 @@ class _PromoFormState extends State<_PromoForm> {
                   child: OutlinedButton.icon(
                     onPressed: () => _pickDateTime(true),
                     icon: const Icon(Icons.event_available_rounded),
-                    label: Text('Mulai\n${_dateTime(_startAt)}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+                    label: Text('Mulai\n${_dateTime(_startAt)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12)),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1018,28 +1125,34 @@ class _PromoFormState extends State<_PromoForm> {
                   child: OutlinedButton.icon(
                     onPressed: () => _pickDateTime(false),
                     icon: const Icon(Icons.event_busy_rounded),
-                    label: Text('Akhir\n${_dateTime(_endAt)}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+                    label: Text('Akhir\n${_dateTime(_endAt)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12)),
                   ),
                 ),
               ],
             ),
-            if (_hasAttemptedSubmit && _startAt != null && _endAt != null && !_endAt!.isAfter(_startAt!))
+            if (_hasAttemptedSubmit &&
+                _startAt != null &&
+                _endAt != null &&
+                !_endAt!.isAfter(_startAt!))
               const Padding(
                 padding: EdgeInsets.only(top: 8, left: 12),
-                child: Text('Tanggal akhir harus setelah tanggal mulai', style: TextStyle(color: MerchantPalette.danger, fontSize: 12)),
+                child: Text('Tanggal akhir harus setelah tanggal mulai',
+                    style:
+                        TextStyle(color: MerchantPalette.danger, fontSize: 12)),
               ),
             const SizedBox(height: 24),
-            
             const _SectionTitle('SECTION 6 — PREVIEW OTOMATIS'),
             _PromoRealtimePreview(
               discountType: _discountType,
               discountValue: _discountValue,
-              maxDiscountAmount: _discountType == 'percentage' ? _maxDiscountValue : 0,
-              sampleProduct: _getSampleProduct(),
+              maxDiscountAmount:
+                  _discountType == 'percentage' ? _maxDiscountValue : 0,
+              products: _previewTargetProducts(),
               targetAllProducts: _targetAllProducts,
             ),
             const SizedBox(height: 24),
-            
             Row(
               children: [
                 if (widget.promo == null || widget.isDuplicate) ...[
@@ -1074,7 +1187,8 @@ class _PromoFormState extends State<_PromoForm> {
                         minimumSize: const Size.fromHeight(52),
                         backgroundColor: MerchantPalette.primary,
                       ),
-                      child: Text(_saving ? 'Menyimpan...' : 'Simpan Perubahan'),
+                      child:
+                          Text(_saving ? 'Menyimpan...' : 'Simpan Perubahan'),
                     ),
                   ),
                 ],
@@ -1101,7 +1215,11 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: MerchantPalette.primary)),
+      child: Text(title,
+          style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: MerchantPalette.primary)),
     );
   }
 }
@@ -1143,21 +1261,23 @@ class _PromoRealtimePreview extends StatelessWidget {
     required this.discountType,
     required this.discountValue,
     required this.maxDiscountAmount,
-    required this.sampleProduct,
+    required this.products,
     required this.targetAllProducts,
   });
 
   final String discountType;
   final double discountValue;
   final double maxDiscountAmount;
-  final MerchantProduct? sampleProduct;
+  final List<MerchantProduct> products;
   final bool targetAllProducts;
 
   double _calculateDiscount(double subtotal) {
     double discount = 0;
     if (discountType == 'percentage') {
       discount = subtotal * discountValue / 100;
-      if (maxDiscountAmount > 0) discount = discount > maxDiscountAmount ? maxDiscountAmount : discount;
+      if (maxDiscountAmount > 0) {
+        discount = discount > maxDiscountAmount ? maxDiscountAmount : discount;
+      }
     } else {
       discount = discountValue;
     }
@@ -1165,30 +1285,14 @@ class _PromoRealtimePreview extends StatelessWidget {
     return discount;
   }
 
-  Widget _buildSimulationCard(String title, double subtotal) {
-    final discount = _calculateDiscount(subtotal);
-    final total = subtotal - discount;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: MerchantPalette.primary),
-        ),
-        const SizedBox(height: 8),
-        const Text('Harga Normal', style: TextStyle(color: MerchantPalette.muted, fontSize: 12)),
-        Text(formatMerchantCurrency(subtotal)),
-        const SizedBox(height: 8),
-        const Text('Potongan Promo', style: TextStyle(color: MerchantPalette.muted, fontSize: 12)),
-        Text(formatMerchantCurrency(discount)),
-        const SizedBox(height: 8),
-        const Text('Harga Setelah Promo', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-        Text(
-          formatMerchantCurrency(total),
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MerchantPalette.primary),
-        ),
-      ],
+  _PromoPreviewLine _previewLineFor(MerchantProduct product) {
+    final normal = product.price;
+    final discount = _calculateDiscount(normal);
+    return _PromoPreviewLine(
+      name: product.name,
+      normalPrice: normal,
+      discount: discount,
+      promoPrice: normal - discount,
     );
   }
 
@@ -1210,7 +1314,7 @@ class _PromoRealtimePreview extends StatelessWidget {
       );
     }
 
-    if (sampleProduct == null) {
+    if (products.isEmpty) {
       return const MerchantCard(
         color: MerchantPalette.softBlue,
         child: Center(
@@ -1226,7 +1330,23 @@ class _PromoRealtimePreview extends StatelessWidget {
       );
     }
 
-    final isCatering = sampleProduct!.serviceType == 'catering';
+    final lines = products.map(_previewLineFor).toList();
+    final previewLines = targetAllProducts ? lines.take(3).toList() : lines;
+    final hiddenCount = targetAllProducts && lines.length > previewLines.length
+        ? lines.length - previewLines.length
+        : 0;
+    final totalNormal = lines.fold<double>(
+      0,
+      (sum, line) => sum + line.normalPrice,
+    );
+    final totalDiscount = lines.fold<double>(
+      0,
+      (sum, line) => sum + line.discount,
+    );
+    final totalAfter = lines.fold<double>(
+      0,
+      (sum, line) => sum + line.promoPrice,
+    );
 
     return MerchantCard(
       color: MerchantPalette.softBlue,
@@ -1239,22 +1359,190 @@ class _PromoRealtimePreview extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Target Promo:\n${targetAllProducts ? 'Semua Produk' : 'Produk Tertentu'}',
-            style: const TextStyle(color: MerchantPalette.muted, fontSize: 13, height: 1.3),
-          ),
-          const Divider(height: 24),
-          Text(
-            sampleProduct!.name,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+            'Promo berlaku untuk ${lines.length} produk',
+            style: const TextStyle(
+                color: MerchantPalette.muted, fontSize: 13, height: 1.3),
           ),
           const SizedBox(height: 12),
-          if (isCatering) ...[
-            _buildSimulationCard('Fullday', sampleProduct!.price),
-            const SizedBox(height: 16),
-            _buildSimulationCard('Weekday', sampleProduct!.price20Days ?? sampleProduct!.price),
-          ] else ...[
-            _buildSimulationCard('Harga Reguler', sampleProduct!.price),
+          _PromoPreviewTotals(
+            totalNormal: totalNormal,
+            totalDiscount: totalDiscount,
+            totalAfter: totalAfter,
+          ),
+          const Divider(height: 24),
+          ...previewLines.map(_PromoPreviewProductRow.new),
+          if (hiddenCount > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              '+ $hiddenCount produk lainnya',
+              style: const TextStyle(
+                color: MerchantPalette.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PromoPreviewLine {
+  const _PromoPreviewLine({
+    required this.name,
+    required this.normalPrice,
+    required this.discount,
+    required this.promoPrice,
+  });
+
+  final String name;
+  final double normalPrice;
+  final double discount;
+  final double promoPrice;
+}
+
+class _PromoPreviewTotals extends StatelessWidget {
+  const _PromoPreviewTotals({
+    required this.totalNormal,
+    required this.totalDiscount,
+    required this.totalAfter,
+  });
+
+  final double totalNormal;
+  final double totalDiscount;
+  final double totalAfter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD6E6F8)),
+      ),
+      child: Column(
+        children: [
+          _PromoPreviewTotalLine(
+            label: 'Total harga normal',
+            value: formatMerchantCurrency(totalNormal),
+          ),
+          const SizedBox(height: 6),
+          _PromoPreviewTotalLine(
+            label: 'Total potongan preview',
+            value: '- ${formatMerchantCurrency(totalDiscount)}',
+            valueColor: MerchantPalette.success,
+          ),
+          const SizedBox(height: 6),
+          _PromoPreviewTotalLine(
+            label: 'Total setelah promo',
+            value: formatMerchantCurrency(totalAfter),
+            valueColor: MerchantPalette.primary,
+            strong: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromoPreviewTotalLine extends StatelessWidget {
+  const _PromoPreviewTotalLine({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.strong = false,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: MerchantPalette.muted,
+              fontSize: 12,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? MerchantPalette.text,
+            fontSize: strong ? 14 : 12,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PromoPreviewProductRow extends StatelessWidget {
+  const _PromoPreviewProductRow(this.line);
+
+  final _PromoPreviewLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              line.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: MerchantPalette.text,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 7,
+              runSpacing: 2,
+              children: [
+                Text(
+                  formatMerchantCurrency(line.normalPrice),
+                  style: const TextStyle(
+                    color: MerchantPalette.muted,
+                    decoration: TextDecoration.lineThrough,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 15,
+                  color: MerchantPalette.muted,
+                ),
+                Text(
+                  formatMerchantCurrency(line.promoPrice),
+                  style: const TextStyle(
+                    color: MerchantPalette.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1273,13 +1561,18 @@ InputDecoration _decoration(String label, String? errorText) {
 
 class _CurrencyInputFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
     if (newValue.text.isEmpty) return newValue;
     String digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty) return const TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
-    
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+          text: '', selection: TextSelection.collapsed(offset: 0));
+    }
+
     double value = double.parse(digits);
-    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
+    final formatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
     String formatted = formatter.format(value);
 
     // Mempertahankan kursor di posisi akhir teks (standar untuk currency)
@@ -1292,14 +1585,18 @@ class _CurrencyInputFormatter extends TextInputFormatter {
 
 class _PercentageInputFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
     if (newValue.text.isEmpty) return newValue;
     String digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty) return const TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
-    
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+          text: '', selection: TextSelection.collapsed(offset: 0));
+    }
+
     double value = double.parse(digits);
     if (value > 100) value = 100; // Limit ke 100%
-    
+
     String formatted = '${value.toInt()}%';
 
     return TextEditingValue(

@@ -26,7 +26,6 @@ class _NotificationListPageState extends State<NotificationListPage> {
 
   static const _filters = [
     ('semua', 'Semua'),
-    ('baru', 'Baru Masuk'),
     ('belum_dibaca', 'Belum Dibaca'),
     ('dibaca', 'Sudah Dibaca'),
   ];
@@ -61,13 +60,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
     if (!mounted) return;
     setState(() {
       _notifications = _notifications.map((notification) {
-        return notification.copyWith(
-          status: 'dibaca',
-          hasAction:
-              notification.hasAction || _hasImplicitAction(notification.type),
-          actionButtonText:
-              notification.actionButtonText ?? _actionText(notification.type),
-        );
+        return notification.copyWith(status: 'dibaca');
       }).toList();
     });
   }
@@ -77,11 +70,13 @@ class _NotificationListPageState extends State<NotificationListPage> {
     if (mounted) {
       setState(() {
         _notifications = _notifications
-            .map((item) =>
-                item.id == notification.id ? item.copyWith(status: 'dibaca') : item)
+            .map((item) => item.id == notification.id
+                ? item.copyWith(status: 'dibaca')
+                : item)
             .toList();
       });
     }
+    if (!mounted) return;
 
     if (notification.type == 'room') {
       Navigator.of(context).push(
@@ -95,25 +90,15 @@ class _NotificationListPageState extends State<NotificationListPage> {
       _openOrderDetailById(actionUrl.substring('order:'.length));
       return;
     }
-    
-    if (actionUrl.startsWith('merchant:')) {
-      final merchantId = actionUrl.substring('merchant:'.length);
-      final result = await UserRepository.getMerchantDetail(type: 'laundry', id: merchantId);
-      if (mounted && result.data != null) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => MerchantDetailPage(merchant: result.data!),
-          ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Toko tidak ditemukan')),
-        );
-      }
+
+    if (actionUrl.startsWith('merchant:') || actionUrl.startsWith('promo:')) {
+      final prefix = actionUrl.startsWith('promo:') ? 'promo:' : 'merchant:';
+      await _openMerchantById(actionUrl.substring(prefix.length));
       return;
     }
 
-    final service = notification.type == 'payment' ? 'laundry' : notification.type;
+    final service =
+        notification.type == 'payment' ? 'laundry' : notification.type;
     if (service == 'laundry' || service == 'catering' || service == 'order') {
       _openOrderDetail(service == 'order' ? null : service);
       return;
@@ -157,7 +142,8 @@ class _NotificationListPageState extends State<NotificationListPage> {
     final order = result.data;
     if (order == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Detail pesanan belum tersedia')),
+        SnackBar(
+            content: Text(result.error ?? 'Detail pesanan belum tersedia')),
       );
       return;
     }
@@ -169,16 +155,29 @@ class _NotificationListPageState extends State<NotificationListPage> {
     );
   }
 
-  bool _hasImplicitAction(String type) {
-    return type == 'payment' ||
-        type == 'laundry' ||
-        type == 'catering' ||
-        type == 'order';
-  }
+  Future<void> _openMerchantById(String merchantId) async {
+    var result = await UserRepository.getMerchantDetail(
+      type: 'laundry',
+      id: merchantId,
+    );
+    if (result.data == null) {
+      result = await UserRepository.getMerchantDetail(
+        type: 'catering',
+        id: merchantId,
+      );
+    }
 
-  String? _actionText(String type) {
-    if (_hasImplicitAction(type)) return 'Lihat Detail';
-    return null;
+    if (mounted && result.data != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MerchantDetailPage(merchant: result.data!),
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Toko tidak ditemukan')),
+      );
+    }
   }
 
   @override
@@ -206,12 +205,6 @@ class _NotificationListPageState extends State<NotificationListPage> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -225,13 +218,11 @@ class _NotificationListPageState extends State<NotificationListPage> {
                     children: [
                       Text(
                         'Notifikasi',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              color: UserTheme.text,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w900,
+                                ),
                       ),
                       const Spacer(),
                       TextButton(
@@ -275,8 +266,8 @@ class _NotificationListPageState extends State<NotificationListPage> {
                       (notification) => Padding(
                         padding: const EdgeInsets.only(bottom: 18),
                         child: _NotificationCard(
-                          notification: _withAction(notification),
-                          onAction: () => _handleAction(notification),
+                          notification: notification,
+                          onTap: () => _handleAction(notification),
                         ),
                       ),
                     ),
@@ -287,20 +278,9 @@ class _NotificationListPageState extends State<NotificationListPage> {
     );
   }
 
-  AppNotification _withAction(AppNotification notification) {
-    return notification.copyWith(
-      hasAction: notification.hasAction || _hasImplicitAction(notification.type),
-      actionButtonText:
-          notification.actionButtonText ?? _actionText(notification.type),
-    );
-  }
-
   List<AppNotification> get _visibleNotifications {
-    final now = DateTime.now();
     return _notifications.where((notification) {
       switch (_filter) {
-        case 'baru':
-          return now.difference(notification.createdAt).inHours < 24;
         case 'belum_dibaca':
           return notification.isUnread;
         case 'dibaca':
@@ -315,99 +295,90 @@ class _NotificationListPageState extends State<NotificationListPage> {
 class _NotificationCard extends StatelessWidget {
   const _NotificationCard({
     required this.notification,
-    required this.onAction,
+    required this.onTap,
   });
 
   final AppNotification notification;
-  final VoidCallback onAction;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final color = _typeColor(notification.type);
     final isNew = notification.isNew;
+    final icon = _typeIcon(notification);
+    final title = _displayTitle(notification);
+    final message = _displayMessage(notification);
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.11),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(_typeIcon(notification.type), color: color),
-          ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        notification.title,
-                        style: const TextStyle(
-                          color: UserTheme.text,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          height: 1.18,
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (icon != null) ...[
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 18),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: UserTheme.text,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            height: 1.18,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      _relativeTime(notification.createdAt),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: isNew
-                            ? UserTheme.primary
-                            : const Color(0xFF91A1BD),
-                        fontSize: 12,
-                        fontWeight:
-                            isNew ? FontWeight.w800 : FontWeight.w600,
+                      const SizedBox(width: 10),
+                      Text(
+                        _relativeTime(notification.createdAt),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: isNew
+                              ? UserTheme.primary
+                              : const Color(0xFF91A1BD),
+                          fontSize: 12,
+                          fontWeight: isNew ? FontWeight.w800 : FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  notification.message,
-                  style: const TextStyle(
-                    color: UserTheme.muted,
-                    height: 1.42,
+                    ],
                   ),
-                ),
-                if (notification.hasAction) ...[
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: onAction,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: UserTheme.primary,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      color: UserTheme.muted,
+                      height: 1.42,
                     ),
-                    child: Text(notification.actionButtonText ?? 'Lihat'),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -431,23 +402,88 @@ class _NotificationCard extends StatelessWidget {
     }
   }
 
-  IconData _typeIcon(String type) {
-    switch (type) {
-      case 'payment':
-        return Icons.check_circle_outline_rounded;
-      case 'catering':
-        return Icons.error_outline_rounded;
-      case 'laundry':
-        return Icons.local_laundry_service_outlined;
-      case 'order':
-        return Icons.receipt_long_outlined;
-      case 'room':
-        return Icons.info_outline_rounded;
-      case 'promo':
-        return Icons.local_offer_outlined;
-      default:
-        return Icons.notifications_none_rounded;
+  IconData? _typeIcon(AppNotification notification) {
+    final type = notification.type;
+    final text =
+        '${notification.type} ${notification.title} ${notification.message}'
+            .toLowerCase();
+    if (type == 'promo' || text.contains('promo') || text.contains('diskon')) {
+      return Icons.local_offer_outlined;
     }
+    if (text.contains('laundry') && text.contains('selesai')) {
+      return Icons.task_alt_rounded;
+    }
+    if (type == 'order' ||
+        text.contains('pesanan dibuat') ||
+        text.contains('pesanan baru')) {
+      return Icons.receipt_long_outlined;
+    }
+    if (text.contains('status') ||
+        text.contains('diproses') ||
+        text.contains('diterima') ||
+        text.contains('siap diantar')) {
+      return Icons.sync_alt_rounded;
+    }
+    if (type == 'payment' ||
+        text.contains('bayar') ||
+        text.contains('pembayaran')) {
+      return Icons.payments_outlined;
+    }
+    if (type == 'laundry') {
+      return Icons.local_laundry_service_outlined;
+    }
+    if (type == 'catering') {
+      return Icons.restaurant_outlined;
+    }
+    if (type == 'room') return Icons.account_balance_wallet_outlined;
+    return null;
+  }
+
+  String _displayTitle(AppNotification notification) {
+    final legacyPromoName = _legacyPromoName(notification.message);
+    if (notification.type == 'promo' &&
+        notification.title.toLowerCase().startsWith('promo baru dari') &&
+        legacyPromoName != null) {
+      return legacyPromoName;
+    }
+    return notification.title
+        .replaceAll('Total laundry sudah ditetapkan',
+            'Total pembayaran telah ditentukan')
+        .replaceAll(
+            'Total laundry ditetapkan', 'Total pembayaran telah ditentukan');
+  }
+
+  String _displayMessage(AppNotification notification) {
+    if (notification.type == 'promo') {
+      return _displayPromoMessage(notification.message);
+    }
+    return notification.message
+        .replaceAll('Total laundry sudah ditetapkan',
+            'Merchant telah menetapkan total pembayaran laundry Anda.')
+        .replaceAll('siap dibayar', 'siap untuk dibayar');
+  }
+
+  String _displayPromoMessage(String message) {
+    final raw = message.trim();
+    if (raw.isEmpty) return 'Promo baru tersedia untuk Anda.';
+
+    final lower = raw.toLowerCase();
+    if (lower.contains('buka detail merchant')) {
+      return raw
+          .replaceAll('Buka detail merchant', 'Buka detail promo')
+          .replaceAll('buka detail merchant', 'buka detail promo');
+    }
+    if (lower.contains('sudah aktif. cek produk')) {
+      return 'Promo baru tersedia untuk Anda.';
+    }
+    return raw;
+  }
+
+  String? _legacyPromoName(String message) {
+    final match = RegExp(r'^(.*?)\s+sudah aktif\.', caseSensitive: false)
+        .firstMatch(message);
+    final name = match?.group(1)?.trim();
+    return name == null || name.isEmpty ? null : name;
   }
 
   String _relativeTime(DateTime date) {

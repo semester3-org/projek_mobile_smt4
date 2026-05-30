@@ -5,9 +5,9 @@ import 'user_theme.dart';
 
 String formatUserCurrency(num amount) {
   return 'Rp ${amount.toStringAsFixed(0).replaceAllMapped(
-    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-    (m) => '${m[1]}.',
-  )}';
+        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+        (m) => '${m[1]}.',
+      )}';
 }
 
 String formatShortDate(DateTime date) {
@@ -50,7 +50,8 @@ class UserSearchField extends StatelessWidget {
         prefixIcon: const Icon(Icons.search_rounded),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.blueGrey.shade100),
@@ -290,27 +291,40 @@ class UserNotificationIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: UserRepository.hasUnreadNotifications(),
+    return FutureBuilder<int>(
+      future: UserRepository.unreadNotificationCount(),
       builder: (context, snapshot) {
-        final hasUnread = snapshot.data == true;
+        final unreadCount = snapshot.data ?? 0;
         return IconButton(
           onPressed: onPressed,
           icon: Stack(
             clipBehavior: Clip.none,
             children: [
               Icon(Icons.notifications_none_rounded, color: color),
-              if (hasUnread)
+              if (unreadCount > 0)
                 Positioned(
-                  right: -1,
-                  top: -1,
+                  right: -9,
+                  top: -8,
                   child: Container(
-                    width: 9,
-                    height: 9,
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: UserTheme.danger,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : unreadCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
                     ),
                   ),
                 ),

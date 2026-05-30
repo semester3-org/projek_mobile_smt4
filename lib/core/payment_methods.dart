@@ -5,9 +5,14 @@ class PaymentMethodHelper {
   // Formatted payment method names with clean presentation
   static const Map<String, String> displayNames = {
     'bca': 'Transfer Bank BCA',
+    'bca_va': 'Transfer Bank BCA',
     'mandiri': 'Transfer Bank Mandiri',
+    'echannel': 'Transfer Bank Mandiri',
     'bni': 'Transfer Bank BNI',
+    'bni_va': 'Transfer Bank BNI',
     'cimb': 'Transfer Bank CIMB Niaga',
+    'cimb_clicks': 'Transfer Bank CIMB Niaga',
+    'bank_transfer': 'Transfer Bank',
 
     // E-Wallet
     'gopay': 'GoPay',
@@ -31,9 +36,14 @@ class PaymentMethodHelper {
   // Category grouping
   static const Map<String, String> categories = {
     'bca': 'Transfer Bank',
+    'bca_va': 'Transfer Bank',
     'mandiri': 'Transfer Bank',
+    'echannel': 'Transfer Bank',
     'bni': 'Transfer Bank',
+    'bni_va': 'Transfer Bank',
     'cimb': 'Transfer Bank',
+    'cimb_clicks': 'Transfer Bank',
+    'bank_transfer': 'Transfer Bank',
 
     // E-Wallet Category
     'gopay': 'E-Wallet',
@@ -77,9 +87,7 @@ class PaymentMethodHelper {
 
   /// Check if payment method requires online processing
   static bool requiresOnlineProcessing(String? method) {
-    return method != null &&
-        method.isNotEmpty &&
-        !isCashOnDelivery(method);
+    return method != null && method.isNotEmpty && !isCashOnDelivery(method);
   }
 
   /// Opsi pembayaran untuk form checkout user.

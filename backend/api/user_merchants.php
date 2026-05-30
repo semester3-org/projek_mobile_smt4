@@ -103,7 +103,7 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
     return [];
 }
 
-function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true): array {
+function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true, ?string $userId = null): array {
     if (!merchantTableExists($conn, 'products')) {
         return userMerchantFallbackMenu($type, $merchantId);
     }
@@ -131,7 +131,8 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
     $stmt->close();
     if (empty($rows)) return [];
     $hasPromoTable = $includePromos && merchantTableExists($conn, 'merchant_promos');
-    return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable) {
+    $userId = trim((string)$userId);
+    return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable, $userId) {
         $price30 = (float)($row['harga'] ?? 0);
         $productId = (int)($row['id'] ?? 0);
         $promoDiscount = 0.0;
@@ -140,7 +141,7 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
             $best = merchantBestPromoForCheckout(
                 $conn,
                 $merchantId,
-                '',
+                $userId,
                 $price30,
                 [['productId' => $productId]]
             );
@@ -174,6 +175,16 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
         if ($type === 'catering') {
             $payload['price20Days'] = isset($row['price_20_days']) ? (float)$row['price_20_days'] : null;
             $payload['price30Days'] = $price30;
+        } elseif ($type === 'laundry') {
+            $pricingType = merchantNormalizePricingType($row['pricing_type'] ?? 'per_kg');
+            $payload['pricingType'] = $pricingType;
+            $payload['pricingTypeLabel'] = merchantPricingTypeLabel($pricingType);
+            $payload['unit'] = merchantPricingUnit($pricingType);
+            $payload['durationLabel'] = merchantDurationLabel(
+                isset($row['duration_value']) ? (int)$row['duration_value'] : null,
+                $row['duration_unit'] ?? 'day'
+            );
+            $payload['addons'] = $productId > 0 ? merchantProductAddons($conn, $productId) : [];
         }
         return $payload;
     }, $rows);
@@ -228,10 +239,10 @@ function userMerchantEtaFromKm(float $distanceKm): string {
     if ($distanceKm <= 0) {
         return '';
     }
-    // Perkiraan tempuh motor/mobil perkotaan ~18 km/jam
-    $minutes = (int)ceil(($distanceKm / 18) * 60);
-    $low = max(5, $minutes - 3);
-    $high = min(120, $minutes + 8);
+    // Estimasi operasional kota. Jarak sudah disesuaikan dari koordinat map.
+    $minutes = (int)ceil(($distanceKm / 20) * 60);
+    $low = max(5, $minutes - 2);
+    $high = min(120, $minutes + 6);
     return $low >= $high ? "{$low} mnt" : "{$low}-{$high} mnt";
 }
 
@@ -277,7 +288,7 @@ function userMerchantRowCoords(array $row): array {
     return [$lat, $lng];
 }
 
-function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng, bool $includeDetail = false): array {
+function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng, bool $includeDetail = false, ?string $userId = null): array {
     $merchantId = (string)($row['merchant_id'] ?? $row['id']);
     $placeId = (string)($row['place_id'] ?? $merchantId);
     $summary = [
@@ -290,7 +301,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : (float)($row['place_rating'] ?? 0);
     $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
     $menu = $merchantId !== ''
-        ? userMerchantMenu($conn, $type, $merchantId, $includeDetail)
+        ? userMerchantMenu($conn, $type, $merchantId, $includeDetail, $userId)
         : userMerchantFallbackMenu($type, $placeId);
     $minPrice = 0;
     foreach ($menu as $item) {
@@ -323,6 +334,9 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     );
     if ($hasDistanceEstimate && $distance < 0.05) {
         $distance = 0.05;
+    }
+    if ($hasDistanceEstimate) {
+        $distance = round($distance * 1.18, 2);
     }
     $hasDistanceEstimate = $hasDistanceEstimate && $distance > 0;
     $openHours = trim((string)($row['open_hours'] ?? ''));
@@ -513,7 +527,7 @@ try {
         if ($dedupeKey !== '') {
             $seenMerchantIds[$dedupeKey] = true;
         }
-        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '');
+        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '', $userId);
     }
     if (empty($data)) {
         $data = userMerchantFallback($type);

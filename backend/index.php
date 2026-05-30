@@ -39,6 +39,7 @@ if ($path === 'api/user_billings')        { require_once __DIR__ . '/api/user_bi
 if ($path === 'api/user_billings/pay')    { require_once __DIR__ . '/api/user_billings_pay.php';   exit; }
 if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_orders.php';         exit; }
 if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
+if ($path === 'api/user_notification_presence') { require_once __DIR__ . '/api/user_notification_presence.php'; exit; }
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
 if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-password.php';     exit; }
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
@@ -95,6 +96,7 @@ if (empty($path)) {
             'POST /api/user_billings/pay',
             'GET  /api/user_orders',
             'GET  /api/user_notifications',
+            'POST|PUT|DELETE /api/user_notification_presence',
             'GET|POST|PUT /api/user_profile',
             'POST /api/change-password',
             'GET|POST|PUT|DELETE /api/user_ratings',

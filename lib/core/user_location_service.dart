@@ -2,7 +2,8 @@ import 'package:geolocator/geolocator.dart';
 
 import '../data/repositories/user_repository.dart';
 
-/// Koordinat user untuk jarak/ETA merchant (GPS → profil).
+/// Koordinat user untuk jarak/ETA merchant: alamat profil dari map lebih
+/// diprioritaskan daripada GPS agar card merchant mengikuti alamat tujuan user.
 class UserLocationService {
   UserLocationService._();
 
@@ -14,6 +15,19 @@ class UserLocationService {
     if (_cache != null &&
         _cacheAt != null &&
         now.difference(_cacheAt!) < const Duration(minutes: 2)) {
+      return _cache;
+    }
+
+    final profile = await UserRepository.getProfile(
+      displayName: 'User',
+      email: '',
+      role: 'user',
+    );
+    final lat = profile.data?.latitude;
+    final lng = profile.data?.longitude;
+    if (lat != null && lng != null && _isValid(lat, lng)) {
+      _cache = (latitude: lat, longitude: lng);
+      _cacheAt = now;
       return _cache;
     }
 
@@ -39,19 +53,6 @@ class UserLocationService {
         }
       }
     } catch (_) {}
-
-    final profile = await UserRepository.getProfile(
-      displayName: 'User',
-      email: '',
-      role: 'user',
-    );
-    final lat = profile.data?.latitude;
-    final lng = profile.data?.longitude;
-    if (lat != null && lng != null && _isValid(lat, lng)) {
-      _cache = (latitude: lat, longitude: lng);
-      _cacheAt = now;
-      return _cache;
-    }
     return null;
   }
 

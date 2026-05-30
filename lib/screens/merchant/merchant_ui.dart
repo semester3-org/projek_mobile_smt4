@@ -101,7 +101,7 @@ class MerchantTopBar extends StatelessWidget {
               ),
               child: Text(actionLabel!),
             )
-          else
+          else if (onAction != null || actionIcon != null)
             _MerchantTopBarIconButton(
               icon: actionIcon ?? Icons.notifications_none_rounded,
               onPressed: onAction,
@@ -132,10 +132,10 @@ class _MerchantTopBarIconButton extends StatelessWidget {
       );
     }
 
-    return FutureBuilder<bool>(
-      future: MerchantRepository.hasUnreadNotifications(),
+    return FutureBuilder<int>(
+      future: MerchantRepository.unreadNotificationCount(),
       builder: (context, snapshot) {
-        final hasUnread = snapshot.data == true;
+        final unreadCount = snapshot.data ?? 0;
         return IconButton(
           onPressed: onPressed,
           color: MerchantPalette.primary,
@@ -143,17 +143,30 @@ class _MerchantTopBarIconButton extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Icon(icon),
-              if (hasUnread)
+              if (unreadCount > 0)
                 Positioned(
-                  right: -1,
-                  top: -1,
+                  right: -9,
+                  top: -8,
                   child: Container(
-                    width: 9,
-                    height: 9,
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: MerchantPalette.danger,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : unreadCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
                     ),
                   ),
                 ),

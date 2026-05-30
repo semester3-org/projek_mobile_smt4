@@ -1,5 +1,6 @@
 // lib/screens/owner/pages/owner_rooms_page.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,50 +23,7 @@ class _RepoResult<T> {
   const _RepoResult.fail(this.error) : data = null;
 }
 
-class KosListingRepository {
-  KosListingRepository._();
 
-  static Future<_RepoResult<List<KosListing>>> getMyListings() async {
-    final res = await ApiService.get('api/kos_listings');
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal memuat daftar kos');
-    }
-    try {
-      final list = (res.data!['data'] as List)
-          .map((e) => KosListing.fromJson(e as Map<String, dynamic>))
-          .toList();
-      return _RepoResult.ok(list);
-    } catch (e) {
-      return _RepoResult.fail('Gagal memproses data: $e');
-    }
-  }
-
-  static Future<_RepoResult<KosListing>> createListing({
-    required String title,
-    required String location,
-    required String description,
-    required int pricePerMonth,
-    required String ownerContact,
-  }) async {
-    final res = await ApiService.post('api/kos_listings', {
-      'title': title,
-      'location': location,
-      'description': description,
-      'price_per_month': pricePerMonth,
-      'owner_contact': ownerContact,
-    });
-    if (!res.success) {
-      return _RepoResult.fail(res.message ?? 'Gagal menambah kos');
-    }
-    try {
-      final item =
-          KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
-      return _RepoResult.ok(item);
-    } catch (e) {
-      return _RepoResult.fail('Gagal memproses data: $e');
-    }
-  }
-}
 
 class FacilityOption {
   const FacilityOption({required this.id, required this.name});
@@ -93,6 +51,10 @@ class RoomFacilityRepository {
 
 class KosRoomRepository {
   KosRoomRepository._();
+
+  static final StreamController<void> _refreshController = StreamController<void>.broadcast();
+  static Stream<void> get refreshStream => _refreshController.stream;
+  static void triggerRefresh() => _refreshController.add(null);
 
   static Future<_RepoResult<List<KosRoom>>> getRooms(String kosId, {String? statusFilter}) async {
     final params = <String, String>{'kos_id': kosId};
@@ -181,11 +143,23 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   String _query = '';
   RoomStatus? _statusFilter;
   String _sortBy = 'room_number_asc';
+  StreamSubscription<void>? _refreshSub;
 
   @override
   void initState() {
     super.initState();
     _loadKosListings();
+    _refreshSub = KosRoomRepository.refreshStream.listen((_) {
+      if (mounted) {
+        _loadRooms();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadKosListings() async {
@@ -425,8 +399,9 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
 
     final numberCtrl = TextEditingController(text: room.roomNumber);
     final typeCtrl = TextEditingController(text: room.roomType);
-    final priceCtrl =
-        TextEditingController(text: room.pricePerMonth.toString());
+    final initialPrice = room.pricePerMonth.toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
+    final priceCtrl = TextEditingController(text: initialPrice);
     final occCtrl = TextEditingController(text: room.maxOccupant.toString());
     final descCtrl = TextEditingController(text: room.description ?? '');
     RoomStatus selectedStatus = room.status;
@@ -464,6 +439,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 selectedRentalType.priceLabel,
                 keyboard: TextInputType.number,
                 prefix: 'Rp ',
+                formatters: const [_ThousandsInputFormatter()],
               ),
               const SizedBox(height: 14),
               _outlinedField(occCtrl, 'Kapasitas',
@@ -536,7 +512,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                   'room_number': numberCtrl.text.trim(),
                   'room_type': typeCtrl.text.trim(),
                   'price_per_month':
-                      int.tryParse(priceCtrl.text) ?? room.pricePerMonth,
+                      int.tryParse(priceCtrl.text.replaceAll('.', '').replaceAll(',', '')) ?? room.pricePerMonth,
                   'max_occupant':
                       int.tryParse(occCtrl.text) ?? room.maxOccupant,
                   'status': selectedStatus.dbValue,
@@ -894,11 +870,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     int maxLines = 1,
     String? prefix,
     String? suffix,
+    List<TextInputFormatter>? formatters,
   }) =>
       TextField(
         controller: ctrl,
         keyboardType: keyboard,
         maxLines: maxLines,
+        inputFormatters: formatters,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
@@ -1087,6 +1065,7 @@ class _AddKosSheetState extends State<_AddKosSheet> {
               TextFormField(
                 controller: _priceCtrl,
                 keyboardType: TextInputType.number,
+                inputFormatters: const [_ThousandsInputFormatter()],
                 decoration: const InputDecoration(
                   labelText: 'Harga Mulai per Bulan',
                   prefixIcon: Icon(Icons.attach_money_rounded),
@@ -1109,9 +1088,17 @@ class _AddKosSheetState extends State<_AddKosSheet> {
                 decoration: const InputDecoration(
                   labelText: 'Kontak Pemilik',
                   prefixIcon: Icon(Icons.phone_outlined),
+                  hintText: 'Cth: 081234567890',
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Kontak wajib diisi' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Kontak wajib diisi';
+                  final clean = v.trim();
+                  final regex = RegExp(r'^(08|\+62|62)\d{8,13}$');
+                  if (!regex.hasMatch(clean)) {
+                    return 'Format nomor HP tidak valid (cth: 0812xxx)';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 14),
               TextFormField(
@@ -1448,6 +1435,7 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
               TextFormField(
                 controller: _priceCtrl,
                 keyboardType: TextInputType.number,
+                inputFormatters: const [_ThousandsInputFormatter()],
                 decoration: InputDecoration(
                   labelText: _selectedRentalType.priceLabel,
                   prefixIcon: const Icon(Icons.attach_money_rounded),
@@ -1919,4 +1907,43 @@ class _EmptyRoomWidget extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ThousandsInputFormatter extends TextInputFormatter {
+  const _ThousandsInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    final formatted = _formatThousands(digits);
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+String _formatThousands(String value) {
+  final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return '';
+
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    final remaining = digits.length - i;
+    buffer.write(digits[i]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+  return buffer.toString();
 }

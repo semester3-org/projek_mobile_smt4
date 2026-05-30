@@ -142,7 +142,7 @@ class _UserHomePageState extends State<UserHomePage> {
                 padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
                 children: [
                   Text(
-                    'Selamat pagi,',
+                    '${_getGreeting()},',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: UserTheme.muted,
                         ),
@@ -186,6 +186,19 @@ class _UserHomePageState extends State<UserHomePage> {
               ),
       ),
     );
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 11) {
+      return 'Selamat pagi';
+    } else if (hour >= 11 && hour < 15) {
+      return 'Selamat siang';
+    } else if (hour >= 15 && hour < 18) {
+      return 'Selamat sore';
+    } else {
+      return 'Selamat malam';
+    }
   }
 
   String _firstName(String value) {

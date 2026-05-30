@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
+import '../pages/owner_rooms_page.dart';
 class OwnerTenantsPage extends StatefulWidget {
   const OwnerTenantsPage({super.key});
 
@@ -56,8 +57,9 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
 
   Future<bool> _updateTenantStatus(
     OwnerTenant tenant,
-    String newStatus,
-  ) async {
+    String newStatus, {
+    String? rejectReason,
+  }) async {
     if (_updatingIds.contains(tenant.registrationId)) return false;
     setState(() => _updatingIds.add(tenant.registrationId));
 
@@ -66,6 +68,7 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
       {
         'registrationId': tenant.registrationId,
         'status': newStatus,
+        if (rejectReason != null) 'rejectReason': rejectReason,
       },
     );
 
@@ -94,6 +97,9 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
       }).toList();
     });
 
+    // Pemicu refresh reaktif secara global di tab Kamar
+    KosRoomRepository.triggerRefresh();
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -104,6 +110,45 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
       ),
     );
     return true;
+  }
+
+  Future<String?> _showRejectReasonDialog() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tolak Pengajuan'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Berikan alasan mengapa Anda menolak pengajuan sewa ini (opsional):',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Contoh: Kamar sudah penuh / di-booking orang lain.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Tolak Pengajuan'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showDetail(OwnerTenant tenant) {
@@ -164,9 +209,12 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                           onPressed: _updatingIds.contains(tenant.registrationId)
                               ? null
                               : () async {
+                                  final reason = await _showRejectReasonDialog();
+                                  if (reason == null) return;
                                   final ok = await _updateTenantStatus(
                                     tenant,
                                     'rejected',
+                                    rejectReason: reason.isEmpty ? 'Pengajuan ditolak oleh owner.' : reason,
                                   );
                                   if (ok && mounted) Navigator.of(context).pop();
                                 },
@@ -244,10 +292,15 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                               tenant,
                               'approved',
                             ),
-                            onReject: () => _updateTenantStatus(
-                              tenant,
-                              'rejected',
-                            ),
+                            onReject: () async {
+                              final reason = await _showRejectReasonDialog();
+                              if (reason == null) return;
+                              _updateTenantStatus(
+                                tenant,
+                                'rejected',
+                                rejectReason: reason.isEmpty ? 'Pengajuan ditolak oleh owner.' : reason,
+                              );
+                            },
                           ),
                         ),
                     ],

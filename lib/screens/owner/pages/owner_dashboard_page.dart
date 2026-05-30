@@ -2,15 +2,95 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../auth/auth_scope.dart';
+import '../../../core/api_service.dart';
 import 'owner_finance_page.dart';
 import 'owner_notifications_page.dart';
-import '../subpages/owner_rating_page.dart';
+import 'owner_security_page.dart';
+import 'owner_help_page.dart';
 import '../subpages/owner_tenants_page.dart';
 
-class OwnerDashboardPage extends StatelessWidget {
+class OwnerDashboardPage extends StatefulWidget {
   const OwnerDashboardPage({super.key, this.onNavigateToFinance});
 
   final void Function(int)? onNavigateToFinance;
+
+  @override
+  State<OwnerDashboardPage> createState() => _OwnerDashboardPageState();
+}
+
+class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
+  bool _isLoading = true;
+  String? _error;
+  
+  Map<String, dynamic> _stats = {
+    'total': 0,
+    'occupied': 0,
+    'available': 0,
+    'maintenance': 0,
+  };
+  Map<String, dynamic> _revenue = {
+    'monthly': 0,
+    'growth': '0% dari bulan lalu',
+  };
+  List<dynamic> _activities = [];
+  List<dynamic> _dueSoon = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardData();
+  }
+
+  Future<void> _loadDashboardData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final res = await ApiService.get('api/owner_dashboard');
+    if (!mounted) return;
+
+    if (!res.success) {
+      setState(() {
+        _isLoading = false;
+        _error = res.message ?? 'Gagal memuat data dashboard';
+      });
+      return;
+    }
+
+    try {
+      final data = res.data!['data'] as Map<String, dynamic>;
+      setState(() {
+        _stats = data['statistics'] as Map<String, dynamic>;
+        _revenue = data['revenue'] as Map<String, dynamic>;
+        _activities = data['activities'] as List<dynamic>;
+        _dueSoon = data['dueSoon'] as List<dynamic>;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Format data dashboard tidak valid';
+      });
+    }
+  }
+
+  String _formatPrice(int price) {
+    return 'Rp ${price.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 11) {
+      return 'Selamat pagi';
+    } else if (hour >= 11 && hour < 15) {
+      return 'Selamat siang';
+    } else if (hour >= 15 && hour < 18) {
+      return 'Selamat sore';
+    } else {
+      return 'Selamat malam';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,127 +103,151 @@ class OwnerDashboardPage extends StatelessWidget {
         title: const Text('KosOwner'),
         actions: [
           IconButton(
-            tooltip: 'Pengaturan',
-            onPressed: () {},
-            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Refresh',
+            onPressed: _loadDashboardData,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          Text(
-            'Selamat pagi, $name!',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Pantau performa properti Anda hari ini.',
-            style: TextStyle(color: Colors.grey.shade700),
-          ),
-          const SizedBox(height: 14),
-          const _StatRow(
-            left: _StatCard(
-              title: 'Total Kamar',
-              value: '42',
-              subtitle: 'Unit Properti',
-              icon: Icons.meeting_room_rounded,
-            ),
-            right: _MiniStatsCard(),
-          ),
-          const SizedBox(height: 14),
-          _RevenueCard(onNavigateToFinance: onNavigateToFinance),
-          const SizedBox(height: 16),
-          Text(
-            'Menu Cepat',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 10),
-          _QuickMenu(
-            onTenants: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const OwnerTenantsPage(),
-                ),
-              );
-            },
-            onRating: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const OwnerRatingPage(),
-                ),
-              );
-            },
-            onFinance: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const OwnerFinancePage(),
-                ),
-              );
-            },
-            onNotifications: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const OwnerNotificationsPage(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Aktivitas Terkini',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+               ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _loadDashboardData,
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
                     ),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const OwnerNotificationsPage(),
-                    ),
-                  );
-                },
-                child: const Text('Lihat Semua'),
-              ),
-            ],
-          ),
-          const _ActivityTile(
-            color: AppTheme.primaryGreen,
-            title: 'Pembayaran Berhasil',
-            subtitle: 'Kamar A-12 • Rp 1.500.000',
-            time: '1 jam lalu',
-          ),
-          const _ActivityTile(
-            color: Color(0xFF1565C0),
-            title: 'Komplain Perbaikan',
-            subtitle: 'Kamar D-04 • Keran bocor',
-            time: '4 jam lalu',
-          ),
-          const _ActivityTile(
-            color: Color(0xFFEF6C00),
-            title: 'Penghuni Baru',
-            subtitle: 'Kamar C-01 • Verifikasi selesai',
-            time: '1 hari lalu',
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Jatuh Tempo Mendatang',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadDashboardData,
+                  color: AppTheme.primaryGreen,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    children: [
+                      Text(
+                        '${_getGreeting()}, $name!',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Pantau performa properti Anda hari ini.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 14),
+                      _StatRow(
+                        left: _StatCard(
+                          title: 'Total Kamar',
+                          value: _stats['total'].toString(),
+                          subtitle: 'Unit Properti',
+                          icon: Icons.meeting_room_rounded,
+                          occupied: _stats['occupied'] as int,
+                          total: _stats['total'] as int,
+                        ),
+                        right: _MiniStatsCard(
+                          occupied: _stats['occupied'].toString(),
+                          available: _stats['available'].toString(),
+                          maintenance: _stats['maintenance'].toString(),
+                          onNavigate: widget.onNavigateToFinance,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _RevenueCard(
+                        monthlyRevenue: _formatPrice(_revenue['monthly'] as int),
+                        growthText: _revenue['growth'] as String,
+                        onNavigateToFinance: widget.onNavigateToFinance,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Menu Cepat',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 10),
+                      _QuickMenu(
+                        onSecurity: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const OwnerSecurityPage(),
+                            ),
+                          );
+                        },
+                        onHelp: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const OwnerHelpPage(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Aktivitas Terkini',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          TextButton(
+                            onPressed: () => widget.onNavigateToFinance?.call(4),
+                            child: const Text('Lihat Semua'),
+                          ),
+                        ],
+                      ),
+                      if (_activities.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Center(
+                              child: Text(
+                                'Belum ada aktivitas hari ini.',
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        ..._activities.map((act) {
+                          final colorVal = int.parse(act['color'] as String);
+                          return _ActivityTile(
+                            color: Color(colorVal),
+                            title: act['title'] as String,
+                            subtitle: act['subtitle'] as String,
+                            time: act['time'] as String,
+                          );
+                        }),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Jatuh Tempo Mendatang',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 10),
+                      _DueSoonCard(dueSoonList: _dueSoon),
+                    ],
+                  ),
                 ),
-          ),
-          const SizedBox(height: 10),
-          const _DueSoonCard(),
-        ],
-      ),
     );
   }
 }
@@ -172,15 +276,22 @@ class _StatCard extends StatelessWidget {
     required this.value,
     required this.subtitle,
     required this.icon,
+    required this.occupied,
+    required this.total,
   });
 
   final String title;
   final String value;
   final String subtitle;
   final IconData icon;
+  final int occupied;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
+    final double rate = total > 0 ? (occupied / total) : 0.0;
+    final int percent = (rate * 100).round();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -202,20 +313,51 @@ class _StatCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
-                    style: TextStyle(color: Colors.grey.shade700),
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                if (total > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGreen.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$percent%',
+                      style: const TextStyle(
+                        color: AppTheme.primaryGreen,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
+                    ),
                   ),
+              ],
             ),
             const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(color: Colors.grey.shade700)),
+            Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: rate,
+                backgroundColor: Colors.grey.shade200,
+                color: AppTheme.primaryGreen,
+                minHeight: 4,
+              ),
+            ),
           ],
         ),
       ),
@@ -224,26 +366,40 @@ class _StatCard extends StatelessWidget {
 }
 
 class _MiniStatsCard extends StatelessWidget {
-  const _MiniStatsCard();
+  const _MiniStatsCard({
+    required this.occupied,
+    required this.available,
+    required this.maintenance,
+    this.onNavigate,
+  });
+
+  final String occupied;
+  final String available;
+  final String maintenance;
+  final void Function(int)? onNavigate;
 
   @override
   Widget build(BuildContext context) {
-    Widget chip(String label, String value, Color bg, Color fg) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: TextStyle(color: fg.withOpacity(0.9))),
-            Text(
-              value,
-              style: TextStyle(color: fg, fontWeight: FontWeight.w700),
-            ),
-          ],
+    Widget chip(String label, String value, Color bg, Color fg, int tabIndex) {
+      return InkWell(
+        onTap: () => onNavigate?.call(tabIndex),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: TextStyle(color: fg.withOpacity(0.9), fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                value,
+                style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -253,12 +409,11 @@ class _MiniStatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            chip('Terisi', '38', const Color(0xFFEAF3FF), AppTheme.primaryGreen),
+            chip('Terisi', occupied, const Color(0xFFEAF3FF), AppTheme.primaryGreen, 1),
             const SizedBox(height: 10),
-            chip('Kosong', '3', const Color(0xFFE3F2FD), const Color(0xFF1565C0)),
+            chip('Kosong', available, const Color(0xFFE3F2FD), const Color(0xFF1565C0), 1),
             const SizedBox(height: 10),
-            chip('Maintenance', '1', const Color(0xFFFFF3E0),
-                const Color(0xFFEF6C00)),
+            chip('Maint.', maintenance, const Color(0xFFFFF3E0), const Color(0xFFEF6C00), 1),
           ],
         ),
       ),
@@ -267,8 +422,14 @@ class _MiniStatsCard extends StatelessWidget {
 }
 
 class _RevenueCard extends StatelessWidget {
-  const _RevenueCard({this.onNavigateToFinance});
+  const _RevenueCard({
+    required this.monthlyRevenue,
+    required this.growthText,
+    this.onNavigateToFinance,
+  });
 
+  final String monthlyRevenue;
+  final String growthText;
   final void Function(int)? onNavigateToFinance;
 
   @override
@@ -302,18 +463,18 @@ class _RevenueCard extends StatelessWidget {
                     style: TextStyle(color: Colors.white.withOpacity(0.9)),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    'Rp 54.2M',
-                    style: TextStyle(
+                  Text(
+                    monthlyRevenue,
+                    style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 26,
+                      fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '+12.5% dari bulan lalu',
-                    style: TextStyle(color: Colors.white.withOpacity(0.9)),
+                    growthText,
+                    style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13),
                   ),
                 ],
               ),
@@ -334,48 +495,27 @@ class _RevenueCard extends StatelessWidget {
     );
   }
 }
-
 class _QuickMenu extends StatelessWidget {
   const _QuickMenu({
-    required this.onTenants,
-    required this.onRating,
-    required this.onFinance,
-    required this.onNotifications,
+    required this.onSecurity,
+    required this.onHelp,
   });
 
-  final VoidCallback onTenants;
-  final VoidCallback onRating;
-  final VoidCallback onFinance;
-  final VoidCallback onNotifications;
+  final VoidCallback onSecurity;
+  final VoidCallback onHelp;
 
   @override
   Widget build(BuildContext context) {
-    // Sesuai permintaan: hilangkan menu "Laporan".
     final items = <_QuickMenuItem>[
       _QuickMenuItem(
-        icon: Icons.apartment_rounded,
-        label: 'Kelola Kos',
-        onTap: () {},
+        icon: Icons.security_rounded,
+        label: 'Keamanan Akun',
+        onTap: onSecurity,
       ),
       _QuickMenuItem(
-        icon: Icons.people_alt_rounded,
-        label: 'Penghuni',
-        onTap: onTenants,
-      ),
-      _QuickMenuItem(
-        icon: Icons.account_balance_rounded,
-        label: 'Keuangan',
-        onTap: onFinance,
-      ),
-      _QuickMenuItem(
-        icon: Icons.star_rounded,
-        label: 'Rating',
-        onTap: onRating,
-      ),
-      _QuickMenuItem(
-        icon: Icons.notifications_rounded,
-        label: 'Notifikasi',
-        onTap: onNotifications,
+        icon: Icons.help_outline_rounded,
+        label: 'Pusat Bantuan',
+        onTap: onHelp,
       ),
     ];
 
@@ -384,7 +524,7 @@ class _QuickMenu extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final itemWidth = (constraints.maxWidth - 10 * 2) / 3;
+            final itemWidth = (constraints.maxWidth - 10) / 2;
             return Wrap(
               alignment: WrapAlignment.center,
               runAlignment: WrapAlignment.center,
@@ -480,19 +620,35 @@ class _ActivityTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
           ),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle),
-        trailing: Text(time, style: TextStyle(color: Colors.grey.shade600)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
+        trailing: Text(time, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
       ),
     );
   }
 }
 
 class _DueSoonCard extends StatelessWidget {
-  const _DueSoonCard();
+  const _DueSoonCard({required this.dueSoonList});
+
+  final List<dynamic> dueSoonList;
 
   @override
   Widget build(BuildContext context) {
+    if (dueSoonList.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: Text(
+              'Tidak ada tagihan jatuh tempo dalam waktu dekat.',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1B1F2A),
@@ -501,17 +657,14 @@ class _DueSoonCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Column(
         children: [
-          const _DueSoonRow(
-            name: 'Dian Sastro',
-            room: 'A-12',
-            inDays: '2 hari lagi',
-          ),
-          const SizedBox(height: 10),
-          const _DueSoonRow(
-            name: 'Randy Panglila',
-            room: 'A-01',
-            inDays: '4 hari lagi',
-          ),
+          ...dueSoonList.map((due) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _DueSoonRow(
+                  name: due['name'] as String,
+                  room: due['room'] as String,
+                  inDays: due['inDays'] as String,
+                ),
+              )),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -522,8 +675,8 @@ class _DueSoonCard extends StatelessWidget {
               ),
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Pengingat jatuh tempo telah dikirim ke 2 penghuni'),
+                  SnackBar(
+                    content: Text('Pengingat jatuh tempo telah dikirim ke ${dueSoonList.length} penghuni'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -575,7 +728,7 @@ class _DueSoonRow extends StatelessWidget {
               ),
               Text(
                 'Kamar $room',
-                style: TextStyle(color: Colors.white.withOpacity(0.8)),
+                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
               ),
             ],
           ),
@@ -599,4 +752,3 @@ class _DueSoonRow extends StatelessWidget {
     );
   }
 }
-

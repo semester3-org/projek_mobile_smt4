@@ -1,9 +1,52 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../auth/auth_scope.dart';
+import '../../../data/repositories/user_repository.dart';
 
-class OwnerSecurityPage extends StatelessWidget {
+class OwnerSecurityPage extends StatefulWidget {
   const OwnerSecurityPage({super.key});
+
+  @override
+  State<OwnerSecurityPage> createState() => _OwnerSecurityPageState();
+}
+
+class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
+  bool _isTwoFactor = true;
+
+  Future<void> _changePassword(BuildContext context, String currentPass, String newPass) async {
+    // Tampilkan loading dialog
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final res = await UserRepository.changePassword(
+      currentPassword: currentPass,
+      newPassword: newPass,
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading indicator
+
+    if (!res.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.error ?? 'Gagal mengubah kata sandi'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Kata sandi berhasil diubah!'),
+        backgroundColor: AppTheme.primaryGreen,
+      ),
+    );
+  }
 
   void _showChangePasswordDialog(BuildContext context) {
     final currentPassController = TextEditingController();
@@ -57,9 +100,11 @@ class OwnerSecurityPage extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
-              if (currentPassController.text.isEmpty || 
-                  newPassController.text.isEmpty || 
-                  confirmPassController.text.isEmpty) {
+              final current = currentPassController.text.trim();
+              final newPass = newPassController.text.trim();
+              final confirm = confirmPassController.text.trim();
+
+              if (current.isEmpty || newPass.isEmpty || confirm.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Semua field wajib diisi!'),
@@ -68,7 +113,7 @@ class OwnerSecurityPage extends StatelessWidget {
                 );
                 return;
               }
-              if (newPassController.text != confirmPassController.text) {
+              if (newPass != confirm) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Kata sandi baru tidak cocok!'),
@@ -77,22 +122,18 @@ class OwnerSecurityPage extends StatelessWidget {
                 );
                 return;
               }
-              if (newPassController.text.length < 6) {
+              if (newPass.length < 4) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Kata sandi minimal 6 karakter!'),
+                    content: Text('Kata sandi minimal 4 karakter!'),
                     backgroundColor: Colors.red,
                   ),
                 );
                 return;
               }
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Kata sandi berhasil diubah!'),
-                  backgroundColor: AppTheme.primaryGreen,
-                ),
-              );
+
+              Navigator.pop(context); // Close dialog
+              _changePassword(context, current, newPass);
             },
             child: const Text('Simpan'),
           ),
@@ -103,6 +144,9 @@ class OwnerSecurityPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = AuthScope.of(context);
+    final email = auth.session?.email ?? 'update@email.com';
+
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
       appBar: AppBar(title: const Text('Keamanan Akun')),
@@ -135,17 +179,38 @@ class OwnerSecurityPage extends StatelessWidget {
               leading: const Icon(Icons.phonelink_lock_rounded, color: AppTheme.primaryGreen),
               title: const Text('Verifikasi Dua Langkah'),
               subtitle: const Text('Aktifkan OTP untuk login lebih aman'),
-              trailing: Switch(value: true, onChanged: (_) {}),
+              trailing: Switch(
+                value: _isTwoFactor, 
+                activeColor: AppTheme.primaryGreen,
+                onChanged: (val) {
+                  setState(() {
+                    _isTwoFactor = val;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(val ? '2FA diaktifkan.' : '2FA dinonaktifkan.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 12),
           Card(
             child: ListTile(
               leading: const Icon(Icons.email_outlined, color: AppTheme.primaryGreen),
-              title: const Text('Email Cadangan'),
-              subtitle: const Text('update@email.com'),
+              title: const Text('Email Akun Utama'),
+              subtitle: Text(email),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Email utama terhubung dengan profil session Anda.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
             ),
           ),
         ],

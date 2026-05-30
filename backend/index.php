@@ -66,6 +66,9 @@ if ($path === 'api/kos_listings')        { require_once __DIR__ . '/api/kos_list
 if ($path === 'api/kos_rooms')           { require_once __DIR__ . '/api/kos_rooms.php';           exit; }
 if ($path === 'api/facilities')          { require_once __DIR__ . '/api/facilities.php';          exit; }
 if ($path === 'api/owner_tenants')       { require_once __DIR__ . '/api/owner_tenants.php';       exit; }
+if ($path === 'api/owner_dashboard')     { require_once __DIR__ . '/api/owner_dashboard.php';     exit; }
+if ($path === 'api/owner_finance')       { require_once __DIR__ . '/api/owner_finance.php';       exit; }
+if ($path === 'api/owner_notifications') { require_once __DIR__ . '/api/owner_notifications.php'; exit; }
 
 // ── Debug / test ──────────────────────────────────────────────────────────────
 if ($path === 'db-test') { require_once __DIR__ . '/db-test.php'; exit; }

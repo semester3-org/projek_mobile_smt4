@@ -81,10 +81,8 @@ class KosListingResult<T> {
   bool get isSuccess => error == null;
 }
 
-// ── Repository ────────────────────────────────────────────────────────────────
-
 class KosListingRepository {
-  static const _endpoint = 'api/kos_listings.php';
+  static const _endpoint = 'api/kos_listings';
 
   /// Ambil semua kos milik owner yang sedang login
   static Future<KosListingResult<List<KosListing>>> getMyListings() async {
@@ -94,10 +92,41 @@ class KosListingRepository {
       return KosListingResult.failure(res.message ?? 'Gagal memuat daftar kos');
     }
 
-    final list = (res.data!['data'] as List)
-        .map((e) => KosListing.fromJson(e as Map<String, dynamic>))
-        .toList();
+    try {
+      final list = (res.data!['data'] as List)
+          .map((e) => KosListing.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return KosListingResult.success(list);
+    } catch (e) {
+      return KosListingResult.failure('Gagal memproses data: $e');
+    }
+  }
 
-    return KosListingResult.success(list);
+  /// Tambah kos baru
+  static Future<KosListingResult<KosListing>> createListing({
+    required String title,
+    required String location,
+    required String description,
+    required int pricePerMonth,
+    required String ownerContact,
+  }) async {
+    final res = await ApiService.post(_endpoint, {
+      'title': title,
+      'location': location,
+      'description': description,
+      'price_per_month': pricePerMonth,
+      'owner_contact': ownerContact,
+    });
+
+    if (!res.success) {
+      return KosListingResult.failure(res.message ?? 'Gagal menambah kos');
+    }
+
+    try {
+      final item = KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
+      return KosListingResult.success(item);
+    } catch (e) {
+      return KosListingResult.failure('Gagal memproses data: $e');
+    }
   }
 }

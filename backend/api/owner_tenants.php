@@ -12,6 +12,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
 
+// Pastikan kolom reject_reason ada di tabel room_registrations
+if (tableExists($conn, 'room_registrations') && !columnExists($conn, 'room_registrations', 'reject_reason')) {
+    $conn->query("ALTER TABLE room_registrations ADD COLUMN reject_reason text DEFAULT NULL");
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     handlePut($conn, JWT::getPayloadFromRequest());
 }
@@ -44,6 +49,18 @@ function tableExists(mysqli $conn, string $table): bool {
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function columnExists(mysqli $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+    );
+    if (!$stmt) return false;
+    $stmt->bind_param('ss', $table, $column);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
 function tenantPayload(array $row): array {
     return [
         'registrationId' => (string)$row['registration_id'],
@@ -60,6 +77,7 @@ function tenantPayload(array $row): array {
         'startDate' => $row['start_date'] ?? null,
         'endDate' => $row['end_date'] ?? null,
         'registeredAt' => $row['registered_at'] ?? null,
+        'rejectReason' => $row['reject_reason'] ?? null,
     ];
 }
 
@@ -98,26 +116,60 @@ function handlePut(mysqli $conn, ?array $payload): void {
         sendJson(false, null, 'Registrasi penghuni tidak ditemukan', 404);
     }
 
-    if ($row['status'] !== 'pending') {
-        sendJson(false, null, 'Hanya registrasi yang menunggu persetujuan yang bisa diperbarui', 400);
+    if (!in_array($row['status'], ['pending', 'rejected'], true)) {
+        sendJson(false, null, 'Hanya registrasi dengan status pending atau rejected yang bisa diperbarui', 400);
     }
 
     if ($status === 'approved') {
-        $upd = $conn->prepare("UPDATE room_registrations SET status = 'approved', start_date = CURDATE(), updated_at = NOW() WHERE id = ?");
+        // Cek apakah sudah ada registrasi lain yang berstatus 'approved' atau 'active' untuk kamar ini
+        $check = $conn->prepare("
+            SELECT COUNT(*) as active_count 
+            FROM room_registrations 
+            WHERE room_id = ? 
+              AND status IN ('approved', 'active') 
+              AND id <> ?
+        ");
+        if (!$check) {
+            sendJson(false, null, 'Database error: ' . $conn->error, 500);
+        }
+        $check->bind_param('ss', $row['room_id'], $registrationId);
+        $check->execute();
+        $checkRes = $check->get_result()->fetch_assoc();
+        $check->close();
+
+        if ($checkRes && (int)$checkRes['active_count'] > 0) {
+            sendJson(false, null, 'Kamar ini sudah disetujui atau dihuni oleh orang lain', 400);
+        }
+
+        $upd = $conn->prepare("UPDATE room_registrations SET status = 'approved', start_date = CURDATE(), reject_reason = NULL, updated_at = NOW() WHERE id = ?");
         if (!$upd) {
             sendJson(false, null, 'Database error', 500);
         }
         $upd->bind_param('s', $registrationId);
         $upd->execute();
         $upd->close();
+
+        // Tandai kamar sebagai occupied di tabel kos_rooms
+        $markRoom = $conn->prepare("UPDATE kos_rooms SET status = 'occupied' WHERE id = ?");
+        if ($markRoom) {
+            $markRoom->bind_param('s', $row['room_id']);
+            $markRoom->execute();
+            $markRoom->close();
+        }
+
         sendJson(true, true, 'Pengajuan kamar disetujui');
     }
 
-    $upd = $conn->prepare("UPDATE room_registrations SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+    $rejectReason = isset($body['rejectReason']) ? trim((string)$body['rejectReason']) : null;
+    if (empty($rejectReason)) {
+        $rejectReason = null;
+    }
+
+    $upd = $conn->prepare("UPDATE room_registrations SET status = 'rejected', reject_reason = ?, updated_at = NOW() WHERE id = ?");
     if (!$upd) {
         sendJson(false, null, 'Database error', 500);
     }
-    $upd->bind_param('s', $registrationId);
+    $upd->bind_param('ss', $rejectReason, $registrationId);
     $upd->execute();
     $upd->close();
 
@@ -169,6 +221,7 @@ $sql = "
         rr.start_date,
         rr.end_date,
         rr.registered_at,
+        rr.reject_reason,
         u.display_name,
         u.email,
         k.title AS kos_name,

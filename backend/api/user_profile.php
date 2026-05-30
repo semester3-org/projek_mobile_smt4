@@ -765,6 +765,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJson(false, null, 'Only GET, POST, or PUT method allowed', 405);
 }
 
+$displayName = $payload['displayName'] ?? '';
+if (empty($displayName) || $displayName === 'User') {
+    $stmtUser = $conn->prepare("SELECT display_name FROM users WHERE id = ? LIMIT 1");
+    if ($stmtUser) {
+        $stmtUser->bind_param('s', $userId);
+        $stmtUser->execute();
+        $resUser = $stmtUser->get_result()->fetch_assoc();
+        if ($resUser && !empty($resUser['display_name'])) {
+            $displayName = $resUser['display_name'];
+        }
+        $stmtUser->close();
+    }
+}
+if (empty($displayName)) {
+    $displayName = 'User';
+}
+
 $accessCode = strtoupper(trim($body['accessCode'] ?? ''));
 $confirmStopPreviousRent = !empty($body['confirmStopPreviousRent']);
 
@@ -1002,6 +1019,27 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->bind_param('s', $room['room_id']);
     $mark->execute();
     $mark->close();
+
+    // Kirim notifikasi ke owner
+    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
+    $ownerQuery->bind_param('s', $room['kos_id']);
+    $ownerQuery->execute();
+    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
+    $ownerQuery->close();
+
+    if ($ownerInfo) {
+        $ownerId = $ownerInfo['owner_id'];
+        $kosTitle = $ownerInfo['title'];
+        $titleNotif = 'Pengajuan Kamar Baru';
+        $msgNotif = "Pengajuan sewa kamar baru dari {$displayName} untuk Kamar {$roomNumber} di {$kosTitle}. Segera periksa di tab Approval.";
+        
+        $notifIns = $conn->prepare("INSERT INTO app_notifications (user_id, title, message) VALUES (?, ?, ?)");
+        if ($notifIns) {
+            $notifIns->bind_param('sss', $ownerId, $titleNotif, $msgNotif);
+            $notifIns->execute();
+            $notifIns->close();
+        }
+    }
 } else {
     $id = uuid();
     $ins = $conn->prepare("
@@ -1017,6 +1055,27 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->bind_param('s', $room['room_id']);
     $mark->execute();
     $mark->close();
+
+    // Kirim notifikasi ke owner
+    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
+    $ownerQuery->bind_param('s', $room['kos_id']);
+    $ownerQuery->execute();
+    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
+    $ownerQuery->close();
+
+    if ($ownerInfo) {
+        $ownerId = $ownerInfo['owner_id'];
+        $kosTitle = $ownerInfo['title'];
+        $titleNotif = 'Pengajuan Kamar Baru';
+        $msgNotif = "Pengajuan sewa kamar baru dari {$displayName} untuk Kamar {$roomNumber} di {$kosTitle}. Segera periksa di tab Approval.";
+        
+        $notifIns = $conn->prepare("INSERT INTO app_notifications (user_id, title, message) VALUES (?, ?, ?)");
+        if ($notifIns) {
+            $notifIns->bind_param('sss', $ownerId, $titleNotif, $msgNotif);
+            $notifIns->execute();
+            $notifIns->close();
+        }
+    }
 }
 
 sendJson(true, profilePayload($conn, $payload), 'Pengajuan kamar berhasil dikirim dan menunggu persetujuan owner');

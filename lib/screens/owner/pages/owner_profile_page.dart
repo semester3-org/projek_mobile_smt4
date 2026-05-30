@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../app/app_theme.dart';
 import '../../../auth/auth_scope.dart';
 import 'owner_help_page.dart';
-import 'owner_property_page.dart';
 import 'owner_security_page.dart';
 
 class OwnerProfilePage extends StatelessWidget {
@@ -79,20 +78,7 @@ class OwnerProfilePage extends StatelessWidget {
               children: [
                 ListTile(
                   leading:
-                      const Icon(Icons.store_mall_directory_rounded, color: AppTheme.primaryGreen),
-                  title: const Text('Data Properti'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const OwnerPropertyPage(),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.security_rounded, color: AppTheme.primaryGreen),
+                      const Icon(Icons.security_rounded, color: AppTheme.primaryGreen),
                   title: const Text('Keamanan Akun'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -103,10 +89,11 @@ class OwnerProfilePage extends StatelessWidget {
                     );
                   },
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, indent: 56),
                 ListTile(
-                  leading: const Icon(Icons.help_outline_rounded, color: AppTheme.primaryGreen),
-                  title: const Text('Bantuan'),
+                  leading:
+                      const Icon(Icons.help_outline_rounded, color: AppTheme.primaryGreen),
+                  title: const Text('Pusat Bantuan'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.of(context).push(

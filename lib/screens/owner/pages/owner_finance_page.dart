@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../core/api_service.dart';
 import '../../../core/payment_methods.dart';
 
-// Enum sesuai DB: unpaid, paid, overdue
 enum PaymentStatus { unpaid, paid, overdue }
 
 extension PaymentStatusExt on PaymentStatus {
@@ -12,7 +12,7 @@ extension PaymentStatusExt on PaymentStatus {
       case PaymentStatus.paid:
         return 'Berhasil';
       case PaymentStatus.unpaid:
-        return 'Menunggu Persetujuan';
+        return 'Menunggu';
       case PaymentStatus.overdue:
         return 'Jatuh Tempo';
     }
@@ -41,7 +41,6 @@ extension PaymentStatusExt on PaymentStatus {
   }
 }
 
-// Model sesuai tabel payment_history JOIN room_registrations JOIN kos_rooms JOIN users
 class _PaymentItem {
   const _PaymentItem({
     required this.id,
@@ -90,51 +89,11 @@ class _PaymentItem {
   }
 }
 
-// ── Data grafik per tab ────────────────────────────────────────────────────────
-
 class _ChartData {
   const _ChartData({required this.label, required this.value});
   final String label;
-  final double value; // 0.0 – 1.0 (proporsi tinggi bar)
+  final double value; 
 }
-
-// Harian: 7 hari terakhir
-const _dailyData = [
-  _ChartData(label: 'Sen', value: 0.55),
-  _ChartData(label: 'Sel', value: 0.35),
-  _ChartData(label: 'Rab', value: 0.75),
-  _ChartData(label: 'Kam', value: 0.50),
-  _ChartData(label: 'Jum', value: 0.22),
-  _ChartData(label: 'Sab', value: 0.42),
-  _ChartData(label: 'Min', value: 0.32),
-];
-
-// Bulanan: 12 bulan
-const _monthlyData = [
-  _ChartData(label: 'Jan', value: 0.40),
-  _ChartData(label: 'Feb', value: 0.55),
-  _ChartData(label: 'Mar', value: 0.45),
-  _ChartData(label: 'Apr', value: 0.70),
-  _ChartData(label: 'Mei', value: 0.60),
-  _ChartData(label: 'Jun', value: 0.80),
-  _ChartData(label: 'Jul', value: 0.65),
-  _ChartData(label: 'Agu', value: 0.50),
-  _ChartData(label: 'Sep', value: 0.75),
-  _ChartData(label: 'Okt', value: 0.85),
-  _ChartData(label: 'Nov', value: 0.60),
-  _ChartData(label: 'Des', value: 0.90),
-];
-
-// Tahunan: 5 tahun terakhir
-const _yearlyData = [
-  _ChartData(label: '2022', value: 0.45),
-  _ChartData(label: '2023', value: 0.60),
-  _ChartData(label: '2024', value: 0.72),
-  _ChartData(label: '2025', value: 0.85),
-  _ChartData(label: '2026', value: 0.50),
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class OwnerFinancePage extends StatefulWidget {
   const OwnerFinancePage({super.key});
@@ -146,21 +105,104 @@ class OwnerFinancePage extends StatefulWidget {
 class _OwnerFinancePageState extends State<OwnerFinancePage> {
   int _tab = 0; // 0 = Harian, 1 = Bulanan, 2 = Tahunan
   PaymentStatus? _filterStatus;
-  String _filterKosId = 'semua';
+  String _filterKosTitle = 'semua';
 
-  // Grafik menyesuaikan tab
-  List<_ChartData> get _chartData {
-    switch (_tab) {
-      case 1:
-        return _monthlyData;
-      case 2:
-        return _yearlyData;
-      default:
-        return _dailyData;
+  bool _isLoading = true;
+  String? _error;
+
+  int _totalPaid = 0;
+  int _paidCount = 0;
+  int _unpaidCount = 0;
+  int _overdueCount = 0;
+  
+  Map<String, dynamic> _occupancy = {
+    'efficiency': 0,
+    'occupied': 0,
+    'total': 0,
+  };
+
+  Map<String, dynamic> _charts = {};
+  List<_PaymentItem> _payments = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFinanceData();
+  }
+
+  Future<void> _loadFinanceData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final res = await ApiService.get('api/owner_finance');
+    if (!mounted) return;
+
+    if (!res.success) {
+      setState(() {
+        _isLoading = false;
+        _error = res.message ?? 'Gagal memuat data keuangan';
+      });
+      return;
+    }
+
+    try {
+      final data = res.data!['data'] as Map<String, dynamic>;
+      final summary = data['summary'] as Map<String, dynamic>;
+      final occ = data['occupancy'] as Map<String, dynamic>;
+      final ch = data['charts'] as Map<String, dynamic>;
+      
+      final list = data['payments'] as List<dynamic>;
+      final List<_PaymentItem> mappedPayments = list.map((item) {
+        final stVal = item['paymentStatus'] as String;
+        PaymentStatus st = PaymentStatus.unpaid;
+        if (stVal == 'paid') st = PaymentStatus.paid;
+        if (stVal == 'overdue') st = PaymentStatus.overdue;
+
+        return _PaymentItem(
+          id: item['id'] as int,
+          registrationId: item['registrationId'] as String,
+          tenantName: item['tenantName'] as String,
+          roomNumber: item['roomNumber'] as String,
+          kosTitle: item['kosTitle'] as String,
+          amount: item['amount'] as int,
+          periodMonth: item['periodMonth'] as String,
+          paymentStatus: st,
+          paymentMethod: item['paymentMethod'] as String?,
+          proofUrl: item['proofUrl'] as String?,
+          paidAt: item['paidAt'] as String?,
+        );
+      }).toList();
+
+      setState(() {
+        _totalPaid = data['totalPaid'] as int;
+        _paidCount = summary['paid'] as int;
+        _unpaidCount = summary['unpaid'] as int;
+        _overdueCount = summary['overdue'] as int;
+        _occupancy = occ;
+        _charts = ch;
+        _payments = mappedPayments;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Format data keuangan tidak valid';
+      });
     }
   }
 
-  // Indeks bar yang di-highlight (bar tertinggi)
+  List<_ChartData> get _chartData {
+    if (_charts.isEmpty) return const [];
+    final key = _tab == 1 ? 'monthly' : (_tab == 2 ? 'yearly' : 'daily');
+    final list = _charts[key] as List<dynamic>? ?? const [];
+    return list.map((e) => _ChartData(
+      label: e['label'] as String,
+      value: (e['proportion'] as num).toDouble(),
+    )).toList();
+  }
+
   int get _highlightIndex {
     final data = _chartData;
     double max = 0;
@@ -174,87 +216,40 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     return idx;
   }
 
-  late final List<_PaymentItem> _payments = [
-    const _PaymentItem(
-      id: 1,
-      registrationId: 'reg_001',
-      tenantName: 'Budi Santoso',
-      roomNumber: 'A01',
-      kosTitle: 'Kos Hijau Asri',
-      amount: 1500000,
-      periodMonth: '2026-04',
-      paymentStatus: PaymentStatus.paid,
-      paymentMethod: 'transfer',
-      paidAt: '2026-04-03',
-    ),
-    const _PaymentItem(
-      id: 2,
-      registrationId: 'reg_002',
-      tenantName: 'Dian Permata',
-      roomNumber: 'A12',
-      kosTitle: 'Kos Hijau Asri',
-      amount: 1500000,
-      periodMonth: '2026-04',
-      paymentStatus: PaymentStatus.paid,
-      paymentMethod: 'transfer',
-      paidAt: '2026-04-05',
-    ),
-    const _PaymentItem(
-      id: 3,
-      registrationId: 'reg_003',
-      tenantName: 'Randy Panglila',
-      roomNumber: 'B01',
-      kosTitle: 'Kost Minimalis Putih',
-      amount: 950000,
-      periodMonth: '2026-04',
-      paymentStatus: PaymentStatus.unpaid,
-      paymentMethod: null,
-      paidAt: null,
-    ),
-    const _PaymentItem(
-      id: 4,
-      registrationId: 'reg_004',
-      tenantName: 'Siti Aminah',
-      roomNumber: 'B05',
-      kosTitle: 'Green House Residence',
-      amount: 2200000,
-      periodMonth: '2026-04',
-      paymentStatus: PaymentStatus.paid,
-      paymentMethod: 'cash',
-      paidAt: '2026-04-01',
-    ),
-    const _PaymentItem(
-      id: 5,
-      registrationId: 'reg_005',
-      tenantName: 'Andi Saputra',
-      roomNumber: 'C01',
-      kosTitle: 'Green House Residence',
-      amount: 3500000,
-      periodMonth: '2026-03',
-      paymentStatus: PaymentStatus.overdue,
-      paymentMethod: null,
-      paidAt: null,
-    ),
-  ];
-
-  void _confirmPayment(_PaymentItem item) {
-    final index = _payments.indexWhere((payment) => payment.id == item.id);
-    if (index == -1) return;
-
-    final today = DateTime.now().toIso8601String().split('T').first;
+  Future<void> _confirmPayment(_PaymentItem item) async {
+    Navigator.pop(context); // Close details bottom sheet
+    
     setState(() {
-      _payments[index] = item.copyWith(
-        paymentStatus: PaymentStatus.paid,
-        paymentMethod: item.paymentMethod ?? 'transfer',
-        paidAt: today,
-      );
+      _isLoading = true;
     });
-    Navigator.pop(context);
+
+    final res = await ApiService.post('api/owner_finance', {
+      'paymentId': item.id,
+    });
+
+    if (!mounted) return;
+
+    if (!res.success) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.message ?? 'Gagal mengkonfirmasi pembayaran'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Pembayaran ${item.tenantName} berhasil dikonfirmasi'),
+        backgroundColor: AppTheme.primaryGreen,
       ),
     );
+
+    await _loadFinanceData();
   }
 
   List<_PaymentItem> get _filtered {
@@ -262,14 +257,19 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       if (_filterStatus != null && p.paymentStatus != _filterStatus) {
         return false;
       }
-      if (_filterKosId != 'semua' && p.kosTitle != _filterKosId) {
+      if (_filterKosTitle != 'semua' && p.kosTitle != _filterKosTitle) {
         return false;
       }
       return true;
     }).toList();
   }
 
+  Set<String> get _uniqueKosTitles {
+    return _payments.map((e) => e.kosTitle).toSet();
+  }
+
   void _showFilterDialog() {
+    final titles = _uniqueKosTitles.toList();
     showModalBottomSheet(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -290,7 +290,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                       onPressed: () {
                         setModalState(() {
                           _filterStatus = null;
-                          _filterKosId = 'semua';
+                          _filterKosTitle = 'semua';
                         });
                       },
                       child: const Text('Reset'),
@@ -321,22 +321,29 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                 const Text('Properti',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ('semua', 'Semua Properti'),
-                    ('Kos Hijau Asri', 'Kos Hijau Asri'),
-                    ('Kost Minimalis Putih', 'Kost Minimalis Putih'),
-                    ('Green House Residence', 'Green House Residence'),
-                  ]
-                      .map((e) => ChoiceChip(
-                            label: Text(e.$2),
-                            selected: _filterKosId == e.$1,
-                            onSelected: (_) {
-                              setModalState(() => _filterKosId = e.$1);
-                            },
-                          ))
-                      .toList(),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Semua Properti'),
+                        selected: _filterKosTitle == 'semua',
+                        onSelected: (_) {
+                          setModalState(() => _filterKosTitle = 'semua');
+                        },
+                      ),
+                      ...titles.map((t) => Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: ChoiceChip(
+                              label: Text(t),
+                              selected: _filterKosTitle == t,
+                              onSelected: (_) {
+                                setModalState(() => _filterKosTitle = t);
+                              },
+                            ),
+                          )),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -386,20 +393,19 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 18)),
                 const Divider(height: 24),
-                _DetailRow(
-                    label: 'registration_id', value: item.registrationId),
+                _DetailRow(label: 'ID Registrasi', value: item.registrationId),
                 _DetailRow(label: 'Penyewa', value: item.tenantName),
                 _DetailRow(
                     label: 'Kamar',
                     value: '${item.roomNumber} • ${item.kosTitle}'),
-                _DetailRow(label: 'period_month', value: item.periodMonth),
-                _DetailRow(label: 'amount', value: _formatPrice(item.amount)),
+                _DetailRow(label: 'Periode Bulan', value: item.periodMonth),
+                _DetailRow(label: 'Nominal', value: _formatPrice(item.amount)),
                 _DetailRow(
-                    label: 'payment_status', value: item.paymentStatus.dbValue),
+                    label: 'Status Pembayaran', value: item.paymentStatus.dbValue),
                 _DetailRow(
-                    label: 'payment_method',
+                    label: 'Metode Pembayaran',
                     value: PaymentMethodHelper.getDisplayName(item.paymentMethod)),
-                _DetailRow(label: 'paid_at', value: item.paidAt ?? '-'),
+                _DetailRow(label: 'Waktu Bayar', value: item.paidAt ?? '-'),
                 const SizedBox(height: 16),
                 if (item.paymentStatus == PaymentStatus.unpaid ||
                     item.paymentStatus == PaymentStatus.overdue)
@@ -423,163 +429,198 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     return 'Rp ${price.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
   }
 
-  int get _totalPaid => _payments
-      .where((p) => p.paymentStatus == PaymentStatus.paid)
-      .fold(0, (sum, p) => sum + p.amount);
-
   @override
   Widget build(BuildContext context) {
     const tabs = ['Harian', 'Bulanan', 'Tahunan'];
     final filtered = _filtered;
-    final hasActiveFilter = _filterStatus != null || _filterKosId != 'semua';
+    final hasActiveFilter = _filterStatus != null || _filterKosTitle != 'semua';
 
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
-      appBar: AppBar(title: const Text('Ringkasan Keuangan')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
-        children: [
-          Text(
-            'Pantau performa bisnis kos Anda secara real-time.',
-            style: TextStyle(color: Colors.grey.shade700),
-          ),
-          const SizedBox(height: 12),
-          // ── Tab Harian / Bulanan / Tahunan ─────────────────────────────
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: List.generate(
-                  tabs.length,
-                  (i) => Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: i == _tab
-                              ? AppTheme.primaryGreen.withOpacity(0.14)
-                              : Colors.transparent,
-                          foregroundColor: i == _tab
-                              ? AppTheme.primaryGreen
-                              : Colors.grey.shade700,
-                        ),
-                        onPressed: () => setState(() => _tab = i),
-                        child: Text(tabs[i]),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _MoneyCard(
-            title: 'Total Pemasukan (paid)',
-            value: _formatPrice(_totalPaid),
-            delta: '+12.5% vs bln lalu',
-            icon: Icons.payments_rounded,
-          ),
-          const SizedBox(height: 12),
-          // Ringkasan status pembayaran
-          Row(
-            children: [
-              _StatusSummaryChip(
-                label: 'Lunas',
-                count: _payments
-                    .where((p) => p.paymentStatus == PaymentStatus.paid)
-                    .length,
-                color: AppTheme.primaryGreen,
-              ),
-              const SizedBox(width: 8),
-              _StatusSummaryChip(
-                label: 'Tertunda',
-                count: _payments
-                    .where((p) => p.paymentStatus == PaymentStatus.unpaid)
-                    .length,
-                color: const Color(0xFFEF6C00),
-              ),
-              const SizedBox(width: 8),
-              _StatusSummaryChip(
-                label: 'Jatuh Tempo',
-                count: _payments
-                    .where((p) => p.paymentStatus == PaymentStatus.overdue)
-                    .length,
-                color: Colors.red,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Pendapatan vs Transaksi',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              TextButton(onPressed: () {}, child: const Text('Detail Laporan')),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // ── Grafik dinamis ──────────────────────────────────────────────
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 350),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.05, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: _DynamicChart(
-              key: ValueKey(_tab),
-              data: _chartData,
-              highlightIndex: _highlightIndex,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const _EfficiencyCard(),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Riwayat Pembayaran',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _showFilterDialog,
-                icon: const Icon(Icons.filter_list_rounded),
-                label: Text(hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...filtered.map((p) => _TxTile(
-                payment: p,
-                onTap: () => _showPaymentDetail(context, p),
-              )),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonal(
-              onPressed: () {},
-              child: const Text('Muat Lebih Banyak'),
-            ),
+      appBar: AppBar(
+        title: const Text('Ringkasan Keuangan'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadFinanceData,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _loadFinanceData,
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadFinanceData,
+                  color: AppTheme.primaryGreen,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                    children: [
+                      Text(
+                        'Pantau performa bisnis kos Anda secara real-time.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: List.generate(
+                              tabs.length,
+                              (i) => Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: i == _tab
+                                          ? AppTheme.primaryGreen.withOpacity(0.14)
+                                          : Colors.transparent,
+                                      foregroundColor: i == _tab
+                                          ? AppTheme.primaryGreen
+                                          : Colors.grey.shade700,
+                                    ),
+                                    onPressed: () => setState(() => _tab = i),
+                                    child: Text(tabs[i]),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _MoneyCard(
+                        title: 'Total Pemasukan (paid)',
+                        value: _formatPrice(_totalPaid),
+                        delta: 'Semua kos terintegrasi database',
+                        icon: Icons.payments_rounded,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          _StatusSummaryChip(
+                            label: 'Lunas',
+                            count: _paidCount,
+                            color: AppTheme.primaryGreen,
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusSummaryChip(
+                            label: 'Tertunda',
+                            count: _unpaidCount,
+                            color: const Color(0xFFEF6C00),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusSummaryChip(
+                            label: 'Jatuh Tempo',
+                            count: _overdueCount,
+                            color: Colors.red,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Pendapatan vs Transaksi',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          TextButton(
+                            onPressed: _loadFinanceData,
+                            child: const Text('Refresh Grafik'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 350),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0.05, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: _DynamicChart(
+                          key: ValueKey(_tab),
+                          data: _chartData,
+                          highlightIndex: _highlightIndex,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _EfficiencyCard(
+                        efficiency: _occupancy['efficiency'] as int,
+                        occupied: _occupancy['occupied'] as int,
+                        total: _occupancy['total'] as int,
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Riwayat Pembayaran',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _showFilterDialog,
+                            icon: const Icon(Icons.filter_list_rounded),
+                            label: Text(hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (filtered.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Text(
+                                'Tidak ada riwayat transaksi yang cocok.',
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        ...filtered.map((p) => _TxTile(
+                              payment: p,
+                              onTap: () => _showPaymentDetail(context, p),
+                            )),
+                    ],
+                  ),
+                ),
     );
   }
 }
-
-// ── Grafik dinamis ─────────────────────────────────────────────────────────────
 
 class _DynamicChart extends StatelessWidget {
   const _DynamicChart({
@@ -593,7 +634,6 @@ class _DynamicChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Untuk bulan (12 item) gunakan scroll horizontal
     final isScrollable = data.length > 7;
 
     final bars = List.generate(data.length, (i) {
@@ -657,8 +697,6 @@ class _DynamicChart extends StatelessWidget {
   }
 }
 
-// ── Widgets pendukung (tidak berubah dari versi asli) ─────────────────────────
-
 class _StatusSummaryChip extends StatelessWidget {
   const _StatusSummaryChip({
     required this.label,
@@ -672,22 +710,24 @@ class _StatusSummaryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('$count',
-              style: TextStyle(
-                  fontWeight: FontWeight.w900, color: color, fontSize: 18)),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontSize: 12)),
-        ],
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('$count',
+                style: TextStyle(
+                    fontWeight: FontWeight.w900, color: color, fontSize: 16)),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }
@@ -716,9 +756,10 @@ class _TxTile extends StatelessWidget {
               Icon(Icons.account_balance_rounded, color: AppTheme.primaryGreen),
         ),
         title: Text(payment.tenantName,
-            style: const TextStyle(fontWeight: FontWeight.w800)),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
         subtitle: Text(
           'Kamar ${payment.roomNumber} • ${payment.kosTitle}\nPeriode: ${payment.periodMonth}',
+          style: const TextStyle(fontSize: 12),
         ),
         isThreeLine: true,
         trailing: Column(
@@ -730,7 +771,7 @@ class _TxTile extends StatelessWidget {
                   ? '+ ${_formatPrice(payment.amount)}'
                   : _formatPrice(payment.amount),
               style:
-                  TextStyle(color: status.color, fontWeight: FontWeight.w900),
+                  TextStyle(color: status.color, fontWeight: FontWeight.w900, fontSize: 13),
             ),
             const SizedBox(height: 4),
             Container(
@@ -743,7 +784,7 @@ class _TxTile extends StatelessWidget {
                 status.label,
                 style: TextStyle(
                     color: status.color,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700),
               ),
             ),
@@ -769,8 +810,8 @@ class _DetailRow extends StatelessWidget {
         children: [
           Text(label,
               style: TextStyle(
-                  color: Colors.grey.shade600, fontFamily: 'monospace')),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  color: Colors.grey.shade600, fontFamily: 'monospace', fontSize: 12)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         ],
       ),
     );
@@ -812,7 +853,7 @@ class _MoneyCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: Colors.grey.shade700)),
+                  Text(title, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
                   const SizedBox(height: 6),
                   Text(
                     value,
@@ -821,7 +862,7 @@ class _MoneyCard extends StatelessWidget {
                         ),
                   ),
                   const SizedBox(height: 4),
-                  Text(delta, style: TextStyle(color: Colors.grey.shade700)),
+                  Text(delta, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 ],
               ),
             ),
@@ -833,7 +874,15 @@ class _MoneyCard extends StatelessWidget {
 }
 
 class _EfficiencyCard extends StatelessWidget {
-  const _EfficiencyCard();
+  const _EfficiencyCard({
+    required this.efficiency,
+    required this.occupied,
+    required this.total,
+  });
+
+  final int efficiency;
+  final int occupied;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
@@ -857,10 +906,10 @@ class _EfficiencyCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
             ),
             alignment: Alignment.center,
-            child: const Text(
-              '85%',
+            child: Text(
+              '$efficiency%',
               style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -871,17 +920,17 @@ class _EfficiencyCard extends StatelessWidget {
                 const Text('Efisiensi Hunian',
                     style: TextStyle(color: Colors.white70)),
                 const SizedBox(height: 4),
-                const Text(
-                  'Sangat Baik',
-                  style: TextStyle(
+                Text(
+                  efficiency >= 80 ? 'Sangat Baik' : (efficiency >= 50 ? 'Cukup Baik' : 'Perlu Promosi'),
+                  style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
-                      fontSize: 18),
+                      fontSize: 17),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '17 dari 20 kamar terisi',
-                  style: TextStyle(color: Colors.white.withOpacity(0.9)),
+                  '$occupied dari $total kamar terisi',
+                  style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12),
                 ),
               ],
             ),

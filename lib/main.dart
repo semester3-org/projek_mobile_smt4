@@ -2,7 +2,6 @@ import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import 'app/app_theme.dart';
 import 'auth/auth_scope.dart';
@@ -15,7 +14,12 @@ import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  try {
+    await _ensureFirebaseInitialized();
+  } catch (error, stackTrace) {
+    _fcmLog('Firebase initialization failed before runApp: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   runApp(const KosFinderApp());
 
   _configureFirebaseMessaging();
@@ -100,7 +104,7 @@ void _handleForegroundRemoteMessage(RemoteMessage message) {
       backgroundColor: const Color(0xFFEAF4FF),
       leading: const Icon(
         Icons.notifications_active_outlined,
-        color: Color(0xFF005EA8),
+        color: Colors.black,
       ),
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

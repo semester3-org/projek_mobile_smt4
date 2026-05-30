@@ -35,6 +35,8 @@ class _MerchantListPageState extends State<MerchantListPage> {
   String _selectedFilter = 'Semua';
   String _selectedPackageCategory = 'Semua kategori';
   String _selectedDeliveryType = 'Semua tipe';
+  String _selectedLaundryPricingType = 'Semua tipe harga';
+  String _selectedLaundryDuration = 'Semua durasi';
   bool _locationUnavailable = false;
 
   bool get _isCatering => widget.type == 'catering';
@@ -59,22 +61,25 @@ class _MerchantListPageState extends State<MerchantListPage> {
         'Keduanya',
       ];
 
-  List<String> get _serviceCategoryFilters {
-    final categorySet = <String>{};
+  List<String> get _laundryPricingTypeOptions {
+    final typeSet = <String>{};
     for (final merchant in _merchants) {
-      for (final tag in merchant.tags) {
-        final normalized = tag.trim();
-        if (normalized.isEmpty) continue;
-        if (widget.filters.any(
-            (filter) => filter.toLowerCase() == normalized.toLowerCase())) {
-          continue;
-        }
-        categorySet.add(normalized);
+      for (final item in merchant.menuItems) {
+        final label = item.pricingTypeLabel.trim();
+        if (label.isNotEmpty) typeSet.add(label);
       }
     }
-    final categories = categorySet.toList()..sort();
-    return ['Semua', ...categories];
+    final sorted = typeSet.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return ['Semua tipe harga', ...sorted];
   }
+
+  List<String> get _laundryDurationOptions => const [
+        'Semua durasi',
+        '≤ 6 jam',
+        '1 hari',
+        '2+ hari',
+      ];
 
   @override
   void initState() {
@@ -89,7 +94,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
     super.dispose();
   }
 
-  Future<void> _load({bool silent = false}) async {
+  Future<void> _load({bool silent = false, bool forceRefresh = false}) async {
     if (!silent) {
       setState(() {
         _loading = true;
@@ -107,6 +112,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
       widget.type,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
+      forceRefresh: forceRefresh,
     );
     final favoriteKeys = await UserRepository.getFavoriteMerchantKeys();
     if (!mounted) return;
@@ -144,6 +150,8 @@ class _MerchantListPageState extends State<MerchantListPage> {
         if (!_matchesDeliveryType(merchant)) {
           return false;
         }
+      } else if (!_matchesLaundryFilters(merchant)) {
+        return false;
       }
 
       if (_selectedFilter == 'Semua' ||
@@ -195,6 +203,43 @@ class _MerchantListPageState extends State<MerchantListPage> {
       'Keduanya' => hasFullDay && hasWeekday,
       _ => true,
     };
+  }
+
+  bool _matchesLaundryFilters(UserMerchant merchant) {
+    final pricingType = _laundryPricingTypeOptions.contains(
+      _selectedLaundryPricingType,
+    )
+        ? _selectedLaundryPricingType
+        : 'Semua tipe harga';
+    final duration = _selectedLaundryDuration;
+
+    return merchant.menuItems.any((item) {
+      if (pricingType != 'Semua tipe harga' &&
+          item.pricingTypeLabel.toLowerCase() != pricingType.toLowerCase()) {
+        return false;
+      }
+      if (duration != 'Semua durasi' &&
+          !_matchesLaundryDuration(item.durationLabel, duration)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  bool _matchesLaundryDuration(String label, String filter) {
+    final lower = label.toLowerCase();
+    final value =
+        int.tryParse(RegExp(r'\d+').firstMatch(lower)?.group(0) ?? '');
+    if (filter == '≤ 6 jam') {
+      return lower.contains('jam') && value != null && value <= 6;
+    }
+    if (filter == '1 hari') {
+      return lower.contains('hari') && value == 1;
+    }
+    if (filter == '2+ hari') {
+      return lower.contains('hari') && value != null && value >= 2;
+    }
+    return true;
   }
 
   Future<void> _openDetail(UserMerchant merchant) async {
@@ -268,7 +313,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         color: UserTheme.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -317,28 +362,25 @@ class _MerchantListPageState extends State<MerchantListPage> {
                         setState(() => _selectedDeliveryType = value);
                       },
                     ),
-                  ] else if (_serviceCategoryFilters.length > 1) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Kategori Layanan',
-                      style: TextStyle(
-                        color: UserTheme.text,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: _serviceCategoryFilters.map((filter) {
-                          return UserFilterChip(
-                            label: filter,
-                            selected: _selectedFilter == filter,
-                            onTap: () =>
-                                setState(() => _selectedFilter = filter),
-                          );
-                        }).toList(),
-                      ),
+                  ] else ...[
+                    const SizedBox(height: 14),
+                    _LaundryServiceFilters(
+                      pricingTypes: _laundryPricingTypeOptions,
+                      durations: _laundryDurationOptions,
+                      selectedPricingType: _laundryPricingTypeOptions.contains(
+                        _selectedLaundryPricingType,
+                      )
+                          ? _selectedLaundryPricingType
+                          : 'Semua tipe harga',
+                      selectedDuration: _selectedLaundryDuration,
+                      onPricingChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _selectedLaundryPricingType = value);
+                      },
+                      onDurationChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _selectedLaundryDuration = value);
+                      },
                     ),
                   ],
                   const SizedBox(height: 22),
@@ -431,6 +473,81 @@ class _CateringPackageFilters extends StatelessWidget {
                   values: deliveryTypes,
                   icon: Icons.delivery_dining_outlined,
                   onChanged: onDeliveryTypeChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaundryServiceFilters extends StatelessWidget {
+  const _LaundryServiceFilters({
+    required this.pricingTypes,
+    required this.durations,
+    required this.selectedPricingType,
+    required this.selectedDuration,
+    required this.onPricingChanged,
+    required this.onDurationChanged,
+  });
+
+  final List<String> pricingTypes;
+  final List<String> durations;
+  final String selectedPricingType;
+  final String selectedDuration;
+  final ValueChanged<String?> onPricingChanged;
+  final ValueChanged<String?> onDurationChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8F2)),
+        boxShadow: [UserTheme.softShadow(opacity: 0.035)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                size: 19,
+                color: UserTheme.primary,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Filter Layanan',
+                style: TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _FilterDropdown(
+                  value: selectedPricingType,
+                  values: pricingTypes,
+                  icon: Icons.sell_outlined,
+                  onChanged: onPricingChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FilterDropdown(
+                  value: selectedDuration,
+                  values: durations,
+                  icon: Icons.schedule_outlined,
+                  onChanged: onDurationChanged,
                 ),
               ),
             ],

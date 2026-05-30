@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -112,7 +113,7 @@ class MerchantTopBar extends StatelessWidget {
   }
 }
 
-class _MerchantTopBarIconButton extends StatelessWidget {
+class _MerchantTopBarIconButton extends StatefulWidget {
   const _MerchantTopBarIconButton({
     required this.icon,
     required this.onPressed,
@@ -122,58 +123,102 @@ class _MerchantTopBarIconButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
+  State<_MerchantTopBarIconButton> createState() =>
+      _MerchantTopBarIconButtonState();
+}
+
+class _MerchantTopBarIconButtonState extends State<_MerchantTopBarIconButton> {
+  StreamSubscription<void>? _subscription;
+  int _unreadCount = 0;
+
+  bool get _isNotificationIcon =>
+      widget.icon == Icons.notifications_none_rounded;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isNotificationIcon) {
+      _loadCount();
+      _subscription = MerchantRepository.notificationCountChanges.listen((_) {
+        _loadCount();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _MerchantTopBarIconButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.icon != widget.icon) {
+      _subscription?.cancel();
+      _subscription = null;
+      _unreadCount = 0;
+      if (_isNotificationIcon) {
+        _loadCount();
+        _subscription = MerchantRepository.notificationCountChanges.listen((_) {
+          _loadCount();
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCount() async {
+    final count = await MerchantRepository.unreadNotificationCount();
+    if (!mounted) return;
+    setState(() => _unreadCount = count);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isNotificationIcon = icon == Icons.notifications_none_rounded;
-    if (!isNotificationIcon) {
+    if (!_isNotificationIcon) {
       return IconButton(
-        onPressed: onPressed,
-        color: MerchantPalette.primary,
-        icon: Icon(icon),
+        onPressed: widget.onPressed,
+        color: Colors.black,
+        icon: Icon(widget.icon),
       );
     }
 
-    return FutureBuilder<int>(
-      future: MerchantRepository.unreadNotificationCount(),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
-        return IconButton(
-          onPressed: onPressed,
-          color: MerchantPalette.primary,
-          icon: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(icon),
-              if (unreadCount > 0)
-                Positioned(
-                  right: -9,
-                  top: -8,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: MerchantPalette.danger,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    child: Text(
-                      unreadCount > 99 ? '99+' : unreadCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                      ),
-                    ),
+    return IconButton(
+      onPressed: widget.onPressed,
+      color: Colors.black,
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(widget.icon),
+          if (_unreadCount > 0)
+            Positioned(
+              right: -9,
+              top: -8,
+              child: Container(
+                constraints: const BoxConstraints(
+                  minWidth: 18,
+                  minHeight: 18,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: MerchantPalette.danger,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  _unreadCount > 99 ? '99+' : _unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -187,6 +232,7 @@ class MerchantPage extends StatelessWidget {
     this.floatingActionButton,
     this.bottomBar,
     this.scrollController,
+    this.onRefresh,
   });
 
   final Widget? topBar;
@@ -195,6 +241,7 @@ class MerchantPage extends StatelessWidget {
   final Widget? floatingActionButton;
   final Widget? bottomBar;
   final ScrollController? scrollController;
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -207,12 +254,17 @@ class MerchantPage extends StatelessWidget {
           children: [
             if (topBar != null) topBar!,
             Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: padding,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: children,
+              child: RefreshIndicator(
+                onRefresh: onRefresh ?? () async {},
+                notificationPredicate: (_) => onRefresh != null,
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: padding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: children,
+                  ),
                 ),
               ),
             ),

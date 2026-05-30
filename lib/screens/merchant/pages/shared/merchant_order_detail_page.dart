@@ -1164,6 +1164,22 @@ class _PaymentCard extends StatelessWidget {
               ? 'Menunggu pembayaran'
               : order.paymentStatusLabel,
         ),
+        if (order.paymentStatus.toLowerCase() == 'paid' &&
+            order.paidAt != null) ...[
+          const SizedBox(height: 12),
+          _PaymentMeta(
+            label: 'DIBAYAR PADA',
+            value: _formatDateTime(order.paidAt!),
+          ),
+        ],
+        if (order.midtransOrderId != null &&
+            order.midtransOrderId!.trim().isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _PaymentMeta(
+            label: 'REFERENSI MIDTRANS',
+            value: order.midtransOrderId!,
+          ),
+        ],
         const SizedBox(height: 12),
         _PaymentNotice(
           canApprove: order.canApprove,

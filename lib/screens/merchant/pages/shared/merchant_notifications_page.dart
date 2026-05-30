@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../auth/auth_scope.dart';
@@ -20,6 +22,7 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   bool _loading = true;
   String? _error;
   String _filter = 'semua';
+  StreamSubscription<void>? _notificationSubscription;
 
   static const _filters = [
     ('semua', 'Semua'),
@@ -31,13 +34,25 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   void initState() {
     super.initState();
     _load();
+    _notificationSubscription =
+        MerchantRepository.notificationCountChanges.listen((_) {
+      if (mounted) _load(silent: true);
+    });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getNotifications();
     if (!mounted) return;
     setState(() {
@@ -129,6 +144,7 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
         actionIcon: Icons.refresh_rounded,
         onAction: _load,
       ),
+      onRefresh: _load,
       children: [
         if (_loading)
           const Padding(
@@ -216,11 +232,10 @@ class _NotificationTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color:
-                    unread ? MerchantPalette.softBlue : const Color(0xFFF0F2F6),
+                color: const Color(0xFFF0F2F6),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: MerchantPalette.primary),
+              child: Icon(icon, color: Colors.black),
             ),
             const SizedBox(width: 14),
           ],

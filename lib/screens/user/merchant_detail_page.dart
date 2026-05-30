@@ -643,45 +643,31 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               const SizedBox(height: 10),
               _CateringDeliveryInfoBox(item: widget.item),
             ],
-            if (_showPromo) ...[
+            if (_showPromo &&
+                (widget.item.promoDescription ?? '').isNotEmpty) ...[
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
+              Text(
+                widget.item.promoDescription!,
+                style: const TextStyle(
                   color: UserTheme.primary,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  widget.item.promoLabel ?? 'PROMO',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
                 ),
               ),
-              if ((widget.item.promoDescription ?? '').isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  widget.item.promoDescription!,
-                  style: const TextStyle(
-                    color: UserTheme.primary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+            ],
+            if (_showPromo &&
+                _isCatering &&
+                _hasWeekdayPackage &&
+                _cateringDays == 20) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Catatan: promo dihitung berdasarkan paket Full Day (30 hari).',
+                style: TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 12,
+                  height: 1.3,
                 ),
-              ],
-              if (_isCatering && _hasWeekdayPackage && _cateringDays == 20) ...[
-                const SizedBox(height: 6),
-                const Text(
-                  'Catatan: promo dihitung berdasarkan paket Full Day (30 hari).',
-                  style: TextStyle(
-                    color: UserTheme.muted,
-                    fontSize: 12,
-                    height: 1.3,
-                  ),
-                ),
-              ],
+              ),
             ],
             const SizedBox(height: 14),
             Text(
@@ -1017,6 +1003,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               originalPrice: item.originalPrice,
               promoPrice: item.promoPrice,
               promoDiscountAmount: item.promoDiscountAmount,
+              promoDiscountType: item.promoDiscountType,
+              promoDiscountValue: item.promoDiscountValue,
               promoLabel: item.promoLabel,
               promoDescription: item.promoDescription,
               pricingType: item.pricingType,
@@ -1048,6 +1036,8 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         originalPrice: selected.originalPrice,
         promoPrice: selected.promoPrice,
         promoDiscountAmount: selected.promoDiscountAmount,
+        promoDiscountType: selected.promoDiscountType,
+        promoDiscountValue: selected.promoDiscountValue,
         promoLabel: selected.promoLabel,
         promoDescription: selected.promoDescription,
         pricingType: selected.pricingType,
@@ -2326,258 +2316,92 @@ class _MenuItemCardState extends State<_MenuItemCard> {
 
   Widget buildLaundryCard() {
     final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final percentBadge = _percentagePromoBadge(widget.item);
     return GestureDetector(
       onTap: widget.onOrder,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-        ),
-        child: Row(
-          children: [
-            UserImage(
-              url: widget.item.imageUrl,
-              icon: Icons.local_laundry_service_rounded,
-              width: 84,
-              height: 84,
-              borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (hasPromo)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: UserTheme.primary,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        widget.item.promoLabel ?? 'PROMO',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  Text(
-                    widget.item.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: UserTheme.text,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.item.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: UserTheme.muted),
-                  ),
-                  const SizedBox(height: 8),
-                  if (hasPromo) ...[
-                    Text(
-                      '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${widget.item.unit}',
-                      style: const TextStyle(
-                        color: UserTheme.muted,
-                        decoration: TextDecoration.lineThrough,
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}${widget.item.unit}',
-                      style: const TextStyle(
-                        color: UserTheme.primaryDark,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
-                    Text(
-                      'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
-                      style: const TextStyle(
-                        color: UserTheme.primary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ] else
-                    Text(
-                      '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
-                      style: const TextStyle(
-                        color: UserTheme.primaryDark,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            FilledButton(
-              onPressed: widget.onOrder,
-              style: FilledButton.styleFrom(
-                backgroundColor: UserTheme.primaryDark,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('Pesan'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildCateringCard() {
-    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
-    final basePrice = hasPromo
-        ? (widget.item.promoPrice ?? widget.item.price)
-        : widget.item.price;
-
-    return GestureDetector(
-      onTap: widget.onOrder,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            UserImage(
-              url: widget.item.imageUrl,
-              icon: Icons.restaurant_rounded,
-              width: double.infinity,
-              height: 180,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              widget.item.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: UserTheme.text,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Row(
               children: [
-                _ProductInfoChip(
-                  icon: Icons.star_rounded,
-                  label:
-                      '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
-                  color: const Color(0xFFFFB300),
+                UserImage(
+                  url: widget.item.imageUrl,
+                  icon: Icons.local_laundry_service_rounded,
+                  width: 84,
+                  height: 84,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                _ProductInfoChip(
-                  icon: Icons.delivery_dining_rounded,
-                  label: _cateringDeliveryFrequency(widget.item),
-                  color: UserTheme.primary,
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _CateringDeliveryInfoBox(item: widget.item),
-            if (hasPromo) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: UserTheme.primary,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  widget.item.promoLabel ?? 'PROMO',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              widget.item.description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: UserTheme.muted,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Harga',
-                        style: TextStyle(
-                          color: UserTheme.muted,
-                          fontSize: 12,
+                      Text(
+                        widget.item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: UserTheme.text,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${formatUserCurrency(basePrice)} / bulan',
-                        style: const TextStyle(
-                          color: UserTheme.primaryDark,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
+                        widget.item.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: UserTheme.muted),
                       ),
-                      if (hasPromo)
+                      const SizedBox(height: 8),
+                      if (hasPromo) ...[
                         Text(
-                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)} / bulan',
+                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${widget.item.unit}',
                           style: const TextStyle(
                             color: UserTheme.muted,
-                            fontSize: 12,
                             decoration: TextDecoration.lineThrough,
+                            fontSize: 12,
                           ),
                         ),
-                      if (hasPromo)
+                        Text(
+                          '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}${widget.item.unit}',
+                          style: const TextStyle(
+                            color: UserTheme.primaryDark,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
                         Text(
                           'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
                           style: const TextStyle(
                             color: UserTheme.primary,
-                            fontSize: 12,
                             fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ] else
+                        Text(
+                          '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
+                          style: const TextStyle(
+                            color: UserTheme.primaryDark,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
                           ),
                         ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 10),
                 FilledButton(
                   onPressed: widget.onOrder,
                   style: FilledButton.styleFrom(
-                    backgroundColor: UserTheme.primary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
+                    backgroundColor: UserTheme.primaryDark,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -2586,7 +2410,194 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 ),
               ],
             ),
-          ],
+          ),
+          if (percentBadge != null)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: _PromoCornerBadge(label: percentBadge),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildCateringCard() {
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final percentBadge = _percentagePromoBadge(widget.item);
+    final basePrice = hasPromo
+        ? (widget.item.promoPrice ?? widget.item.price)
+        : widget.item.price;
+
+    return GestureDetector(
+      onTap: widget.onOrder,
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                UserImage(
+                  url: widget.item.imageUrl,
+                  icon: Icons.restaurant_rounded,
+                  width: double.infinity,
+                  height: 180,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _ProductInfoChip(
+                      icon: Icons.star_rounded,
+                      label:
+                          '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                      color: const Color(0xFFFFB300),
+                    ),
+                    _ProductInfoChip(
+                      icon: Icons.delivery_dining_rounded,
+                      label: _cateringDeliveryFrequency(widget.item),
+                      color: UserTheme.primary,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _CateringDeliveryInfoBox(item: widget.item),
+                const SizedBox(height: 8),
+                Text(
+                  widget.item.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Harga',
+                            style: TextStyle(
+                              color: UserTheme.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${formatUserCurrency(basePrice)} / bulan',
+                            style: const TextStyle(
+                              color: UserTheme.primaryDark,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
+                          ),
+                          if (hasPromo)
+                            Text(
+                              '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)} / bulan',
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                fontSize: 12,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          if (hasPromo)
+                            Text(
+                              'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                              style: const TextStyle(
+                                color: UserTheme.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed: widget.onOrder,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: UserTheme.primary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Pesan'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (percentBadge != null)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _PromoCornerBadge(label: percentBadge),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String? _percentagePromoBadge(MerchantMenuItem item) {
+  if (!item.hasPromo || (item.promoPrice ?? 0) <= 0) return null;
+  if ((item.promoDiscountType ?? '').toLowerCase() != 'percentage') return null;
+  final value = item.promoDiscountValue ?? 0;
+  if (value <= 0) return null;
+  final text = value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '-$text%';
+}
+
+class _PromoCornerBadge extends StatelessWidget {
+  const _PromoCornerBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE11D48),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [UserTheme.softShadow(opacity: 0.08)],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );

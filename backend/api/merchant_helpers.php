@@ -346,6 +346,15 @@ function merchantEnsureSchema(mysqli $conn): void {
 
     merchantAddColumn($conn, 'merchant_promos', 'per_user_usage_limit', "`per_user_usage_limit` INT DEFAULT 1");
     merchantAddColumn($conn, 'merchant_promos', 'status', "`status` VARCHAR(20) NOT NULL DEFAULT 'draft'");
+    merchantAddColumn($conn, 'merchant_promos', 'first_broadcast_at', "`first_broadcast_at` DATETIME DEFAULT NULL");
+    if (merchantColumnExists($conn, 'merchant_promos', 'first_broadcast_at')) {
+        $conn->query("
+            UPDATE merchant_promos
+            SET first_broadcast_at = COALESCE(created_at, NOW())
+            WHERE first_broadcast_at IS NULL
+              AND status <> 'draft'
+        ");
+    }
 
     if (!merchantTableExists($conn, 'merchant_promo_products')) {
         $conn->query("
@@ -2013,6 +2022,7 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
             (float)($row['total_harga'] ?? 0),
             $serviceType
         ),
+        'paidAt' => !empty($row['paid_at']) ? date(DATE_ATOM, strtotime((string)$row['paid_at'])) : null,
         'serviceEstimateLabel' => $serviceType === 'laundry'
             ? (string)($row['estimated_time'] ?? '')
             : '',
@@ -2254,11 +2264,9 @@ function merchantExpirePromos(mysqli $conn, ?string $merchantId = null): void {
           AND status <> 'expired'
     ");
     
-    $conn->query("
-        UPDATE merchant_promos
-        SET status = 'active',
-            is_active = 1,
-            updated_at = NOW()
+    $toLaunch = $conn->query("
+        SELECT id, merchant_id, name, description, first_broadcast_at
+        FROM merchant_promos
         WHERE status = 'draft'
           AND start_at IS NOT NULL
           AND start_at <= NOW()
@@ -2266,6 +2274,49 @@ function merchantExpirePromos(mysqli $conn, ?string $merchantId = null): void {
           AND discount_value > 0
           AND name != '' AND name != 'Draft Promo'
     ");
+    if (!$toLaunch) return;
+
+    while ($promo = $toLaunch->fetch_assoc()) {
+        $promoId = (int)($promo['id'] ?? 0);
+        $merchantIdValue = (string)($promo['merchant_id'] ?? '');
+        $conn->query("
+            UPDATE merchant_promos
+            SET status = 'active',
+                is_active = 1,
+                updated_at = NOW()
+            WHERE id = {$promoId}
+        ");
+
+        if ($promoId <= 0 || !empty($promo['first_broadcast_at'])) {
+            continue;
+        }
+
+        $users = $conn->query("SELECT id FROM users WHERE role = 'user'");
+        $promoTitle = trim((string)($promo['name'] ?? 'Promo baru'));
+        $promoMessage = trim((string)($promo['description'] ?? ''));
+        if ($promoMessage === '') {
+            $promoMessage = 'Promo baru tersedia untuk Anda.';
+        }
+        if ($users) {
+            while ($user = $users->fetch_assoc()) {
+                merchantCreateNotification(
+                    $conn,
+                    (string)$user['id'],
+                    $promoTitle,
+                    $promoMessage,
+                    'promo',
+                    'Lihat Promo',
+                    'promo:' . $merchantIdValue,
+                    'high'
+                );
+            }
+        }
+        $conn->query("
+            UPDATE merchant_promos
+            SET first_broadcast_at = COALESCE(first_broadcast_at, NOW())
+            WHERE id = {$promoId}
+        ");
+    }
 }
 
 

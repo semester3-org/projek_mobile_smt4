@@ -242,12 +242,13 @@ try {
 
         $wasActiveBeforeUpdate = false;
         $wasExpiredBeforeUpdate = false;
+        $hasBroadcastedBefore = false;
         if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             $prev = $conn->prepare("
                 SELECT is_active, status, start_at, end_at, product_id,
                        used_count,
                        discount_type, discount_value, max_discount_amount,
-                       per_user_usage_limit
+                       per_user_usage_limit, first_broadcast_at
                 FROM merchant_promos
                 WHERE id = ? AND merchant_id = ?
                 LIMIT 1
@@ -264,6 +265,7 @@ try {
                     $wasActiveBeforeUpdate = (int)($prevRow['is_active'] ?? 0) === 1
                         && (!$prevStartAt || strtotime((string)$prevStartAt) <= $now)
                         && (!$prevEndAt || strtotime((string)$prevEndAt) >= $now);
+                    $hasBroadcastedBefore = !empty($prevRow['first_broadcast_at']);
                     $prevStatus = strtolower(trim((string)($prevRow['status'] ?? '')));
                     $wasExpiredBeforeUpdate = $prevStatus === 'expired'
                         || ($prevEndAt && strtotime((string)$prevEndAt) < $now);
@@ -419,9 +421,8 @@ try {
             }
         }
 
-        $shouldBroadcastPromo = $_SERVER['REQUEST_METHOD'] === 'POST'
-            ? $promo['status'] === 'active'
-            : (!$wasActiveBeforeUpdate && $promo['status'] === 'active');
+        $shouldBroadcastPromo = $promo['status'] === 'active'
+            && ($_SERVER['REQUEST_METHOD'] === 'POST' || !$hasBroadcastedBefore);
         if ($shouldBroadcastPromo) {
             $users = $conn->query("SELECT id FROM users WHERE role = 'user'");
             $promoTitle = $name !== '' ? $name : 'Promo baru';
@@ -441,6 +442,16 @@ try {
                         'high'
                     );
                 }
+            }
+            $broadcastStmt = $conn->prepare("
+                UPDATE merchant_promos
+                SET first_broadcast_at = COALESCE(first_broadcast_at, NOW())
+                WHERE id = ? AND merchant_id = ?
+            ");
+            if ($broadcastStmt) {
+                $broadcastStmt->bind_param('ss', $id, $merchantId);
+                $broadcastStmt->execute();
+                $broadcastStmt->close();
             }
         }
 

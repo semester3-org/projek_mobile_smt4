@@ -86,9 +86,17 @@ try {
         $reviews = $reviewStmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $reviewStmt->close();
 
+        if ($ratingFilter > 0 && empty($reviews)) {
+            continue;
+        }
+
         $productPayload = merchantProductPayload($product);
-        $productPayload['rating'] = (float)($merchantRatingSummary['rating'] ?? 0);
-        $productPayload['reviewCount'] = (int)($merchantRatingSummary['reviewCount'] ?? 0);
+        $productPayload['rating'] = isset($product['rating'])
+            ? round((float)$product['rating'], 1)
+            : 0.0;
+        $productPayload['reviewCount'] = (int)($product['review_count'] ?? 0);
+        $productPayload['merchantRating'] = (float)($merchantRatingSummary['rating'] ?? 0);
+        $productPayload['merchantReviewCount'] = (int)($merchantRatingSummary['reviewCount'] ?? 0);
 
         $data[] = [
             'product' => $productPayload,

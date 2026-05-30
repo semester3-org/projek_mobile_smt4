@@ -68,6 +68,8 @@ class MerchantMenuItem {
     this.originalPrice,
     this.promoPrice,
     this.promoDiscountAmount,
+    this.promoDiscountType,
+    this.promoDiscountValue,
     this.promoLabel,
     this.promoDescription,
     this.pricingType = '',
@@ -99,6 +101,8 @@ class MerchantMenuItem {
   final double? originalPrice;
   final double? promoPrice;
   final double? promoDiscountAmount;
+  final String? promoDiscountType;
+  final double? promoDiscountValue;
   final String? promoLabel;
   final String? promoDescription;
   final String pricingType;
@@ -147,6 +151,8 @@ class MerchantMenuItem {
       originalPrice: (json['originalPrice'] as num?)?.toDouble(),
       promoPrice: (json['promoPrice'] as num?)?.toDouble(),
       promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
+      promoDiscountType: json['promoDiscountType'] as String?,
+      promoDiscountValue: (json['promoDiscountValue'] as num?)?.toDouble(),
       promoLabel: json['promoLabel'] as String?,
       promoDescription: json['promoDescription'] as String?,
       pricingType: json['pricingType'] as String? ?? '',
@@ -183,6 +189,8 @@ class MerchantMenuItem {
       'originalPrice': originalPrice,
       'promoPrice': promoPrice,
       'promoDiscountAmount': promoDiscountAmount,
+      'promoDiscountType': promoDiscountType,
+      'promoDiscountValue': promoDiscountValue,
       'promoLabel': promoLabel,
       'promoDescription': promoDescription,
       'pricingType': pricingType,

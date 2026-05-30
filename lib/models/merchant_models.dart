@@ -186,6 +186,7 @@ class MerchantOrder {
     required this.paymentMethodLabel,
     required this.paymentStatus,
     required this.paymentStatusLabel,
+    this.paidAt,
     required this.serviceEstimateLabel,
     required this.canApprove,
     required this.notes,
@@ -227,6 +228,7 @@ class MerchantOrder {
   final String paymentMethodLabel;
   final String paymentStatus;
   final String paymentStatusLabel;
+  final DateTime? paidAt;
   final String serviceEstimateLabel;
   final bool canApprove;
   final String notes;
@@ -287,6 +289,11 @@ class MerchantOrder {
       paymentMethodLabel: json['paymentMethodLabel'] as String? ?? '',
       paymentStatus: json['paymentStatus'] as String? ?? '',
       paymentStatusLabel: json['paymentStatusLabel'] as String? ?? '',
+      paidAt: IndonesiaTime.tryParse(
+        json['paidAt'],
+        address: deliveryAddress,
+        longitude: deliveryLongitude,
+      ),
       serviceEstimateLabel: json['serviceEstimateLabel'] as String? ?? '',
       canApprove: json['canApprove'] as bool? ?? true,
       notes: json['notes'] as String? ?? '',

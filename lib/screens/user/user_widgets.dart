@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/user_repository.dart';
@@ -122,7 +124,7 @@ class RatingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
+        color: Colors.white.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(999),
         boxShadow: [UserTheme.softShadow(opacity: 0.08)],
       ),
@@ -157,7 +159,7 @@ class UserTag extends StatelessWidget {
       margin: const EdgeInsets.only(right: 8, bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -279,7 +281,7 @@ class UserBottomSpacer extends StatelessWidget {
   }
 }
 
-class UserNotificationIconButton extends StatelessWidget {
+class UserNotificationIconButton extends StatefulWidget {
   const UserNotificationIconButton({
     super.key,
     required this.onPressed,
@@ -290,48 +292,74 @@ class UserNotificationIconButton extends StatelessWidget {
   final Color? color;
 
   @override
+  State<UserNotificationIconButton> createState() =>
+      _UserNotificationIconButtonState();
+}
+
+class _UserNotificationIconButtonState
+    extends State<UserNotificationIconButton> {
+  StreamSubscription<void>? _subscription;
+  int _unreadCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCount();
+    _subscription = UserRepository.notificationCountChanges.listen((_) {
+      _loadCount();
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCount() async {
+    final count = await UserRepository.unreadNotificationCount();
+    if (!mounted) return;
+    setState(() => _unreadCount = count);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<int>(
-      future: UserRepository.unreadNotificationCount(),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
-        return IconButton(
-          onPressed: onPressed,
-          icon: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(Icons.notifications_none_rounded, color: color),
-              if (unreadCount > 0)
-                Positioned(
-                  right: -9,
-                  top: -8,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: UserTheme.danger,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    child: Text(
-                      unreadCount > 99 ? '99+' : unreadCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                      ),
-                    ),
+    const iconColor = Colors.black;
+    return IconButton(
+      onPressed: widget.onPressed,
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(Icons.notifications_none_rounded, color: iconColor),
+          if (_unreadCount > 0)
+            Positioned(
+              right: -9,
+              top: -8,
+              child: Container(
+                constraints: const BoxConstraints(
+                  minWidth: 18,
+                  minHeight: 18,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: UserTheme.danger,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  _unreadCount > 99 ? '99+' : _unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

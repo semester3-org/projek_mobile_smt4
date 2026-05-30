@@ -20,16 +20,27 @@ class UserRepository {
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
   static const Duration _merchantListCacheTtl = Duration(seconds: 25);
-  static const Duration _notificationCountCacheTtl = Duration(seconds: 20);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
   static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
   static int? _unreadNotificationCountCache;
   static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();
 
   static Stream<void> get profileRefreshRequests =>
       _profileRefreshController.stream;
+
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
 
   static void requestProfileRefresh() {
     if (!_profileRefreshController.isClosed) {
@@ -58,15 +69,17 @@ class UserRepository {
     String type, {
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
     final cacheKey = _merchantListCacheKey(type, latitude, longitude);
     final cached = _merchantListCache[cacheKey];
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         DateTime.now().difference(cached.createdAt) < _merchantListCacheTtl) {
       return RepoResult.ok(List<UserMerchant>.of(cached.items));
     }
 
-    final params = {'type': type};
+    final params = {'type': type, 'summary': '1'};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
       params['lng'] = longitude.toString();
@@ -450,8 +463,12 @@ class UserRepository {
 
   static Future<RepoResult<List<AppNotification>>> getNotifications({
     bool allowFallback = true,
+    int limit = 30,
   }) async {
-    final res = await ApiService.get('api/user_notifications');
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
 
     if (!res.success) {
       return allowFallback
@@ -481,6 +498,7 @@ class UserRepository {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
     _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -493,11 +511,18 @@ class UserRepository {
     }
     _unreadNotificationCountCache = 0;
     _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
     return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
   }
 
   static Future<int> unreadNotificationCount() async {
@@ -508,10 +533,14 @@ class UserRepository {
         DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
       return cached;
     }
-    final result = await getNotifications(allowFallback: false);
-    final count = (result.data ?? const <AppNotification>[])
-        .where((notification) => notification.isUnread)
-        .length;
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
     _unreadNotificationCountCache = count;
     _unreadNotificationCountCachedAt = DateTime.now();
     return count;

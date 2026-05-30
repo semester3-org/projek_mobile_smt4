@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/api_service.dart';
 import '../../models/catering_package_category.dart';
 import '../../models/catering_subscriber.dart';
@@ -9,11 +11,22 @@ class MerchantRepository {
   MerchantRepository._();
 
   static const Duration _shortCacheTtl = Duration(seconds: 3);
-  static const Duration _notificationCountCacheTtl = Duration(seconds: 20);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
   static _DashboardCacheEntry? _dashboardCache;
   static final Map<String, _MerchantOrdersCacheEntry> _ordersCache = {};
   static int? _unreadNotificationCountCache;
   static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
+
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
 
   static Future<RepoResult<MerchantDashboard>> getDashboard() async {
     final cached = _dashboardCache;
@@ -454,9 +467,13 @@ class MerchantRepository {
     }
   }
 
-  static Future<RepoResult<List<MerchantNotification>>>
-      getNotifications() async {
-    final res = await ApiService.get('api/merchant_notifications');
+  static Future<RepoResult<List<MerchantNotification>>> getNotifications({
+    int limit = 30,
+  }) async {
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memuat notifikasi');
     }
@@ -480,6 +497,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
     _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -492,11 +510,18 @@ class MerchantRepository {
     }
     _unreadNotificationCountCache = 0;
     _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
     return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
   }
 
   static Future<int> unreadNotificationCount() async {
@@ -507,10 +532,14 @@ class MerchantRepository {
         DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
       return cached;
     }
-    final result = await getNotifications();
-    final count = (result.data ?? const <MerchantNotification>[])
-        .where((item) => item.isUnread)
-        .length;
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
     _unreadNotificationCountCache = count;
     _unreadNotificationCountCachedAt = DateTime.now();
     return count;

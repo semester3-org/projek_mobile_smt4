@@ -39,7 +39,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://10.0.2.2:8000';
+      return 'http://10.205.144.61:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {
@@ -187,7 +187,7 @@ class ApiService {
     String? photoUrl,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/login-google'),
             headers: _publicHeaders,
@@ -200,7 +200,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -225,7 +228,9 @@ class ApiService {
         'success': data['success'] == true,
         'data': data['data'],
         'message': data['message'] ??
-            (data['success'] == true ? 'Login Google berhasil' : 'Login Google gagal'),
+            (data['success'] == true
+                ? 'Login Google berhasil'
+                : 'Login Google gagal'),
       };
     } on SocketException {
       return {

@@ -103,7 +103,7 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
     return [];
 }
 
-function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true, ?string $userId = null): array {
+function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true, ?string $userId = null, bool $summaryOnly = false): array {
     if (!merchantTableExists($conn, 'products')) {
         return userMerchantFallbackMenu($type, $merchantId);
     }
@@ -130,6 +130,9 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     if (empty($rows)) return [];
+    if ($summaryOnly && count($rows) > 8) {
+        $rows = array_slice($rows, 0, 8);
+    }
     $hasPromoTable = $includePromos && merchantTableExists($conn, 'merchant_promos');
     $userId = trim((string)$userId);
     return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable, $userId) {
@@ -169,7 +172,13 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
             'hasPromo' => $promoDiscount > 0,
             'promoPrice' => $promoDiscount > 0 ? $promoPrice : null,
             'promoDiscountAmount' => $promoDiscount > 0 ? $promoDiscount : null,
-            'promoLabel' => $promoDiscount > 0 ? 'PROMO' : null,
+            'promoDiscountType' => $promoDiscount > 0 ? (string)($promoRow['discount_type'] ?? '') : null,
+            'promoDiscountValue' => $promoDiscount > 0 ? (float)($promoRow['discount_value'] ?? 0) : null,
+            'promoLabel' => $promoDiscount > 0
+                ? (((string)($promoRow['discount_type'] ?? '') === 'percentage')
+                    ? (rtrim(rtrim(number_format((float)($promoRow['discount_value'] ?? 0), 1, '.', ''), '0'), '.') . '%')
+                    : 'PROMO')
+                : null,
             'promoDescription' => $promoDiscount > 0 ? (string)($promoRow['name'] ?? 'Promo aktif') : null,
         ];
         if ($type === 'catering') {
@@ -288,7 +297,7 @@ function userMerchantRowCoords(array $row): array {
     return [$lat, $lng];
 }
 
-function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng, bool $includeDetail = false, ?string $userId = null): array {
+function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $userLat, ?float $userLng, bool $includeDetail = false, ?string $userId = null, bool $summaryOnly = false): array {
     $merchantId = (string)($row['merchant_id'] ?? $row['id']);
     $placeId = (string)($row['place_id'] ?? $merchantId);
     $summary = [
@@ -301,7 +310,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : (float)($row['place_rating'] ?? 0);
     $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
     $menu = $merchantId !== ''
-        ? userMerchantMenu($conn, $type, $merchantId, $includeDetail, $userId)
+        ? userMerchantMenu($conn, $type, $merchantId, $includeDetail, $userId, $summaryOnly)
         : userMerchantFallbackMenu($type, $placeId);
     $minPrice = 0;
     foreach ($menu as $item) {
@@ -446,6 +455,7 @@ try {
         merchantSendJson(false, null, 'Tipe merchant tidak tersedia', 400);
     }
     $id = trim($_GET['id'] ?? '');
+    $summaryOnly = !empty($_GET['summary']) && $id === '';
     $userLat = isset($_GET['lat']) && $_GET['lat'] !== '' ? (float)$_GET['lat'] : null;
     $userLng = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
     $payload = merchantRequireAuth();
@@ -527,7 +537,7 @@ try {
         if ($dedupeKey !== '') {
             $seenMerchantIds[$dedupeKey] = true;
         }
-        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '', $userId);
+        $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '', $userId, $summaryOnly);
     }
     if (empty($data)) {
         $data = userMerchantFallback($type);

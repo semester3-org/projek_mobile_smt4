@@ -56,6 +56,7 @@ class _MerchantProductReviewsPageState
         showAvatar: false,
         showBack: true,
       ),
+      onRefresh: _load,
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
       children: [
         const Text(
@@ -272,8 +273,8 @@ class _ProductReviewCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               product.reviewCount > 0
-                                  ? 'Rating toko ${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
-                                  : 'Belum ada rating toko',
+                                  ? 'Rating produk ${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
+                                  : 'Belum ada rating produk',
                               style: const TextStyle(
                                 color: MerchantPalette.muted,
                                 fontWeight: FontWeight.w800,

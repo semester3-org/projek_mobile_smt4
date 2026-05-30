@@ -21,33 +21,49 @@ class UserOrderDetailPage extends StatefulWidget {
   State<UserOrderDetailPage> createState() => _UserOrderDetailPageState();
 }
 
-class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
+class _UserOrderDetailPageState extends State<UserOrderDetailPage>
+    with WidgetsBindingObserver {
   late Order _order;
   bool _confirmingPayment = false;
   bool _openingPayment = false;
-  bool _syncingPayment = false;
+  bool _autoSyncingPayment = false;
+  bool _paymentSuccessShown = false;
   bool _cancellingSubscription = false;
   bool _extendingSubscription = false;
   bool _cancellingOrder = false;
   bool _loadingReceipt = false;
+  Timer? _paymentAutoRefreshTimer;
+  int _paymentAutoRefreshAttempts = 0;
 
   @override
   void initState() {
     super.initState();
     _order = widget.order;
+    WidgetsBinding.instance.addObserver(this);
 
     // Use RealtimeService untuk real-time order updates
     RealtimeService().startUserOrderPolling();
     RealtimeService().addEventListener('order_status_updated', _refreshOrder);
+    _maybeStartPaymentAutoRefresh();
   }
 
   @override
   void dispose() {
+    _paymentAutoRefreshTimer?.cancel();
     // Stop real-time polling dan remove listeners
     RealtimeService()
         .removeEventListener('order_status_updated', _refreshOrder);
     RealtimeService().stopUserOrderPolling();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshOrder());
+      unawaited(_syncPaymentStatusSilently());
+    }
   }
 
   Future<void> _refreshOrder() async {
@@ -55,6 +71,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
     final result = await UserRepository.getOrderDetail(id);
     if (!mounted || result.data == null) return;
     setState(() => _order = result.data!);
+    _maybeStartPaymentAutoRefresh();
   }
 
   Future<void> _confirmPayment() async {
@@ -123,6 +140,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       return;
     }
     if (midtransOrderId.isNotEmpty) {
+      _maybeStartPaymentAutoRefresh();
       await _pollOrderPaymentStatus(midtransOrderId);
     } else {
       await _refreshOrder();
@@ -140,6 +158,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
       await _refreshOrder();
       if (!mounted) return;
       if (_order.isPaid) {
+        _paymentSuccessShown = true;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Pembayaran berhasil. Status pesanan diperbarui.'),
@@ -245,26 +264,62 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
     return 'Bayar ${PaymentMethodHelper.getDisplayName(method)}';
   }
 
-  Future<void> _syncPaymentStatus() async {
+  bool get _shouldAutoSyncPayment {
+    final payment = (_order.paymentStatus ?? '').toLowerCase();
+    final merchant = (_order.merchantStatus ?? '').toLowerCase();
+    final completed = _order.status == 'completed' ||
+        merchant == 'done' ||
+        merchant == 'completed';
+    return (_order.midtransOrderId ?? '').isNotEmpty &&
+        !_order.isCashOnDelivery &&
+        !_order.isPaid &&
+        _order.totalAmount > 0 &&
+        !completed &&
+        payment != 'cancelled';
+  }
+
+  void _maybeStartPaymentAutoRefresh() {
+    if (!_shouldAutoSyncPayment) {
+      _paymentAutoRefreshTimer?.cancel();
+      _paymentAutoRefreshTimer = null;
+      return;
+    }
+    if (_paymentAutoRefreshTimer != null) return;
+    _paymentAutoRefreshAttempts = 0;
+    _paymentAutoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_paymentAutoRefreshAttempts >= 24) {
+        _paymentAutoRefreshTimer?.cancel();
+        _paymentAutoRefreshTimer = null;
+        return;
+      }
+      _paymentAutoRefreshAttempts++;
+      unawaited(_syncPaymentStatusSilently());
+    });
+    unawaited(_syncPaymentStatusSilently());
+  }
+
+  Future<void> _syncPaymentStatusSilently() async {
+    if (!_shouldAutoSyncPayment || _autoSyncingPayment) return;
     final midtransOrderId = _order.midtransOrderId ?? '';
     if (midtransOrderId.isEmpty) return;
-    setState(() => _syncingPayment = true);
-    final result = await UserRepository.syncOrderMidtransStatus(
-      midtransOrderId: midtransOrderId,
-    );
-    if (!mounted) return;
-    setState(() => _syncingPayment = false);
-    await _refreshOrder();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.isSuccess
-              ? 'Status pembayaran diperbarui'
-              : result.error ?? 'Gagal mengecek status pembayaran',
-        ),
-      ),
-    );
+    _autoSyncingPayment = true;
+    try {
+      await UserRepository.syncOrderMidtransStatus(
+        midtransOrderId: midtransOrderId,
+      );
+      await _refreshOrder();
+      if (!mounted) return;
+      if (_order.isPaid && !_paymentSuccessShown) {
+        _paymentSuccessShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pembayaran berhasil. Status pesanan diperbarui.'),
+          ),
+        );
+      }
+    } finally {
+      _autoSyncingPayment = false;
+    }
   }
 
   Future<void> _cancelOrder() async {
@@ -588,20 +643,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage> {
           if ((order.midtransOrderId ?? '').isNotEmpty &&
               !order.isPaid &&
               !order.isCashOnDelivery) ...[
-            OutlinedButton.icon(
-              onPressed: _syncingPayment ? null : _syncPaymentStatus,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: UserTheme.primaryDark,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(
-                _syncingPayment ? 'Mengecek...' : 'Cek Status Pembayaran',
-              ),
-            ),
+            const _PaymentAutoRefreshNotice(),
           ] else if (!_canPayViaMidtrans && !_canConfirmManualPayment)
             _PaymentStatusNotice(order: order),
           const SizedBox(height: 12),
@@ -1557,6 +1599,43 @@ class _PaymentStatusNotice extends StatelessWidget {
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentAutoRefreshNotice extends StatelessWidget {
+  const _PaymentAutoRefreshNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF7FF),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFFD2EAFF)),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Status pembayaran dicek otomatis. Setelah transaksi berhasil, pesanan langsung diperbarui.',
+              style: TextStyle(
+                color: UserTheme.primaryDark,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
               ),
             ),
           ),

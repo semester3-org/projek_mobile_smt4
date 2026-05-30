@@ -22,6 +22,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
   List<MerchantProduct> _products = [];
   bool _loading = true;
   String? _error;
+  String _selectedFilter = 'Semua';
 
   @override
   void initState() {
@@ -56,9 +57,38 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
     _load();
   }
 
+  List<String> get _filterLabels {
+    if (!widget.isLaundry) {
+      return const ['Semua', 'Full Day', 'Weekday', 'Promo aktif'];
+    }
+    return const ['Semua', 'Per Kg', 'Per Item', 'Flat Price', 'Promo aktif'];
+  }
+
+  List<MerchantProduct> get _visibleProducts {
+    if (_selectedFilter == 'Semua') return _products;
+    if (_selectedFilter == 'Promo aktif') {
+      return _products.where((product) => product.hasActivePromo).toList();
+    }
+    if (widget.isLaundry) {
+      return _products
+          .where((product) =>
+              product.pricingTypeLabel.toLowerCase() ==
+              _selectedFilter.toLowerCase())
+          .toList();
+    }
+    if (_selectedFilter == 'Weekday') {
+      return _products
+          .where((product) =>
+              product.price20Days != null && product.price20Days! > 0)
+          .toList();
+    }
+    return _products;
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = widget.isLaundry ? 'Kelola Layanan' : 'Kelola Paket Menu';
+    final visibleProducts = _visibleProducts;
     return MerchantPage(
       topBar: MerchantTopBar(
         title: 'MerchantHub',
@@ -73,6 +103,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         onPressed: () => _openEdit(),
         child: const Icon(Icons.add_rounded),
       ),
+      onRefresh: _load,
       children: [
         Text(
           title,
@@ -128,6 +159,16 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           ),
         ),
         const SizedBox(height: 24),
+        MerchantFilterChips(
+          labels: _filterLabels,
+          selectedIndex: !_filterLabels.contains(_selectedFilter)
+              ? 0
+              : _filterLabels.indexOf(_selectedFilter),
+          onSelected: (index) {
+            setState(() => _selectedFilter = _filterLabels[index]);
+          },
+        ),
+        const SizedBox(height: 18),
         if (_loading)
           const Padding(
             padding: EdgeInsets.only(top: 80),
@@ -152,8 +193,15 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
                 : 'Tambah Paket Menu Baru',
             onTap: () => _openEdit(),
           )
+        else if (visibleProducts.isEmpty)
+          MerchantCard(
+            child: Text(
+              'Tidak ada item untuk filter $_selectedFilter.',
+              style: const TextStyle(color: MerchantPalette.muted),
+            ),
+          )
         else ...[
-          ..._products.map(
+          ...visibleProducts.map(
             (product) => Padding(
               padding: const EdgeInsets.only(bottom: 22),
               child: _ProductCard(

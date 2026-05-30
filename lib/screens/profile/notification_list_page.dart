@@ -23,6 +23,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
   bool _loading = true;
   String _filter = 'semua';
   Timer? _clockTimer;
+  StreamSubscription<void>? _notificationSubscription;
 
   static const _filters = [
     ('semua', 'Semua'),
@@ -37,11 +38,16 @@ class _NotificationListPageState extends State<NotificationListPage> {
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
+    _notificationSubscription =
+        UserRepository.notificationCountChanges.listen((_) {
+      if (mounted) _load(silent: true);
+    });
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -303,7 +309,6 @@ class _NotificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _typeColor(notification.type);
     final isNew = notification.isNew;
     final icon = _typeIcon(notification);
     final title = _displayTitle(notification);
@@ -327,10 +332,10 @@ class _NotificationCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.11),
+                  color: const Color(0xFFF1F3F6),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: color),
+                child: Icon(icon, color: Colors.black),
               ),
               const SizedBox(width: 18),
             ],
@@ -381,25 +386,6 @@ class _NotificationCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Color _typeColor(String type) {
-    switch (type) {
-      case 'payment':
-        return UserTheme.success;
-      case 'catering':
-        return const Color(0xFFFF3B30);
-      case 'laundry':
-        return const Color(0xFF8A3FFC);
-      case 'order':
-        return UserTheme.primaryDark;
-      case 'room':
-        return UserTheme.primary;
-      case 'promo':
-        return const Color(0xFFE58500);
-      default:
-        return UserTheme.muted;
-    }
   }
 
   IconData? _typeIcon(AppNotification notification) {

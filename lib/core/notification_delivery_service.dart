@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../auth/roles.dart';
+import '../data/repositories/merchant_repository.dart';
 import '../data/repositories/user_repository.dart';
 import '../models/notification.dart';
 import '../screens/merchant/pages/shared/merchant_notifications_page.dart';
@@ -49,7 +50,7 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     _sendPresence(true);
     _pollNotifications();
     _pollTimer = Timer.periodic(
-      const Duration(seconds: 18),
+      const Duration(seconds: 10),
       (_) => _pollNotifications(),
     );
     _presenceTimer = Timer.periodic(
@@ -124,8 +125,8 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     _polling = true;
 
     try {
-      final result =
-          await UserRepository.getNotifications(allowFallback: false);
+      final result = await UserRepository.getNotifications(
+          allowFallback: false, limit: 20);
       if (!result.isSuccess) return;
       final notifications = result.data ?? const <AppNotification>[];
 
@@ -140,6 +141,11 @@ class NotificationDeliveryService with WidgetsBindingObserver {
       }).toList();
 
       _knownNotificationIds.addAll(notifications.map((item) => item.id));
+
+      if (newestFirst.isNotEmpty) {
+        UserRepository.invalidateNotificationCountCache();
+        MerchantRepository.invalidateNotificationCountCache();
+      }
 
       for (final notification in newestFirst.reversed) {
         if (_shouldShowInAppAlert(notification)) {
@@ -184,11 +190,11 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     messenger.hideCurrentMaterialBanner();
     messenger.showMaterialBanner(
       MaterialBanner(
-        backgroundColor: const Color(0xFFEAF4FF),
+        backgroundColor: Colors.white,
         elevation: 1,
         leading: Icon(
           _iconFor(notification.type),
-          color: const Color(0xFF005EA8),
+          color: Colors.black,
         ),
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

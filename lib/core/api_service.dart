@@ -42,7 +42,11 @@ class ApiService {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
+<<<<<<< HEAD
       return 'http://10.0.2.2:8000';
+=======
+      return 'http://192.168.43.2:8000';
+>>>>>>> 344a9c2a8f186226cf5991d8d8adc84a1efe6192
     } else if (Platform.isIOS) {
       return 'http://localhost:8000';
     } else {
@@ -76,6 +80,7 @@ class ApiService {
     required String email,
     required String password,
     required String displayName,
+    required String phone,
     required String role,
     String? merchantType,
   }) async {
@@ -84,6 +89,7 @@ class ApiService {
         'email': email.trim().toLowerCase(),
         'password': password,
         'displayName': displayName.trim(),
+        'phone': phone.trim(),
         'role': role.toLowerCase(),
       };
 

@@ -33,6 +33,24 @@ function sendResponse(bool $success, string $message, $data = null, int $code = 
     exit();
 }
 
+function columnExists(mysqli $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+    );
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('ss', $table, $column);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
+if (!columnExists($conn, 'users', 'phone')) {
+    $conn->query("ALTER TABLE users ADD COLUMN phone varchar(25) DEFAULT NULL AFTER display_name");
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendResponse(false, 'Only POST method allowed', null, 405);
 }
@@ -47,6 +65,7 @@ if (!$body) {
 $email         = trim(strtolower($body['email'] ?? ''));
 $password       = $body['password'] ?? '';
 $displayName    = trim($body['displayName'] ?? '');
+$phone          = trim($body['phone'] ?? '');
 $role           = trim(strtolower($body['role'] ?? 'user'));
 
 // Validasi
@@ -68,6 +87,15 @@ if (empty($displayName)) {
     $errors[] = 'Nama lengkap harus diisi';
 } elseif (strlen($displayName) < 3) {
     $errors[] = 'Nama lengkap minimal 3 karakter';
+}
+
+if (empty($phone)) {
+    $errors[] = 'Nomor HP harus diisi';
+} else {
+    $phoneDigits = preg_replace('/\D+/', '', $phone);
+    if (strlen($phoneDigits) < 10 || strlen($phoneDigits) > 15) {
+        $errors[] = 'Format nomor HP tidak valid';
+    }
 }
 
 $allowedRoles = ['user', 'owner'];
@@ -103,14 +131,14 @@ if ($passwordHash === false) {
 $userId = generateUUID();
 
 $stmt = $conn->prepare(
-    "INSERT INTO users (id, email, password, display_name, role, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, NOW(), NOW())"
+    "INSERT INTO users (id, email, password, display_name, phone, role, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())"
 );
 if (!$stmt) {
     sendResponse(false, 'Database error: ' . $conn->error, null, 500);
 }
 
-$stmt->bind_param('sssss', $userId, $email, $passwordHash, $displayName, $role);
+$stmt->bind_param('ssssss', $userId, $email, $passwordHash, $displayName, $phone, $role);
 
 if (!$stmt->execute()) {
     sendResponse(false, 'Gagal membuat akun: ' . $stmt->error, null, 500);
@@ -124,5 +152,6 @@ sendResponse(true, 'Akun berhasil dibuat', [
     'id'             => $userId,
     'email'          => $email,
     'displayName'    => $displayName,
+    'phone'          => $phone,
     'role'           => $role,
 ], 201);

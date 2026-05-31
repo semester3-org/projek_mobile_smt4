@@ -35,8 +35,31 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 bool _firebaseMessagingBaseConfigured = false;
 bool _firebaseMessagingListenersConfigured = false;
+Future<void>? _firebaseMessagingSetupFuture;
 
 Future<void> _configureFirebaseMessaging({
+  bool requestPermission = true,
+}) async {
+  final runningSetup = _firebaseMessagingSetupFuture;
+  if (runningSetup != null) {
+    await runningSetup;
+    if (!requestPermission) return;
+  }
+
+  final setup = _configureFirebaseMessagingInternal(
+    requestPermission: requestPermission,
+  );
+  _firebaseMessagingSetupFuture = setup;
+  try {
+    await setup;
+  } finally {
+    if (identical(_firebaseMessagingSetupFuture, setup)) {
+      _firebaseMessagingSetupFuture = null;
+    }
+  }
+}
+
+Future<void> _configureFirebaseMessagingInternal({
   bool requestPermission = true,
 }) async {
   try {

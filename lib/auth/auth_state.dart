@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../core/api_service.dart';
 import '../core/auth_storage.dart';
+import '../data/repositories/merchant_repository.dart';
+import '../data/repositories/user_repository.dart';
 import 'roles.dart';
 
 @immutable
@@ -38,6 +40,8 @@ class AuthState extends ChangeNotifier {
       if (result['success'] == true && result['data'] != null) {
         final userData = result['data'] as Map<String, dynamic>;
         final merchantTypeStr = userData['merchantType'] as String?;
+        UserRepository.clearSessionCache();
+        MerchantRepository.clearSessionCache();
         _session = AuthSession(
           email: userData['email'] as String? ?? '',
           role: UserRoleLabel.fromString(userData['role'] as String? ?? ''),
@@ -45,6 +49,8 @@ class AuthState extends ChangeNotifier {
           merchantType: MerchantTypeLabel.fromString(merchantTypeStr),
         );
       } else {
+        UserRepository.clearSessionCache();
+        MerchantRepository.clearSessionCache();
         await AuthStorage.clear();
       }
     } finally {
@@ -79,6 +85,8 @@ class AuthState extends ChangeNotifier {
       if (result['success'] == true) {
         final userData = result['data'] as Map<String, dynamic>;
         final merchantTypeStr = userData['merchantType'] as String?;
+        UserRepository.clearSessionCache();
+        MerchantRepository.clearSessionCache();
         _session = AuthSession(
           email: userData['email'],
           role: UserRoleLabel.fromString(userData['role'] as String? ?? ''),
@@ -134,6 +142,8 @@ class AuthState extends ChangeNotifier {
       if (result['success'] == true) {
         final userData = result['data'] as Map<String, dynamic>;
         final merchantTypeStr = userData['merchantType'] as String?;
+        UserRepository.clearSessionCache();
+        MerchantRepository.clearSessionCache();
         _session = AuthSession(
           email: userData['email'],
           role: UserRoleLabel.fromString(userData['role'] as String? ?? ''),
@@ -159,6 +169,8 @@ class AuthState extends ChangeNotifier {
 
   Future<void> logout() async {
     _session = null;
+    UserRepository.clearSessionCache();
+    MerchantRepository.clearSessionCache();
     notifyListeners();
     try {
       await GoogleSignIn().signOut();

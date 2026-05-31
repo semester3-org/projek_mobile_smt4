@@ -130,6 +130,7 @@ class _MerchantTopBarIconButton extends StatefulWidget {
 class _MerchantTopBarIconButtonState extends State<_MerchantTopBarIconButton> {
   StreamSubscription<void>? _subscription;
   int _unreadCount = 0;
+  bool _loadingCount = false;
 
   bool get _isNotificationIcon =>
       widget.icon == Icons.notifications_none_rounded;
@@ -168,9 +169,16 @@ class _MerchantTopBarIconButtonState extends State<_MerchantTopBarIconButton> {
   }
 
   Future<void> _loadCount() async {
-    final count = await MerchantRepository.unreadNotificationCount();
-    if (!mounted) return;
-    setState(() => _unreadCount = count);
+    if (_loadingCount) return;
+    _loadingCount = true;
+    try {
+      final count = await MerchantRepository.unreadNotificationCount();
+      if (!mounted) return;
+      if (_unreadCount == count) return;
+      setState(() => _unreadCount = count);
+    } finally {
+      _loadingCount = false;
+    }
   }
 
   @override

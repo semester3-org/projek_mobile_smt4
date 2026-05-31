@@ -24,6 +24,8 @@ class ApiResponse<T> {
 
 class ApiService {
   static final http.Client _client = http.Client();
+  static final Map<String, Future<ApiResponse<Map<String, dynamic>>>>
+      _inFlightGets = {};
   static const String _configuredBaseUrl =
       String.fromEnvironment('API_BASE_URL');
 
@@ -42,7 +44,7 @@ class ApiService {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
-      return 'http://192.168.43.2:8000';
+      return 'http://10.205.144.61:8000';
     } else if (Platform.isIOS) {
       return 'http://localhost:8000';
     } else {
@@ -383,18 +385,39 @@ class ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    var uri = Uri.parse('$baseUrl/$endpoint');
+    if (queryParams != null) {
+      uri = uri.replace(queryParameters: queryParams);
+    }
+
+    final headers = await _authHeaders();
+    final authKey = headers['Authorization'] ?? '';
+    final cacheKey = '$uri|$authKey';
+    final existing = _inFlightGets[cacheKey];
+    if (existing != null) return existing;
+
+    final request = _get(uri, headers).whenComplete(() {
+      _inFlightGets.remove(cacheKey);
+    });
+    _inFlightGets[cacheKey] = request;
+    return request;
+  }
+
+  static Future<ApiResponse<Map<String, dynamic>>> _get(
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
     try {
-      var uri = Uri.parse('$baseUrl/$endpoint');
-      if (queryParams != null) {
-        uri = uri.replace(queryParameters: queryParams);
-      }
       final response = await _client
-          .get(uri, headers: await _authHeaders())
+          .get(uri, headers: headers)
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');

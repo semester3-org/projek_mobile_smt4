@@ -6,6 +6,7 @@ import '../auth/roles.dart';
 import '../data/repositories/merchant_repository.dart';
 import '../data/repositories/user_repository.dart';
 import '../models/notification.dart';
+import '../models/merchant_models.dart';
 import '../screens/merchant/pages/shared/merchant_notifications_page.dart';
 import '../screens/merchant/pages/shared/merchant_order_detail_page.dart';
 import '../screens/owner/pages/owner_finance_page.dart';
@@ -16,6 +17,7 @@ import '../screens/profile/billing_list_page.dart';
 import '../screens/profile/notification_list_page.dart';
 import '../screens/user/merchant_detail_page.dart';
 import '../screens/user/order_detail_page.dart';
+import 'api_service.dart';
 import 'app_navigator.dart';
 
 class NotificationDeliveryService with WidgetsBindingObserver {
@@ -55,11 +57,11 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     _sendPresence(true);
     _pollNotifications();
     _pollTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 18),
       (_) => _pollNotifications(),
     );
     _presenceTimer = Timer.periodic(
-      const Duration(seconds: 45),
+      const Duration(seconds: 90),
       (_) => _sendPresence(_foreground),
     );
   }
@@ -130,10 +132,8 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     _polling = true;
 
     try {
-      final result = await UserRepository.getNotifications(
-          allowFallback: false, limit: 20);
-      if (!result.isSuccess) return;
-      final notifications = result.data ?? const <AppNotification>[];
+      final notifications = await _latestNotificationsForRole();
+      if (notifications == null) return;
 
       if (!_seededNotifications) {
         _knownNotificationIds.addAll(notifications.map((item) => item.id));
@@ -148,8 +148,11 @@ class NotificationDeliveryService with WidgetsBindingObserver {
       _knownNotificationIds.addAll(notifications.map((item) => item.id));
 
       if (newestFirst.isNotEmpty) {
-        UserRepository.invalidateNotificationCountCache();
-        MerchantRepository.invalidateNotificationCountCache();
+        if (_role == UserRole.merchant) {
+          MerchantRepository.invalidateNotificationCountCache();
+        } else {
+          UserRepository.invalidateNotificationCountCache();
+        }
       }
 
       for (final notification in newestFirst.reversed) {
@@ -162,11 +165,63 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     }
   }
 
+  Future<List<AppNotification>?> _latestNotificationsForRole() async {
+    if (_role == UserRole.merchant) {
+      final result = await MerchantRepository.getNotifications(limit: 8);
+      if (!result.isSuccess) return null;
+      final items = result.data ?? const <MerchantNotification>[];
+      return items.map((item) {
+        return AppNotification(
+          id: item.id,
+          title: item.title,
+          message: item.message,
+          type: item.type,
+          status: item.status,
+          createdAt: item.createdAt,
+          actionUrl: item.actionUrl,
+          hasAction: (item.actionUrl ?? '').isNotEmpty,
+          actionButtonText: item.actionButtonText,
+        );
+      }).toList();
+    }
+
+    if (_role == UserRole.owner) {
+      final result = await ApiService.get(
+        'api/owner_notifications',
+        queryParams: {'limit': '8'},
+      );
+      if (!result.success) return null;
+      final rawItems = result.data?['data'];
+      if (rawItems is! List) return const <AppNotification>[];
+      return rawItems.map((raw) {
+        final item = raw as Map<String, dynamic>;
+        return AppNotification(
+          id: item['id']?.toString() ?? '',
+          title: item['title']?.toString() ?? 'Notifikasi',
+          message: item['subtitle']?.toString() ??
+              item['message']?.toString() ??
+              'Ada update baru.',
+          type: item['category']?.toString() ??
+              item['type']?.toString() ??
+              'room',
+          status: item['isRead'] == true ? 'dibaca' : 'baru',
+          createdAt: DateTime.now(),
+        );
+      }).toList();
+    }
+
+    final result =
+        await UserRepository.getNotifications(allowFallback: false, limit: 8);
+    if (!result.isSuccess) return null;
+    return result.data ?? const <AppNotification>[];
+  }
+
   bool _shouldShowInAppAlert(AppNotification notification) {
     if (_alertedNotificationIds.contains(notification.id)) return false;
 
     final type = notification.type.toLowerCase();
     if (type == 'payment' ||
+        type == 'pembayaran' ||
         type == 'promo' ||
         type == 'booking' ||
         type == 'billing') {
@@ -179,7 +234,8 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     if (type == 'order' ||
         type == 'laundry' ||
         type == 'booking' ||
-        type == 'billing') {
+        type == 'billing' ||
+        type == 'penghuni') {
       return [
         'pengajuan',
         'disetujui',
@@ -262,10 +318,12 @@ class NotificationDeliveryService with WidgetsBindingObserver {
   IconData _iconFor(String type) {
     switch (type.toLowerCase()) {
       case 'payment':
+      case 'pembayaran':
         return Icons.payments_outlined;
       case 'promo':
         return Icons.local_offer_outlined;
       case 'booking':
+      case 'penghuni':
         return Icons.home_work_outlined;
       case 'billing':
         return Icons.receipt_long_outlined;

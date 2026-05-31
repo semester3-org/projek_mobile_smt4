@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+require_once __DIR__ . '/merchant_helpers.php';
 
 function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
     http_response_code($code);
@@ -556,6 +557,37 @@ function endRegistrationAndFreeRoom(mysqli $conn, string $registrationId, string
     $freeRoom->close();
 }
 
+function notifyOwnerRoomApplication(mysqli $conn, string $kosId, string $roomNumber, string $displayName): void {
+    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
+    if (!$ownerQuery) {
+        return;
+    }
+    $ownerQuery->bind_param('s', $kosId);
+    $ownerQuery->execute();
+    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
+    $ownerQuery->close();
+
+    if (!$ownerInfo) {
+        return;
+    }
+
+    try {
+        merchantEnsureSchema($conn);
+        merchantCreateNotification(
+            $conn,
+            (string)$ownerInfo['owner_id'],
+            'Pengajuan sewa baru',
+            'Pengajuan sewa dari ' . $displayName . ' untuk kamar ' . $roomNumber . ' di ' . ($ownerInfo['title'] ?? 'kos Anda') . '.',
+            'booking',
+            'Lihat Approval',
+            'owner:tenants',
+            'important'
+        );
+    } catch (Throwable $e) {
+        error_log('Failed to notify owner room application: ' . $e->getMessage());
+    }
+}
+
 function expireScheduledEndDates(mysqli $conn, string $userId): void {
     if (!tableExists($conn, 'room_registrations') ||
         !tableExists($conn, 'kos_rooms')) {
@@ -1005,6 +1037,7 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
         $mark->close();
 
         $conn->commit();
+        notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
     } catch (Exception $e) {
         $conn->rollback();
         sendJson(false, null, 'Gagal mengajukan perpindahan kamar/kos', 500);
@@ -1020,26 +1053,7 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->execute();
     $mark->close();
 
-    // Kirim notifikasi ke owner
-    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
-    $ownerQuery->bind_param('s', $room['kos_id']);
-    $ownerQuery->execute();
-    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
-    $ownerQuery->close();
-
-    if ($ownerInfo) {
-        $ownerId = $ownerInfo['owner_id'];
-        $kosTitle = $ownerInfo['title'];
-        $titleNotif = 'Pengajuan Kamar Baru';
-        $msgNotif = "Pengajuan sewa kamar baru dari {$displayName} untuk Kamar {$roomNumber} di {$kosTitle}. Segera periksa di tab Approval.";
-        
-        $notifIns = $conn->prepare("INSERT INTO app_notifications (user_id, title, message) VALUES (?, ?, ?)");
-        if ($notifIns) {
-            $notifIns->bind_param('sss', $ownerId, $titleNotif, $msgNotif);
-            $notifIns->execute();
-            $notifIns->close();
-        }
-    }
+    notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
 } else {
     $id = uuid();
     $ins = $conn->prepare("
@@ -1056,26 +1070,7 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->execute();
     $mark->close();
 
-    // Kirim notifikasi ke owner
-    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
-    $ownerQuery->bind_param('s', $room['kos_id']);
-    $ownerQuery->execute();
-    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
-    $ownerQuery->close();
-
-    if ($ownerInfo) {
-        $ownerId = $ownerInfo['owner_id'];
-        $kosTitle = $ownerInfo['title'];
-        $titleNotif = 'Pengajuan Kamar Baru';
-        $msgNotif = "Pengajuan sewa kamar baru dari {$displayName} untuk Kamar {$roomNumber} di {$kosTitle}. Segera periksa di tab Approval.";
-        
-        $notifIns = $conn->prepare("INSERT INTO app_notifications (user_id, title, message) VALUES (?, ?, ?)");
-        if ($notifIns) {
-            $notifIns->bind_param('sss', $ownerId, $titleNotif, $msgNotif);
-            $notifIns->execute();
-            $notifIns->close();
-        }
-    }
+    notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
 }
 
 sendJson(true, profilePayload($conn, $payload), 'Pengajuan kamar berhasil dikirim dan menunggu persetujuan owner');

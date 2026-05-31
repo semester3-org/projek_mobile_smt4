@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+require_once __DIR__ . '/merchant_helpers.php';
 
 // Pastikan kolom reject_reason ada di tabel room_registrations
 if (tableExists($conn, 'room_registrations') && !columnExists($conn, 'room_registrations', 'reject_reason')) {
@@ -103,7 +104,19 @@ function handlePut(mysqli $conn, ?array $payload): void {
         sendJson(false, null, 'Forbidden: hanya owner yang bisa akses', 403);
     }
 
-    $stmt = $conn->prepare("SELECT rr.status, rr.room_id FROM room_registrations rr INNER JOIN kos_listings k ON k.id = rr.kos_id WHERE rr.id = ? AND k.owner_id = ? LIMIT 1");
+    $stmt = $conn->prepare("
+        SELECT
+            rr.status,
+            rr.room_id,
+            rr.user_id,
+            k.title AS kos_name,
+            r.room_number
+        FROM room_registrations rr
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        WHERE rr.id = ? AND k.owner_id = ?
+        LIMIT 1
+    ");
     if (!$stmt) {
         sendJson(false, null, 'Database error', 500);
     }
@@ -157,6 +170,22 @@ function handlePut(mysqli $conn, ?array $payload): void {
             $markRoom->close();
         }
 
+        try {
+            merchantEnsureSchema($conn);
+            merchantCreateNotification(
+                $conn,
+                (string)$row['user_id'],
+                'Pengajuan sewa disetujui',
+                'Owner menyetujui pengajuan kamar ' . ($row['room_number'] ?? '-') . ' di ' . ($row['kos_name'] ?? 'kos Anda') . '. Tagihan sewa sudah tersedia.',
+                'booking',
+                'Lihat Tagihan',
+                'billing:' . $registrationId,
+                'important'
+            );
+        } catch (Throwable $e) {
+            error_log('Failed to notify tenant approval: ' . $e->getMessage());
+        }
+
         sendJson(true, true, 'Pengajuan kamar disetujui');
     }
 
@@ -180,6 +209,23 @@ function handlePut(mysqli $conn, ?array $payload): void {
     $free->bind_param('s', $row['room_id']);
     $free->execute();
     $free->close();
+
+    try {
+        $reasonText = $rejectReason ? ' Alasan: ' . $rejectReason : '';
+        merchantEnsureSchema($conn);
+        merchantCreateNotification(
+            $conn,
+            (string)$row['user_id'],
+            'Pengajuan sewa ditolak',
+            'Pengajuan kamar ' . ($row['room_number'] ?? '-') . ' di ' . ($row['kos_name'] ?? 'kos') . ' ditolak owner.' . $reasonText,
+            'booking',
+            'Lihat Profil',
+            'profile:rent',
+            'important'
+        );
+    } catch (Throwable $e) {
+        error_log('Failed to notify tenant rejection: ' . $e->getMessage());
+    }
 
     sendJson(true, true, 'Pengajuan kamar ditolak');
 }

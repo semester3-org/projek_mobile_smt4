@@ -78,7 +78,9 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
       case 1: // Belum Dibaca
         return _allNotifications.where((n) => n['isRead'] == false).toList();
       case 2: // Pembayaran
-        return _allNotifications.where((n) => n['category'] == 'pembayaran').toList();
+        return _allNotifications
+            .where((n) => n['category'] == 'pembayaran')
+            .toList();
       default: // Semua
         return _allNotifications;
     }
@@ -124,7 +126,8 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                         color: AppTheme.primaryGreen.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.notifications_active_rounded, color: AppTheme.primaryGreen, size: 28),
+                      child: const Icon(Icons.notifications_active_rounded,
+                          color: AppTheme.primaryGreen, size: 28),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -133,12 +136,14 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                         children: [
                           Text(
                             notification['title'] as String,
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 16),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             notification['time'] as String,
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 12),
                           ),
                         ],
                       ),
@@ -153,7 +158,8 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                 const SizedBox(height: 10),
                 Text(
                   notification['subtitle'] as String,
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.5, fontSize: 13),
+                  style: TextStyle(
+                      color: Colors.grey.shade700, height: 1.5, fontSize: 13),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -201,7 +207,8 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        Icon(Icons.error_outline,
+                            size: 48, color: Colors.red.shade400),
                         const SizedBox(height: 12),
                         Text(
                           _error!,
@@ -238,10 +245,12 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   onPressed: () => setState(() => _tab = 0),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 0
-                                        ? AppTheme.primaryGreen.withOpacity(0.14)
+                                        ? AppTheme.primaryGreen
+                                            .withOpacity(0.14)
                                         : Colors.transparent,
-                                    foregroundColor:
-                                        _tab == 0 ? AppTheme.primaryGreen : Colors.grey.shade700,
+                                    foregroundColor: _tab == 0
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
                                   ),
                                   child: const Text('Semua'),
                                 ),
@@ -252,10 +261,12 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   onPressed: () => setState(() => _tab = 1),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 1
-                                        ? AppTheme.primaryGreen.withOpacity(0.14)
+                                        ? AppTheme.primaryGreen
+                                            .withOpacity(0.14)
                                         : Colors.transparent,
-                                    foregroundColor:
-                                        _tab == 1 ? AppTheme.primaryGreen : Colors.grey.shade700,
+                                    foregroundColor: _tab == 1
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
                                   ),
                                   child: const Text('Unread'),
                                 ),
@@ -266,10 +277,12 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   onPressed: () => setState(() => _tab = 2),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 2
-                                        ? AppTheme.primaryGreen.withOpacity(0.14)
+                                        ? AppTheme.primaryGreen
+                                            .withOpacity(0.14)
                                         : Colors.transparent,
-                                    foregroundColor:
-                                        _tab == 2 ? AppTheme.primaryGreen : Colors.grey.shade700,
+                                    foregroundColor: _tab == 2
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
                                   ),
                                   child: const Text('Bayar'),
                                 ),
@@ -285,11 +298,14 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                             padding: const EdgeInsets.all(40),
                             child: Column(
                               children: [
-                                Icon(Icons.notifications_none_rounded, size: 64, color: Colors.grey.shade400),
+                                Icon(Icons.notifications_none_rounded,
+                                    size: 64, color: Colors.grey.shade400),
                                 const SizedBox(height: 16),
                                 Text(
                                   'Tidak ada notifikasi',
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                                  style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 15),
                                 ),
                               ],
                             ),
@@ -302,7 +318,8 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                             subtitle: notif['subtitle'] as String,
                             time: notif['time'] as String,
                             isRead: notif['isRead'] as bool,
-                            onTap: () => _showNotificationDetail(notif as Map<String, dynamic>),
+                            onTap: () => _showNotificationDetail(
+                                notif as Map<String, dynamic>),
                           ),
                         ),
                     ],
@@ -332,7 +349,9 @@ class _NotifCard extends StatelessWidget {
     IconData getIcon() {
       final t = title.toLowerCase();
       if (t.contains('bayar')) return Icons.payments_rounded;
-      if (t.contains('huni') || t.contains('kamar')) return Icons.person_add_rounded;
+      if (t.contains('huni') || t.contains('kamar')) {
+        return Icons.person_add_rounded;
+      }
       return Icons.info_outline_rounded;
     }
 
@@ -371,7 +390,8 @@ class _NotifCard extends StatelessWidget {
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
-                              color: isRead ? Colors.grey.shade700 : Colors.black,
+                              color:
+                                  isRead ? Colors.grey.shade700 : Colors.black,
                             ),
                           ),
                         ),
@@ -390,7 +410,9 @@ class _NotifCard extends StatelessWidget {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        color: isRead ? Colors.grey.shade600 : Colors.grey.shade800,
+                        color: isRead
+                            ? Colors.grey.shade600
+                            : Colors.grey.shade800,
                         fontSize: 13,
                         height: 1.3,
                       ),
@@ -398,12 +420,17 @@ class _NotifCard extends StatelessWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        Text(time, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+                        Text(time,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 11)),
                         const Spacer(),
                         if (onTap != null)
                           const Text(
                             'Lihat Detail →',
-                            style: TextStyle(color: AppTheme.primaryGreen, fontWeight: FontWeight.bold, fontSize: 12),
+                            style: TextStyle(
+                                color: AppTheme.primaryGreen,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
                           ),
                       ],
                     ),

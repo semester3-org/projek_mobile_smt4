@@ -251,9 +251,11 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     if (raw.contains('cimb')) return 'cimb';
     if (raw.contains('gopay')) return 'gopay';
     if (raw.contains('shopee')) return 'shopeepay';
-    if (raw.contains('ovo')) return 'ovo';
-    if (raw.contains('dana')) return 'dana';
-    if (raw.contains('linkaja')) return 'linkaja';
+    if (raw.contains('ovo') ||
+        raw.contains('dana') ||
+        raw.contains('linkaja')) {
+      return 'qris';
+    }
     if (raw.contains('qris')) return 'qris';
     return null;
   }

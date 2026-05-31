@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'app/app_theme.dart';
 import 'auth/auth_scope.dart';
@@ -22,7 +25,7 @@ void main() async {
   }
   runApp(const KosFinderApp());
 
-  _configureFirebaseMessaging();
+  _configureFirebaseMessaging(requestPermission: false);
 }
 
 @pragma('vm:entry-point')
@@ -30,23 +33,58 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await _ensureFirebaseInitialized();
 }
 
-Future<void> _configureFirebaseMessaging() async {
+bool _firebaseMessagingBaseConfigured = false;
+bool _firebaseMessagingListenersConfigured = false;
+
+Future<void> _configureFirebaseMessaging({
+  bool requestPermission = true,
+}) async {
   try {
     _fcmLog('Starting Firebase Messaging setup...');
     await _ensureFirebaseInitialized();
     _fcmLog('Firebase initialized.');
 
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    await FirebaseMessaging.instance.setAutoInitEnabled(true);
-    _fcmLog('Firebase Messaging auto-init enabled.');
+    if (!_firebaseMessagingBaseConfigured) {
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
+      _firebaseMessagingBaseConfigured = true;
+      _fcmLog('Firebase Messaging auto-init enabled.');
+    }
 
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    if (!_firebaseMessagingListenersConfigured) {
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        _fcmLog('FCM TOKEN REFRESHED: $newToken');
+        NotificationDeliveryService.instance.updateFcmToken(newToken);
+      });
+
+      FirebaseMessaging.onMessage.listen(_handleForegroundRemoteMessage);
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedRemoteMessage);
+      _firebaseMessagingListenersConfigured = true;
+    }
+
+    var settings = await FirebaseMessaging.instance.getNotificationSettings();
+    if (requestPermission) {
+      settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
 
     _fcmLog('Notification permission: ${settings.authorizationStatus}');
+    if (settings.authorizationStatus == AuthorizationStatus.notDetermined &&
+        !requestPermission) {
+      _fcmLog('Notification permission will be requested after login.');
+      return;
+    }
+    if (settings.authorizationStatus == AuthorizationStatus.denied ||
+        settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      _fcmLog(
+        'Notification permission denied/blocked. Aktifkan izin notifikasi dari pengaturan aplikasi untuk menerima push di luar app.',
+      );
+      return;
+    }
 
     _fcmLog('Requesting FCM token...');
     final token = await FirebaseMessaging.instance.getToken().timeout(
@@ -64,14 +102,6 @@ Future<void> _configureFirebaseMessaging() async {
       await NotificationDeliveryService.instance.updateFcmToken(token);
       _fcmLog('FCM token stored for backend sync.');
     }
-
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      _fcmLog('FCM TOKEN REFRESHED: $newToken');
-      NotificationDeliveryService.instance.updateFcmToken(newToken);
-    });
-
-    FirebaseMessaging.onMessage.listen(_handleForegroundRemoteMessage);
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenedRemoteMessage);
   } catch (error, stackTrace) {
     _fcmLog('Firebase notification setup skipped: $error');
     debugPrintStack(stackTrace: stackTrace);
@@ -80,8 +110,6 @@ Future<void> _configureFirebaseMessaging() async {
 
 void _fcmLog(String message) {
   final text = '[FCM] $message';
-  // ignore: avoid_print
-  print(text);
   debugPrint(text);
 }
 
@@ -168,6 +196,8 @@ class _KosFinderRoot extends StatefulWidget {
 class _KosFinderRootState extends State<_KosFinderRoot> {
   late final AuthState _auth;
   final _appLinks = AppLinks();
+  String? _lastPermissionPromptKey;
+  bool _requestingLoginPermissions = false;
 
   @override
   void initState() {
@@ -180,13 +210,52 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
 
   void _syncNotificationDelivery() {
     final session = _auth.session;
-    if (session?.role == UserRole.user || session?.role == UserRole.merchant) {
+    if (session?.role == UserRole.user ||
+        session?.role == UserRole.merchant ||
+        session?.role == UserRole.owner) {
       NotificationDeliveryService.instance.start(
         role: session!.role,
         merchantType: session.merchantType,
       );
+      final permissionKey = '${session.email}:${session.role.name}';
+      if (_lastPermissionPromptKey != permissionKey) {
+        _lastPermissionPromptKey = permissionKey;
+        unawaited(_requestLoginRuntimePermissions());
+      }
     } else {
+      _lastPermissionPromptKey = null;
       NotificationDeliveryService.instance.stop();
+    }
+  }
+
+  Future<void> _requestLoginRuntimePermissions() async {
+    if (_requestingLoginPermissions) return;
+    _requestingLoginPermissions = true;
+    try {
+      await _configureFirebaseMessaging(requestPermission: true);
+      await _requestLocationPermission();
+    } finally {
+      _requestingLoginPermissions = false;
+    }
+  }
+
+  Future<void> _requestLocationPermission() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        debugPrint('[Location] Location service is disabled.');
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint(
+          '[Location] Permission denied forever. User needs to enable it from app settings.',
+        );
+      }
+    } catch (error) {
+      debugPrint('[Location] Permission request skipped: $error');
     }
   }
 

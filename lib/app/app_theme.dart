@@ -49,7 +49,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 72),
         elevation: 8,
         backgroundColor: const Color(0xFF172033),
         contentTextStyle: const TextStyle(

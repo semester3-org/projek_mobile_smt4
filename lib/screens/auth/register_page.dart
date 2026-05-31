@@ -23,7 +23,7 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isLoading = false;
   String? _errorText;
 
-  final List<Map<String, dynamic>> _roles = [
+  final List<Map<String, String>> _roles = [
     {'value': 'user', 'label': 'User'},
     {'value': 'owner', 'label': 'Owner'},
   ];
@@ -289,14 +289,16 @@ class _RegisterPageState extends State<RegisterPage> {
                         spacing: 10,
                         runSpacing: 10,
                         children: _roles.map((role) {
-                          final isSelected = _selectedRole == role['value'];
+                          final roleValue = role['value']!;
+                          final roleLabel = role['label']!;
+                          final isSelected = _selectedRole == roleValue;
                           return ChoiceChip(
-                            label: Text(role['label']),
+                            label: Text(roleLabel),
                             selected: isSelected,
                             onSelected: (selected) {
                               if (selected) {
                                 setState(() {
-                                  _selectedRole = role['value'];
+                                  _selectedRole = roleValue;
                                 });
                               }
                             },

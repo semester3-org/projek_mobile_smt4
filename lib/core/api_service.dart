@@ -42,22 +42,12 @@ class ApiService {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
-<<<<<<< HEAD
-      return 'http://10.0.2.2:8000';
-=======
-      return 'http://192.168.43.2:8000';
->>>>>>> 344a9c2a8f186226cf5991d8d8adc84a1efe6192
+      return 'http://10.205.144.61:8000';
     } else if (Platform.isIOS) {
       return 'http://localhost:8000';
     } else {
       return 'http://localhost:8000';
     }
-  }
-
-  static String _networkErrorMessage(String message) {
-    return '$message Server aktif: $baseUrl. Untuk HP fisik, jalankan Flutter dengan '
-        '--dart-define=API_BASE_URL=http://IP-LAPTOP:8000 dan pastikan '
-        'http://IP-LAPTOP:8000/api/ping bisa dibuka dari browser HP.';
   }
 
   static Future<Map<String, String>> _authHeaders() async {
@@ -124,13 +114,11 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': _networkErrorMessage('Koneksi ke backend gagal.'),
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
       };
     } on TimeoutException {
-      return {
-        'success': false,
-        'message': _networkErrorMessage('Request timeout ke backend.'),
-      };
+      return {'success': false, 'message': 'Request timeout. Coba lagi.'};
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
@@ -186,13 +174,11 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': _networkErrorMessage('Koneksi ke backend gagal.'),
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
       };
     } on TimeoutException {
-      return {
-        'success': false,
-        'message': _networkErrorMessage('Request timeout ke backend.'),
-      };
+      return {'success': false, 'message': 'Request timeout. Coba lagi.'};
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
@@ -252,13 +238,10 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': _networkErrorMessage('Koneksi ke backend gagal.'),
+        'message': 'Koneksi gagal. Pastikan server PHP berjalan.',
       };
     } on TimeoutException {
-      return {
-        'success': false,
-        'message': _networkErrorMessage('Request timeout ke backend.'),
-      };
+      return {'success': false, 'message': 'Request timeout. Coba lagi.'};
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
@@ -410,15 +393,8 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Koneksi ke backend gagal.'));
-    } on TimeoutException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Request timeout ke backend.'));
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -439,15 +415,8 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Koneksi ke backend gagal.'));
-    } on TimeoutException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Request timeout ke backend.'));
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -469,15 +438,8 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Koneksi ke backend gagal.'));
-    } on TimeoutException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Request timeout ke backend.'));
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -498,15 +460,8 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Koneksi ke backend gagal.'));
-    } on TimeoutException {
-      return ApiResponse(
-          success: false,
-          statusCode: 0,
-          message: _networkErrorMessage('Request timeout ke backend.'));
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');

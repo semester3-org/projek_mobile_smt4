@@ -511,17 +511,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   ),
                 ),
               ),
-              if (_latitude != null && _longitude != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}',
-                  style: const TextStyle(
-                    color: UserTheme.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
               const SizedBox(height: 22),
               Row(
                 children: [

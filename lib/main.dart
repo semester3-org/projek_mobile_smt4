@@ -241,10 +241,6 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
 
   Future<void> _requestLocationPermission() async {
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        debugPrint('[Location] Location service is disabled.');
-        return;
-      }
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -253,6 +249,11 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
         debugPrint(
           '[Location] Permission denied forever. User needs to enable it from app settings.',
         );
+        return;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        debugPrint('[Location] Location service is disabled.');
+        return;
       }
     } catch (error) {
       debugPrint('[Location] Permission request skipped: $error');

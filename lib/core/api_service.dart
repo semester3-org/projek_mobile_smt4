@@ -24,17 +24,21 @@ class ApiResponse<T> {
 
 class ApiService {
   static final http.Client _client = http.Client();
+  static const String _configuredBaseUrl =
+      String.fromEnvironment('API_BASE_URL');
 
-  // ── Base URL ───────────────────────────────────────────────────────────────
-  // Server:
-  // - Laptop saja: php -S localhost:8000 router.php
-  // - HP fisik satu Wi-Fi: php -S 0.0.0.0:8000 router.php
+  // Base URL can be overridden per machine:
+  // flutter run --dart-define=API_BASE_URL=http://<host>:8000
   //
-  // Web / iOS Simulator / Desktop  → localhost:8000
-  // Android Emulator               → 10.0.2.2:8000
-  // Device fisik                   → IP laptop:8000  (cek via: ipconfig)
-  // ──────────────────────────────────────────────────────────────────────────
+  // Defaults:
+  // - Web / desktop / iOS simulator: localhost:8000
+  // - Android emulator: 10.0.2.2:8000
+  // - Physical phone: use --dart-define with your laptop IP.
   static String get baseUrl {
+    final configured = _configuredBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.replaceFirst(RegExp(r'/$'), '');
+    }
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {

@@ -16,11 +16,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 function merchantReviewPayloadForProduct(array $row): array {
+    $displayName = trim((string)($row['display_name'] ?? ''));
+    $email = trim((string)($row['email'] ?? ''));
+    $reviewer = $displayName !== ''
+        ? $displayName
+        : ($email !== '' ? explode('@', $email)[0] : 'User');
+
     return [
         'id' => (string)($row['id'] ?? ''),
         'productId' => isset($row['product_id']) ? (string)$row['product_id'] : '',
         'productName' => $row['nama_produk'] ?? '',
-        'reviewer' => $row['display_name'] ?? 'User',
+        'reviewer' => $reviewer,
+        'reviewerEmail' => $email,
         'rating' => (float)($row['rating'] ?? 0),
         'comment' => $row['comment'] ?? '',
         'createdAt' => !empty($row['created_at']) ? date(DATE_ATOM, strtotime($row['created_at'])) : date(DATE_ATOM),
@@ -61,7 +68,7 @@ try {
     foreach ($products as $product) {
         $productId = (int)($product['id'] ?? 0);
         $sql = "
-            SELECT mr.*, u.display_name, p.nama_produk
+            SELECT mr.*, u.display_name, u.email, p.nama_produk
             FROM merchant_reviews mr
             LEFT JOIN users u ON u.id = mr.user_id
             LEFT JOIN products p ON p.id = mr.product_id

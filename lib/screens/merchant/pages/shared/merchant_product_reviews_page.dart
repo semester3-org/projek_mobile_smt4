@@ -69,7 +69,7 @@ class _MerchantProductReviewsPageState
         ),
         const SizedBox(height: 8),
         const Text(
-          'Pilih produk untuk melihat semua ulasan. Gunakan filter bintang untuk memisahkan rating baik dan buruk.',
+          'Lihat nama user, rating bintang, komentar, dan waktu ulasan. Gunakan filter bintang untuk memisahkan rating baik dan buruk.',
           style: TextStyle(
             color: MerchantPalette.muted,
             fontSize: 15,
@@ -327,6 +327,10 @@ class _ReviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final email = review.reviewerEmail.trim();
+    final updated =
+        review.updatedAt.difference(review.createdAt).inSeconds.abs() > 2;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 10),
@@ -341,12 +345,30 @@ class _ReviewTile extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  review.reviewer,
-                  style: const TextStyle(
-                    color: MerchantPalette.text,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.reviewer,
+                      style: const TextStyle(
+                        color: MerchantPalette.text,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (email.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: MerchantPalette.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               Row(
@@ -361,11 +383,20 @@ class _ReviewTile extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
+              Text(
+                '${review.rating.toStringAsFixed(0)}/5',
+                style: const TextStyle(
+                  color: MerchantPalette.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Diedit ${_formatReviewDate(review.updatedAt)}',
+            '${updated ? 'Diedit' : 'Dibuat'} ${_formatReviewDate(updated ? review.updatedAt : review.createdAt)}',
             style: const TextStyle(
               color: MerchantPalette.muted,
               fontSize: 12,

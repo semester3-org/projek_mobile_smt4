@@ -70,6 +70,7 @@ class ApiService {
     required String email,
     required String password,
     required String displayName,
+    required String phone,
     required String role,
     String? merchantType,
   }) async {
@@ -78,6 +79,7 @@ class ApiService {
         'email': email.trim().toLowerCase(),
         'password': password,
         'displayName': displayName.trim(),
+        'phone': phone.trim(),
         'role': role.toLowerCase(),
       };
 

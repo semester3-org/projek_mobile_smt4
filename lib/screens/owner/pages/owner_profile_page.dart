@@ -37,9 +37,10 @@ class OwnerProfilePage extends StatelessWidget {
                       children: [
                         Text(
                           session?.displayName ?? 'Owner',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -53,7 +54,8 @@ class OwnerProfilePage extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen.withOpacity(0.12),
+                            color:
+                                AppTheme.primaryGreen.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: const Text(
@@ -77,8 +79,8 @@ class OwnerProfilePage extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
-                  leading:
-                      const Icon(Icons.security_rounded, color: AppTheme.primaryGreen),
+                  leading: const Icon(Icons.security_rounded,
+                      color: AppTheme.primaryGreen),
                   title: const Text('Keamanan Akun'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -91,8 +93,8 @@ class OwnerProfilePage extends StatelessWidget {
                 ),
                 const Divider(height: 1, indent: 56),
                 ListTile(
-                  leading:
-                      const Icon(Icons.help_outline_rounded, color: AppTheme.primaryGreen),
+                  leading: const Icon(Icons.help_outline_rounded,
+                      color: AppTheme.primaryGreen),
                   title: const Text('Pusat Bantuan'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -120,4 +122,3 @@ class OwnerProfilePage extends StatelessWidget {
     );
   }
 }
-

@@ -70,22 +70,24 @@ class _HomePageState extends State<HomePage> {
     });
 
     final result = await KosRepository.getAll(
-      search:     _locationCtrl.text.trim().isEmpty ? null : _locationCtrl.text.trim(),
-      maxPrice:   _maxPrice,
-      facilities: _selectedFacilities.isEmpty ? null : _selectedFacilities.toList(),
+      search:
+          _locationCtrl.text.trim().isEmpty ? null : _locationCtrl.text.trim(),
+      maxPrice: _maxPrice,
+      facilities:
+          _selectedFacilities.isEmpty ? null : _selectedFacilities.toList(),
     );
 
     if (!mounted) return;
 
     if (result.isSuccess) {
       setState(() {
-        _kosList   = result.data!;
+        _kosList = result.data!;
         _isLoading = false;
       });
     } else {
       setState(() {
         _errorMessage = result.error;
-        _isLoading    = false;
+        _isLoading = false;
       });
     }
   }
@@ -95,7 +97,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openFilter() async {
     await showKosFilterSheet(
       context,
-      initialMaxPrice:   _maxPrice,
+      initialMaxPrice: _maxPrice,
       initialFacilities: _selectedFacilities,
       onApply: (max, fac) {
         setState(() {
@@ -115,9 +117,9 @@ class _HomePageState extends State<HomePage> {
     Navigator.of(context).push(
       fadeSlideRoute<void>(
         KosDetailPage(
-          kos:             kos,
-          heroTag:         heroTag,
-          isFavorite:      widget.favoriteKosIds.contains(kos.id),
+          kos: kos,
+          heroTag: heroTag,
+          isFavorite: widget.favoriteKosIds.contains(kos.id),
           onToggleFavorite: () => widget.onToggleFavorite(kos.id),
         ),
       ),
@@ -147,8 +149,8 @@ class _HomePageState extends State<HomePage> {
           children: [
             HomeSearchSection(
               locationController: _locationCtrl,
-              onFilterTap:        _openFilter,
-              maxPrice:           _maxPrice,
+              onFilterTap: _openFilter,
+              maxPrice: _maxPrice,
               selectedFacilities: _selectedFacilities,
             ),
             const SizedBox(height: 16),
@@ -166,17 +168,17 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Expanded(
                   child: _CategoryTile(
-                    icon:     Icons.home_work_outlined,
-                    label:    'Kos',
+                    icon: Icons.home_work_outlined,
+                    label: 'Kos',
                     subtitle: 'Cari & filter',
-                    onTap:    _fetchKos,
+                    onTap: _fetchKos,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _CategoryTile(
-                    icon:     Icons.local_laundry_service_outlined,
-                    label:    'Laundry',
+                    icon: Icons.local_laundry_service_outlined,
+                    label: 'Laundry',
                     subtitle: 'Terdekat',
                     onTap: () => Navigator.of(context)
                         .push(fadeSlideRoute<void>(const LaundryPage())),
@@ -228,14 +230,14 @@ class _HomePageState extends State<HomePage> {
               )
             else
               ...List.generate(_kosList.length, (i) {
-                final kos     = _kosList[i];
+                final kos = _kosList[i];
                 final heroTag = 'kos-hero-${kos.id}-$i';
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 14),
                   child: KosCard(
-                    kos:           kos,
+                    kos: kos,
                     heroTagSuffix: '$i',
-                    onTap:         () => _openKosDetail(kos, heroTag),
+                    onTap: () => _openKosDetail(kos, heroTag),
                   ),
                 );
               }),
@@ -265,7 +267,7 @@ class _ErrorWidget extends StatelessWidget {
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onRetry,
-            icon:  const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh),
             label: const Text('Coba Lagi'),
           ),
         ]),
@@ -297,25 +299,25 @@ class _CategoryTileState extends State<_CategoryTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown:   (_) => setState(() => _down = true),
-      onTapUp:     (_) => setState(() => _down = false),
-      onTapCancel: ()  => setState(() => _down = false),
-      onTap:       widget.onTap,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
-          color:        Colors.white,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border:       Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: Colors.grey.shade200),
           boxShadow: _down
               ? []
               : [
                   BoxShadow(
-                    color:      AppTheme.primaryGreen.withOpacity(0.08),
+                    color: AppTheme.primaryGreen.withValues(alpha: 0.08),
                     blurRadius: 12,
-                    offset:     const Offset(0, 4),
+                    offset: const Offset(0, 4),
                   ),
                 ],
         ),
@@ -328,7 +330,8 @@ class _CategoryTileState extends State<_CategoryTile> {
           Icon(widget.icon, color: AppTheme.primaryGreen, size: 28),
           const SizedBox(height: 8),
           Text(widget.label,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
           Text(widget.subtitle,
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
         ]),

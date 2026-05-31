@@ -91,7 +91,7 @@ class AuthState extends ChangeNotifier {
       }
       return false;
     } catch (e) {
-      print('Login error in AuthState: $e');
+      debugPrint('Login error in AuthState: $e');
       return false;
     }
   }
@@ -103,14 +103,16 @@ class AuthState extends ChangeNotifier {
         return 'Login dibatalkan oleh pengguna.';
       }
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
       // Sign in to Firebase Auth
-      final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser == null) {
@@ -118,16 +120,21 @@ class AuthState extends ChangeNotifier {
       }
 
       // 1. Save data to Firebase (Firestore) - Non-blocking background task with timeout
-      FirebaseFirestore.instance.collection('users').doc(firebaseUser.uid).set({
-        'uid': firebaseUser.uid,
-        'email': firebaseUser.email,
-        'displayName': firebaseUser.displayName ?? 'Google User',
-        'photoUrl': firebaseUser.photoURL,
-        'role': 'user', // default role
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).timeout(const Duration(seconds: 2)).catchError((firestoreError) {
-        print('Firestore sync warning: $firestoreError');
-      });
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(firebaseUser.uid)
+          .set({
+            'uid': firebaseUser.uid,
+            'email': firebaseUser.email,
+            'displayName': firebaseUser.displayName ?? 'Google User',
+            'photoUrl': firebaseUser.photoURL,
+            'role': 'user', // default role
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 2))
+          .catchError((firestoreError) {
+            debugPrint('Firestore sync warning: $firestoreError');
+          });
 
       // 2. Save data to MySQL via backend API
       final result = await ApiService.loginWithGoogle(
@@ -151,9 +158,11 @@ class AuthState extends ChangeNotifier {
         return result['message'] ?? 'Gagal menyimpan data ke database backend.';
       }
     } catch (e) {
-      print('Google Login error in AuthState: $e');
+      debugPrint('Google Login error in AuthState: $e');
       final errorStr = e.toString();
-      if (errorStr.contains('10') || errorStr.contains('developer_error') || errorStr.contains('DEVELOPER_ERROR')) {
+      if (errorStr.contains('10') ||
+          errorStr.contains('developer_error') ||
+          errorStr.contains('DEVELOPER_ERROR')) {
         return 'Error 10 (DEVELOPER_ERROR): Pastikan SHA-1 sudah ditambahkan ke Firebase Console, Google Sign-In aktif, dan file google-services.json sudah diperbarui.';
       }
       return 'Terjadi kesalahan login Google: $errorStr';

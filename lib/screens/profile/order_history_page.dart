@@ -10,16 +10,26 @@ import '../user/order_detail_page.dart';
 /// Helper untuk format currency
 String formatCurrency(double amount) {
   return 'Rp ${amount.toStringAsFixed(0).replaceAllMapped(
-    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-    (m) => '${m[1]}.',
-  )}';
+        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+        (m) => '${m[1]}.',
+      )}';
 }
 
 /// Helper untuk format date
 String formatDate(DateTime date) {
   const months = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember'
   ];
   return '${date.day} ${months[date.month - 1]} ${date.year}';
 }
@@ -27,8 +37,18 @@ String formatDate(DateTime date) {
 /// Helper untuk format datetime dengan jam
 String formatDateTime(DateTime date) {
   const months = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember'
   ];
   final hour = date.hour.toString().padLeft(2, '0');
   final minute = date.minute.toString().padLeft(2, '0');
@@ -74,7 +94,8 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
     if (!mounted) return;
     setState(() {
       _orders = (result.data ?? [])
-          .where((order) => order.service == 'laundry' || order.service == 'catering')
+          .where((order) =>
+              order.service == 'laundry' || order.service == 'catering')
           .toList();
       _error = result.error;
       _isLoading = false;
@@ -264,7 +285,7 @@ class _OrderCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getStatusColor().withOpacity(0.1),
+                      color: _getStatusColor().withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -321,7 +342,8 @@ class _OrderCard extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                  const Icon(Icons.calendar_today,
+                      size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
                     formatDate(order.orderDate),

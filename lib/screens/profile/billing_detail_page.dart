@@ -532,7 +532,8 @@ class _BillingDetailPageState extends State<BillingDetailPage>
                     : _cancelOrder,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: UserTheme.danger,
-                  side: BorderSide(color: UserTheme.danger.withOpacity(0.4)),
+                  side: BorderSide(
+                      color: UserTheme.danger.withValues(alpha: 0.4)),
                   padding: const EdgeInsets.symmetric(vertical: 15),
                 ),
                 child: _cancelling

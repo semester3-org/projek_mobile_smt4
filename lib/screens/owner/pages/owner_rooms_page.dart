@@ -2324,23 +2324,23 @@ class _StatusSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: ListView(shrinkWrap: true, children: [
-          const ListTile(
-              title: Text('Filter Status',
-                  style: TextStyle(fontWeight: FontWeight.w800))),
-          RadioListTile<RoomStatus?>(
-            value: null,
-            groupValue: selected,
-            onChanged: (v) => Navigator.of(context).pop(v),
-            title: const Text('Semua'),
-          ),
-          ...RoomStatus.values.map((s) => RadioListTile<RoomStatus?>(
-                value: s,
-                groupValue: selected,
-                onChanged: (v) => Navigator.of(context).pop(v),
-                title: Text(s.label),
-              )),
-        ]),
+        child: RadioGroup<RoomStatus?>(
+          groupValue: selected,
+          onChanged: (v) => Navigator.of(context).pop(v),
+          child: ListView(shrinkWrap: true, children: [
+            const ListTile(
+                title: Text('Filter Status',
+                    style: TextStyle(fontWeight: FontWeight.w800))),
+            const RadioListTile<RoomStatus?>(
+              value: null,
+              title: Text('Semua'),
+            ),
+            ...RoomStatus.values.map((s) => RadioListTile<RoomStatus?>(
+                  value: s,
+                  title: Text(s.label),
+                )),
+          ]),
+        ),
       );
 }
 
@@ -2359,17 +2359,19 @@ class _SortSheet extends StatelessWidget {
       ('type_desc', 'Tipe (Z-A)'),
     ];
     return SafeArea(
-      child: ListView(shrinkWrap: true, children: [
-        const ListTile(
-            title: Text('Urutkan Kamar',
-                style: TextStyle(fontWeight: FontWeight.w800))),
-        ...options.map((o) => RadioListTile<String>(
-              value: o.$1,
-              groupValue: selected,
-              onChanged: (v) => Navigator.of(context).pop(v),
-              title: Text(o.$2),
-            )),
-      ]),
+      child: RadioGroup<String>(
+        groupValue: selected,
+        onChanged: (v) => Navigator.of(context).pop(v),
+        child: ListView(shrinkWrap: true, children: [
+          const ListTile(
+              title: Text('Urutkan Kamar',
+                  style: TextStyle(fontWeight: FontWeight.w800))),
+          ...options.map((o) => RadioListTile<String>(
+                value: o.$1,
+                title: Text(o.$2),
+              )),
+        ]),
+      ),
     );
   }
 }

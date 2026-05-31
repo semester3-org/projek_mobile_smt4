@@ -123,7 +123,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryGreen.withOpacity(0.1),
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.notifications_active_rounded,
@@ -246,7 +246,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 0
                                         ? AppTheme.primaryGreen
-                                            .withOpacity(0.14)
+                                            .withValues(alpha: 0.14)
                                         : Colors.transparent,
                                     foregroundColor: _tab == 0
                                         ? AppTheme.primaryGreen
@@ -262,7 +262,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 1
                                         ? AppTheme.primaryGreen
-                                            .withOpacity(0.14)
+                                            .withValues(alpha: 0.14)
                                         : Colors.transparent,
                                     foregroundColor: _tab == 1
                                         ? AppTheme.primaryGreen
@@ -278,7 +278,7 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _tab == 2
                                         ? AppTheme.primaryGreen
-                                            .withOpacity(0.14)
+                                            .withValues(alpha: 0.14)
                                         : Colors.transparent,
                                     foregroundColor: _tab == 2
                                         ? AppTheme.primaryGreen

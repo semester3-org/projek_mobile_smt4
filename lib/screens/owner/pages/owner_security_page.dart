@@ -14,7 +14,11 @@ class OwnerSecurityPage extends StatefulWidget {
 class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
   bool _isTwoFactor = true;
 
-  Future<void> _changePassword(BuildContext context, String currentPass, String newPass) async {
+  Future<void> _changePassword(
+      BuildContext context, String currentPass, String newPass) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     // Tampilkan loading dialog
     showDialog<void>(
       context: context,
@@ -28,10 +32,10 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
     );
 
     if (!mounted) return;
-    Navigator.pop(context); // Close loading indicator
+    navigator.pop(); // Close loading indicator
 
     if (!res.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(res.error ?? 'Gagal mengubah kata sandi'),
           backgroundColor: Colors.red,
@@ -40,7 +44,7 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Kata sandi berhasil diubah!'),
         backgroundColor: AppTheme.primaryGreen,
@@ -167,7 +171,8 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
           const SizedBox(height: 20),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.lock_outline_rounded, color: AppTheme.primaryGreen),
+              leading: const Icon(Icons.lock_outline_rounded,
+                  color: AppTheme.primaryGreen),
               title: const Text('Ubah Kata Sandi'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showChangePasswordDialog(context),
@@ -176,11 +181,12 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
           const SizedBox(height: 12),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.phonelink_lock_rounded, color: AppTheme.primaryGreen),
+              leading: const Icon(Icons.phonelink_lock_rounded,
+                  color: AppTheme.primaryGreen),
               title: const Text('Verifikasi Dua Langkah'),
               subtitle: const Text('Aktifkan OTP untuk login lebih aman'),
               trailing: Switch(
-                value: _isTwoFactor, 
+                value: _isTwoFactor,
                 activeThumbColor: AppTheme.primaryGreen,
                 onChanged: (val) {
                   setState(() {
@@ -188,7 +194,8 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(val ? '2FA diaktifkan.' : '2FA dinonaktifkan.'),
+                      content:
+                          Text(val ? '2FA diaktifkan.' : '2FA dinonaktifkan.'),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -199,14 +206,16 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
           const SizedBox(height: 12),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.email_outlined, color: AppTheme.primaryGreen),
+              leading: const Icon(Icons.email_outlined,
+                  color: AppTheme.primaryGreen),
               title: const Text('Email Akun Utama'),
               subtitle: Text(email),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Email utama terhubung dengan profil session Anda.'),
+                    content: Text(
+                        'Email utama terhubung dengan profil session Anda.'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );

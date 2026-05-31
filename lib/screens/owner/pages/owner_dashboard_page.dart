@@ -18,7 +18,7 @@ class OwnerDashboardPage extends StatefulWidget {
 class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
   bool _isLoading = true;
   String? _error;
-  
+
   Map<String, dynamic> _stats = {
     'total': 0,
     'occupied': 0,
@@ -109,13 +109,14 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-               ? Center(
+              ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        Icon(Icons.error_outline,
+                            size: 48, color: Colors.red.shade400),
                         const SizedBox(height: 12),
                         Text(
                           _error!,
@@ -167,16 +168,18 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
                       ),
                       const SizedBox(height: 14),
                       _RevenueCard(
-                        monthlyRevenue: _formatPrice(_revenue['monthly'] as int),
+                        monthlyRevenue:
+                            _formatPrice(_revenue['monthly'] as int),
                         growthText: _revenue['growth'] as String,
                         onNavigateToFinance: widget.onNavigateToFinance,
                       ),
                       const SizedBox(height: 16),
                       Text(
                         'Menu Cepat',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                       ),
                       const SizedBox(height: 10),
                       _QuickMenu(
@@ -201,12 +204,16 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
                         children: [
                           Text(
                             'Aktivitas Terkini',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
                           ),
                           TextButton(
-                            onPressed: () => widget.onNavigateToFinance?.call(4),
+                            onPressed: () =>
+                                widget.onNavigateToFinance?.call(4),
                             child: const Text('Lihat Semua'),
                           ),
                         ],
@@ -236,9 +243,10 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
                       const SizedBox(height: 18),
                       Text(
                         'Jatuh Tempo Mendatang',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                       ),
                       const SizedBox(height: 10),
                       _DueSoonCard(dueSoonList: _dueSoon),
@@ -327,9 +335,10 @@ class _StatCard extends StatelessWidget {
                 ),
                 if (total > 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryGreen.withOpacity(0.1),
+                      color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -344,7 +353,8 @@ class _StatCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+            Text(subtitle,
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(999),
@@ -390,10 +400,15 @@ class _MiniStatsCard extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: TextStyle(color: fg.withOpacity(0.9), fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(label,
+                  style: TextStyle(
+                      color: fg.withValues(alpha: 0.9),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
               Text(
                 value,
-                style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 13),
+                style: TextStyle(
+                    color: fg, fontWeight: FontWeight.w800, fontSize: 13),
               ),
             ],
           ),
@@ -406,11 +421,14 @@ class _MiniStatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            chip('Terisi', occupied, const Color(0xFFEAF3FF), AppTheme.primaryGreen, 1),
+            chip('Terisi', occupied, const Color(0xFFEAF3FF),
+                AppTheme.primaryGreen, 1),
             const SizedBox(height: 10),
-            chip('Kosong', available, const Color(0xFFE3F2FD), const Color(0xFF1565C0), 1),
+            chip('Kosong', available, const Color(0xFFE3F2FD),
+                const Color(0xFF1565C0), 1),
             const SizedBox(height: 10),
-            chip('Maint.', maintenance, const Color(0xFFFFF3E0), const Color(0xFFEF6C00), 1),
+            chip('Maint.', maintenance, const Color(0xFFFFF3E0),
+                const Color(0xFFEF6C00), 1),
           ],
         ),
       ),
@@ -441,7 +459,7 @@ class _RevenueCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E5AEF).withOpacity(0.25),
+            color: const Color(0xFF1E5AEF).withValues(alpha: 0.25),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -457,7 +475,8 @@ class _RevenueCard extends StatelessWidget {
                 children: [
                   Text(
                     'Pendapatan Bulan Ini',
-                    style: TextStyle(color: Colors.white.withOpacity(0.9)),
+                    style:
+                        TextStyle(color: Colors.white.withValues(alpha: 0.9)),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -471,14 +490,16 @@ class _RevenueCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     growthText,
-                    style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 13),
                   ),
                 ],
               ),
             ),
             FilledButton.tonal(
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.18),
+                backgroundColor: Colors.white.withValues(alpha: 0.18),
                 foregroundColor: Colors.white,
               ),
               onPressed: () {
@@ -492,6 +513,7 @@ class _RevenueCard extends StatelessWidget {
     );
   }
 }
+
 class _QuickMenu extends StatelessWidget {
   const _QuickMenu({
     required this.onSecurity,
@@ -613,13 +635,15 @@ class _ActivityTile extends StatelessWidget {
           width: 10,
           height: 44,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.9),
+            color: color.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(6),
           ),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
-        trailing: Text(time, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+        trailing: Text(time,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
       ),
     );
   }
@@ -667,13 +691,14 @@ class _DueSoonCard extends StatelessWidget {
             width: double.infinity,
             child: FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.12),
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
                 foregroundColor: Colors.white,
               ),
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Pengingat jatuh tempo telah dikirim ke ${dueSoonList.length} penghuni'),
+                    content: Text(
+                        'Pengingat jatuh tempo telah dikirim ke ${dueSoonList.length} penghuni'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -706,7 +731,7 @@ class _DueSoonRow extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Icon(Icons.event, color: Colors.white, size: 18),
@@ -725,7 +750,8 @@ class _DueSoonRow extends StatelessWidget {
               ),
               Text(
                 'Kamar $room',
-                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
               ),
             ],
           ),
@@ -733,7 +759,7 @@ class _DueSoonRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
+            color: Colors.white.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(

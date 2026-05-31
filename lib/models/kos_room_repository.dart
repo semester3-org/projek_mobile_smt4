@@ -33,7 +33,10 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   }
 
   Future<void> _loadRooms() async {
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     final result = await KosRoomRepository.getRooms(
       widget.kosId,
@@ -43,9 +46,15 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     if (!mounted) return;
 
     if (result.isSuccess) {
-      setState(() { _rooms = result.data!; _isLoading = false; });
+      setState(() {
+        _rooms = result.data!;
+        _isLoading = false;
+      });
     } else {
-      setState(() { _errorMessage = result.error; _isLoading = false; });
+      setState(() {
+        _errorMessage = result.error;
+        _isLoading = false;
+      });
     }
   }
 
@@ -58,13 +67,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     String? description,
   }) async {
     final result = await KosRoomRepository.createRoom(
-      kosId:         widget.kosId,
-      roomNumber:    roomNumber,
-      roomType:      roomType,
+      kosId: widget.kosId,
+      roomNumber: roomNumber,
+      roomType: roomType,
       pricePerMonth: pricePerMonth,
-      maxOccupant:   maxOccupant,
-      status:        status,
-      description:   description,
+      maxOccupant: maxOccupant,
+      status: status,
+      description: description,
     );
 
     if (!mounted) return false;
@@ -127,12 +136,18 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }).toList();
 
     switch (_sortBy) {
-      case 'room_number_asc':  result.sort((a, b) => a.roomNumber.compareTo(b.roomNumber));
-      case 'room_number_desc': result.sort((a, b) => b.roomNumber.compareTo(a.roomNumber));
-      case 'price_asc':        result.sort((a, b) => a.pricePerMonth.compareTo(b.pricePerMonth));
-      case 'price_desc':       result.sort((a, b) => b.pricePerMonth.compareTo(a.pricePerMonth));
-      case 'type_asc':         result.sort((a, b) => a.roomType.compareTo(b.roomType));
-      case 'type_desc':        result.sort((a, b) => b.roomType.compareTo(a.roomType));
+      case 'room_number_asc':
+        result.sort((a, b) => a.roomNumber.compareTo(b.roomNumber));
+      case 'room_number_desc':
+        result.sort((a, b) => b.roomNumber.compareTo(a.roomNumber));
+      case 'price_asc':
+        result.sort((a, b) => a.pricePerMonth.compareTo(b.pricePerMonth));
+      case 'price_desc':
+        result.sort((a, b) => b.pricePerMonth.compareTo(a.pricePerMonth));
+      case 'type_asc':
+        result.sort((a, b) => a.roomType.compareTo(b.roomType));
+      case 'type_desc':
+        result.sort((a, b) => b.roomType.compareTo(a.roomType));
     }
     return result;
   }
@@ -150,10 +165,11 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
 
   void _showEditDialog(KosRoom room) {
     final numberCtrl = TextEditingController(text: room.roomNumber);
-    final typeCtrl   = TextEditingController(text: room.roomType);
-    final priceCtrl  = TextEditingController(text: room.pricePerMonth.toString());
-    final occCtrl    = TextEditingController(text: room.maxOccupant.toString());
-    final descCtrl   = TextEditingController(text: room.description ?? '');
+    final typeCtrl = TextEditingController(text: room.roomType);
+    final priceCtrl =
+        TextEditingController(text: room.pricePerMonth.toString());
+    final occCtrl = TextEditingController(text: room.maxOccupant.toString());
+    final descCtrl = TextEditingController(text: room.description ?? '');
     RoomStatus selectedStatus = room.status;
 
     showDialog(
@@ -178,7 +194,8 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 decoration: const InputDecoration(
                     labelText: 'Status', border: OutlineInputBorder()),
                 items: RoomStatus.values
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                    .map(
+                        (s) => DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
                 onChanged: (v) => setDialog(() => selectedStatus = v!),
               ),
@@ -194,12 +211,14 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
               onPressed: () {
                 Navigator.pop(ctx);
                 _updateRoom(room.id, {
-                  'room_number':     numberCtrl.text.trim(),
-                  'room_type':       typeCtrl.text.trim(),
-                  'price_per_month': int.tryParse(priceCtrl.text) ?? room.pricePerMonth,
-                  'max_occupant':    int.tryParse(occCtrl.text) ?? room.maxOccupant,
-                  'status':          selectedStatus.dbValue,
-                  'description':     descCtrl.text.trim(),
+                  'room_number': numberCtrl.text.trim(),
+                  'room_type': typeCtrl.text.trim(),
+                  'price_per_month':
+                      int.tryParse(priceCtrl.text) ?? room.pricePerMonth,
+                  'max_occupant':
+                      int.tryParse(occCtrl.text) ?? room.maxOccupant,
+                  'status': selectedStatus.dbValue,
+                  'description': descCtrl.text.trim(),
                 });
               },
               child: const Text('Simpan'),
@@ -218,23 +237,35 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
           ListTile(
             leading: const Icon(Icons.visibility),
             title: const Text('Lihat Detail'),
-            onTap: () { Navigator.pop(ctx); _showDetail(room); },
+            onTap: () {
+              Navigator.pop(ctx);
+              _showDetail(room);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.history),
             title: const Text('Riwayat Penyewa'),
-            onTap: () { Navigator.pop(ctx); _showSnack('Coming soon!'); },
+            onTap: () {
+              Navigator.pop(ctx);
+              _showSnack('Coming soon!');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.payments_outlined),
             title: const Text('Riwayat Pembayaran'),
-            onTap: () { Navigator.pop(ctx); _showSnack('Coming soon!'); },
+            onTap: () {
+              Navigator.pop(ctx);
+              _showSnack('Coming soon!');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Hapus Kamar',
-                style: TextStyle(color: Colors.red)),
-            onTap: () { Navigator.pop(ctx); _showDeleteConfirm(room); },
+            title:
+                const Text('Hapus Kamar', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showDeleteConfirm(room);
+            },
           ),
         ]),
       ),
@@ -246,14 +277,19 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.55, minChildSize: 0.3, maxChildSize: 0.85,
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
         expand: false,
         builder: (_, ctrl) => SingleChildScrollView(
           controller: ctrl,
           padding: const EdgeInsets.all(20),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(
-              width: 40, height: 4,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+                child: Container(
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(2),
@@ -261,16 +297,19 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
             )),
             const SizedBox(height: 20),
             Text('Detail Kamar ${room.roomNumber}',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-            Text(room.kosTitle,
-                style: TextStyle(color: Colors.grey.shade600)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+            Text(room.kosTitle, style: TextStyle(color: Colors.grey.shade600)),
             const Divider(height: 24),
-            _DetailRow(label: 'room_number',     value: room.roomNumber),
-            _DetailRow(label: 'room_type',       value: room.roomType),
-            _DetailRow(label: 'price_per_month', value: _formatPrice(room.pricePerMonth)),
+            _DetailRow(label: 'room_number', value: room.roomNumber),
+            _DetailRow(label: 'room_type', value: room.roomType),
+            _DetailRow(
+                label: 'price_per_month',
+                value: _formatPrice(room.pricePerMonth)),
             _DetailRow(label: 'rental_type', value: room.rentalType.label),
-            _DetailRow(label: 'max_occupant',    value: '${room.maxOccupant} orang'),
-            _DetailRow(label: 'status',          value: room.status.dbValue),
+            _DetailRow(
+                label: 'max_occupant', value: '${room.maxOccupant} orang'),
+            _DetailRow(label: 'status', value: room.status.dbValue),
             if (room.description != null && room.description!.isNotEmpty)
               _DetailRow(label: 'description', value: room.description!),
             if (room.updatedAt != null)
@@ -279,7 +318,10 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () { Navigator.pop(context); _showEditDialog(room); },
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showEditDialog(room);
+                },
                 icon: const Icon(Icons.edit),
                 label: const Text('Edit Kamar'),
               ),
@@ -301,11 +343,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Batal')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () { Navigator.pop(ctx); _deleteRoom(room); },
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteRoom(room);
+            },
             child: const Text('Hapus'),
           ),
         ],
@@ -350,7 +394,8 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.error_outline, size: 48, color: Colors.red),
             const SizedBox(height: 12),
-            Text(_errorMessage!, textAlign: TextAlign.center,
+            Text(_errorMessage!,
+                textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -363,10 +408,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       );
     }
 
-    final items       = _filtered;
-    final occupied    = _rooms.where((r) => r.status == RoomStatus.occupied).length;
-    final available   = _rooms.where((r) => r.status == RoomStatus.available).length;
-    final maintenance = _rooms.where((r) => r.status == RoomStatus.maintenance).length;
+    final items = _filtered;
+    final occupied =
+        _rooms.where((r) => r.status == RoomStatus.occupied).length;
+    final available =
+        _rooms.where((r) => r.status == RoomStatus.available).length;
+    final maintenance =
+        _rooms.where((r) => r.status == RoomStatus.maintenance).length;
 
     return RefreshIndicator(
       onRefresh: _loadRooms,
@@ -495,20 +543,24 @@ class _AddRoomSheet extends StatefulWidget {
 }
 
 class _AddRoomSheetState extends State<_AddRoomSheet> {
-  final _formKey    = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final _numberCtrl = TextEditingController();
-  final _priceCtrl  = TextEditingController();
-  final _occCtrl    = TextEditingController(text: '1');
-  final _descCtrl   = TextEditingController();
+  final _priceCtrl = TextEditingController();
+  final _occCtrl = TextEditingController(text: '1');
+  final _descCtrl = TextEditingController();
 
-  String _selectedType       = 'Standard Single';
+  String _selectedType = 'Standard Single';
   RoomStatus _selectedStatus = RoomStatus.available;
-  bool _isSaving             = false;
+  bool _isSaving = false;
 
   final _roomTypes = const [
-    'Standard Single', 'Standard Double',
-    'Deluxe Single',   'Deluxe Double',
-    'Deluxe Balcony',  'Suite King', 'Suite Queen',
+    'Standard Single',
+    'Standard Double',
+    'Deluxe Single',
+    'Deluxe Double',
+    'Deluxe Balcony',
+    'Suite King',
+    'Suite Queen',
   ];
 
   @override
@@ -525,12 +577,12 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
     setState(() => _isSaving = true);
 
     final success = await widget.onSave(
-      roomNumber:    _numberCtrl.text.trim(),
-      roomType:      _selectedType,
+      roomNumber: _numberCtrl.text.trim(),
+      roomType: _selectedType,
       pricePerMonth: int.parse(_priceCtrl.text.replaceAll('.', '')),
-      maxOccupant:   int.parse(_occCtrl.text),
-      status:        _selectedStatus,
-      description:   _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+      maxOccupant: int.parse(_occCtrl.text),
+      status: _selectedStatus,
+      description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
     );
 
     if (mounted) {
@@ -543,7 +595,9 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 20, right: 20, top: 20,
+        left: 20,
+        right: 20,
+        top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: Form(
@@ -553,8 +607,10 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(child: Container(
-                width: 40, height: 4,
+              Center(
+                  child: Container(
+                width: 40,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade300,
@@ -616,7 +672,9 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                 ),
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Kapasitas wajib diisi';
-                  if ((int.tryParse(v) ?? 0) <= 0) return 'Masukkan angka valid';
+                  if ((int.tryParse(v) ?? 0) <= 0) {
+                    return 'Masukkan angka valid';
+                  }
                   return null;
                 },
               ),
@@ -628,7 +686,8 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                   prefixIcon: Icon(Icons.info_outline),
                 ),
                 items: RoomStatus.values
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                    .map(
+                        (s) => DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
                 onChanged: (v) => setState(() => _selectedStatus = v!),
               ),
@@ -647,7 +706,8 @@ class _AddRoomSheetState extends State<_AddRoomSheet> {
                 onPressed: _isSaving ? null : _submit,
                 child: _isSaving
                     ? const SizedBox(
-                        width: 20, height: 20,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white),
                       )
@@ -681,17 +741,23 @@ class _RoomCard extends StatelessWidget {
 
   Color get _badgeBg {
     switch (room.status) {
-      case RoomStatus.occupied:    return const Color(0xFFE8F5E9);
-      case RoomStatus.available:   return const Color(0xFFE3F2FD);
-      case RoomStatus.maintenance: return const Color(0xFFFFF3E0);
+      case RoomStatus.occupied:
+        return const Color(0xFFE8F5E9);
+      case RoomStatus.available:
+        return const Color(0xFFE3F2FD);
+      case RoomStatus.maintenance:
+        return const Color(0xFFFFF3E0);
     }
   }
 
   Color get _badgeFg {
     switch (room.status) {
-      case RoomStatus.occupied:    return AppTheme.primaryGreen;
-      case RoomStatus.available:   return const Color(0xFF1565C0);
-      case RoomStatus.maintenance: return const Color(0xFFEF6C00);
+      case RoomStatus.occupied:
+        return AppTheme.primaryGreen;
+      case RoomStatus.available:
+        return const Color(0xFF1565C0);
+      case RoomStatus.maintenance:
+        return const Color(0xFFEF6C00);
     }
   }
 
@@ -703,25 +769,29 @@ class _RoomCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
-            width: 46, height: 46,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
               color: AppTheme.surfaceTint,
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
             child: Text(room.roomNumber,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(
                   child: Text(room.roomType,
                       style: const TextStyle(fontWeight: FontWeight.w900)),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: _badgeBg,
                     borderRadius: BorderRadius.circular(999),
@@ -734,9 +804,11 @@ class _RoomCard extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 4),
-              Text('${formatPrice(room.pricePerMonth)}${room.rentalType.priceSuffix}',
+              Text(
+                  '${formatPrice(room.pricePerMonth)}${room.rentalType.priceSuffix}',
                   style: TextStyle(
-                      color: Colors.grey.shade700, fontWeight: FontWeight.w700)),
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w700)),
               Text('Kapasitas: ${room.maxOccupant} orang',
                   style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
               if (room.description != null && room.description!.isNotEmpty) ...[
@@ -796,23 +868,23 @@ class _StatusSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: ListView(shrinkWrap: true, children: [
-          const ListTile(
-              title: Text('Filter Status',
-                  style: TextStyle(fontWeight: FontWeight.w800))),
-          RadioListTile<RoomStatus?>(
-            value: null,
-            groupValue: selected,
-            onChanged: (v) => Navigator.of(context).pop(v),
-            title: const Text('Semua'),
-          ),
-          ...RoomStatus.values.map((s) => RadioListTile<RoomStatus?>(
-                value: s,
-                groupValue: selected,
-                onChanged: (v) => Navigator.of(context).pop(v),
-                title: Text(s.label),
-              )),
-        ]),
+        child: RadioGroup<RoomStatus?>(
+          groupValue: selected,
+          onChanged: (v) => Navigator.of(context).pop(v),
+          child: ListView(shrinkWrap: true, children: [
+            const ListTile(
+                title: Text('Filter Status',
+                    style: TextStyle(fontWeight: FontWeight.w800))),
+            const RadioListTile<RoomStatus?>(
+              value: null,
+              title: Text('Semua'),
+            ),
+            ...RoomStatus.values.map((s) => RadioListTile<RoomStatus?>(
+                  value: s,
+                  title: Text(s.label),
+                )),
+          ]),
+        ),
       );
 }
 
@@ -824,26 +896,28 @@ class _SortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const options = [
-      ('room_number_asc',  'Nomor Kamar (A-Z)'),
+      ('room_number_asc', 'Nomor Kamar (A-Z)'),
       ('room_number_desc', 'Nomor Kamar (Z-A)'),
-      ('price_asc',        'Harga (Terendah)'),
-      ('price_desc',       'Harga (Tertinggi)'),
-      ('type_asc',         'Tipe (A-Z)'),
-      ('type_desc',        'Tipe (Z-A)'),
+      ('price_asc', 'Harga (Terendah)'),
+      ('price_desc', 'Harga (Tertinggi)'),
+      ('type_asc', 'Tipe (A-Z)'),
+      ('type_desc', 'Tipe (Z-A)'),
     ];
 
     return SafeArea(
-      child: ListView(shrinkWrap: true, children: [
-        const ListTile(
-            title: Text('Urutkan Kamar',
-                style: TextStyle(fontWeight: FontWeight.w800))),
-        ...options.map((o) => RadioListTile<String>(
-              value: o.$1,
-              groupValue: selected,
-              onChanged: (v) => Navigator.of(context).pop(v),
-              title: Text(o.$2),
-            )),
-      ]),
+      child: RadioGroup<String>(
+        groupValue: selected,
+        onChanged: (v) => Navigator.of(context).pop(v),
+        child: ListView(shrinkWrap: true, children: [
+          const ListTile(
+              title: Text('Urutkan Kamar',
+                  style: TextStyle(fontWeight: FontWeight.w800))),
+          ...options.map((o) => RadioListTile<String>(
+                value: o.$1,
+                title: Text(o.$2),
+              )),
+        ]),
+      ),
     );
   }
 }

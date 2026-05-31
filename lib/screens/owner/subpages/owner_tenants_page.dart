@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
 import '../pages/owner_rooms_page.dart';
+
 class OwnerTenantsPage extends StatefulWidget {
   const OwnerTenantsPage({super.key});
 
@@ -197,7 +198,9 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                 _DetailRow(label: 'Nomor Kamar', value: tenant.roomNumber),
                 _DetailRow(label: 'Tipe Kamar', value: tenant.roomType),
                 _DetailRow(label: 'Status', value: tenant.statusLabel),
-                _DetailRow(label: 'Harga Kamar', value: _formatPrice(tenant.roomPrice)),
+                _DetailRow(
+                    label: 'Harga Kamar',
+                    value: _formatPrice(tenant.roomPrice)),
                 if (tenant.startDate != null)
                   _DetailRow(label: 'Mulai Sewa', value: tenant.startDate!),
                 if (tenant.status == 'pending') ...[
@@ -206,18 +209,24 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: _updatingIds.contains(tenant.registrationId)
-                              ? null
-                              : () async {
-                                  final reason = await _showRejectReasonDialog();
-                                  if (reason == null) return;
-                                  final ok = await _updateTenantStatus(
-                                    tenant,
-                                    'rejected',
-                                    rejectReason: reason.isEmpty ? 'Pengajuan ditolak oleh owner.' : reason,
-                                  );
-                                  if (ok && mounted) Navigator.of(context).pop();
-                                },
+                          onPressed:
+                              _updatingIds.contains(tenant.registrationId)
+                                  ? null
+                                  : () async {
+                                      final reason =
+                                          await _showRejectReasonDialog();
+                                      if (reason == null) return;
+                                      final ok = await _updateTenantStatus(
+                                        tenant,
+                                        'rejected',
+                                        rejectReason: reason.isEmpty
+                                            ? 'Pengajuan ditolak oleh owner.'
+                                            : reason,
+                                      );
+                                      if (ok && context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red.shade700,
                             side: BorderSide(color: Colors.red.shade300),
@@ -228,15 +237,18 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: FilledButton(
-                          onPressed: _updatingIds.contains(tenant.registrationId)
-                              ? null
-                              : () async {
-                                  final ok = await _updateTenantStatus(
-                                    tenant,
-                                    'approved',
-                                  );
-                                  if (ok && mounted) Navigator.of(context).pop();
-                                },
+                          onPressed:
+                              _updatingIds.contains(tenant.registrationId)
+                                  ? null
+                                  : () async {
+                                      final ok = await _updateTenantStatus(
+                                        tenant,
+                                        'approved',
+                                      );
+                                      if (ok && context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    },
                           child: const Text('Setujui'),
                         ),
                       ),
@@ -266,7 +278,8 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                     padding: const EdgeInsets.all(24),
                     children: [
                       const SizedBox(height: 80),
-                      Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                      Icon(Icons.error_outline,
+                          size: 48, color: Colors.red.shade400),
                       const SizedBox(height: 12),
                       Text(
                         _error!,
@@ -298,7 +311,9 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                               _updateTenantStatus(
                                 tenant,
                                 'rejected',
-                                rejectReason: reason.isEmpty ? 'Pengajuan ditolak oleh owner.' : reason,
+                                rejectReason: reason.isEmpty
+                                    ? 'Pengajuan ditolak oleh owner.'
+                                    : reason,
                               );
                             },
                           ),
@@ -498,14 +513,16 @@ class _KosBadge extends StatelessWidget {
         vertical: compact ? 6 : 9,
       ),
       decoration: BoxDecoration(
-        color: AppTheme.primaryGreen.withOpacity(0.1),
+        color: AppTheme.primaryGreen.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.25)),
+        border:
+            Border.all(color: AppTheme.primaryGreen.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.home_work_outlined, size: 16, color: AppTheme.primaryGreen),
+          const Icon(Icons.home_work_outlined,
+              size: 16, color: AppTheme.primaryGreen),
           const SizedBox(width: 6),
           Flexible(
             child: Text(

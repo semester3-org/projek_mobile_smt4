@@ -23,7 +23,8 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fade = CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
+    _fade =
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
     _scale = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
     );
@@ -85,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen>
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: [
                         BoxShadow(
-                          color: AppTheme.primaryGreen.withOpacity(0.16),
+                          color: AppTheme.primaryGreen.withValues(alpha: 0.16),
                           blurRadius: 26,
                           offset: const Offset(0, 14),
                         ),
@@ -149,7 +150,9 @@ class _Dot extends StatelessWidget {
       width: active ? 14 : 8,
       height: 8,
       decoration: BoxDecoration(
-        color: active ? AppTheme.primaryGreen : AppTheme.primaryGreen.withOpacity(0.25),
+        color: active
+            ? AppTheme.primaryGreen
+            : AppTheme.primaryGreen.withValues(alpha: 0.25),
         borderRadius: BorderRadius.circular(6),
       ),
     );

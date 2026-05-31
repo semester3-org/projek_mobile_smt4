@@ -84,7 +84,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
     if (roomCode.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Masukkan kode unik kamar terlebih dahulu')),
+        const SnackBar(
+            content: Text('Masukkan kode unik kamar terlebih dahulu')),
       );
       return;
     }
@@ -154,7 +155,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ? 'Berhasil kembali ke kamar yang masa sewanya masih aktif'
                 : (isChangingKos || isChangingRoom)
                     ? 'Pengajuan perpindahan kamar dikirim dan menunggu verifikasi owner'
-                : 'Kode kos berhasil disambungkan',
+                    : 'Kode kos berhasil disambungkan',
           ),
         ),
       );
@@ -269,10 +270,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () {
                       Navigator.of(context)
                           .push<bool>(
-                            MaterialPageRoute<bool>(
-                              builder: (_) => const BillingListPage(),
-                            ),
-                          )
+                        MaterialPageRoute<bool>(
+                          builder: (_) => const BillingListPage(),
+                        ),
+                      )
                           .then((changed) {
                         if (changed == true) _load();
                       });
@@ -342,11 +343,11 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       final activeUntil = item.activeUntil;
       if (activeUntil == null) return false;
-      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      final until =
+          DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
       return !until.isBefore(today);
     });
   }
-
 }
 
 class _ActiveRentBanner extends StatelessWidget {
@@ -389,7 +390,8 @@ class _ActiveRentBanner extends StatelessWidget {
       if (item.status == 'pending') return true;
       final activeUntil = item.activeUntil;
       if (activeUntil == null) return false;
-      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      final until =
+          DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
       return !until.isBefore(today);
     }).toList();
 
@@ -410,7 +412,8 @@ class _ActiveRentBanner extends StatelessWidget {
         iconColor: UserTheme.muted,
         icon: Icons.hourglass_top_rounded,
         title: 'Pengajuan kamar menunggu',
-        subtitle: '${_rentLabel(rent)}\nBelum ada nominal tagihan sampai owner menyetujui.',
+        subtitle:
+            '${_rentLabel(rent)}\nBelum ada nominal tagihan sampai owner menyetujui.',
         badge: 'Pending',
       );
     }
@@ -429,7 +432,8 @@ class _ActiveRentBanner extends StatelessWidget {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+    final until =
+        DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
     final remainingDays = until.difference(today).inDays;
     final isExpired = remainingDays < 0;
     final isNearEnd = remainingDays >= 0 && remainingDays <= 7;
@@ -458,7 +462,8 @@ class _ActiveRentBanner extends StatelessWidget {
           : isNearEnd
               ? 'Masa sewa segera berakhir'
               : 'Masa sewa aktif',
-      subtitle: 'Aktif sampai ${formatShortDate(activeUntil)}\n${_rentLabel(rent)}',
+      subtitle:
+          'Aktif sampai ${formatShortDate(activeUntil)}\n${_rentLabel(rent)}',
       badge: isExpired
           ? '${remainingDays.abs()} hari lalu'
           : remainingDays == 0
@@ -503,7 +508,7 @@ class _RentBannerShell extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: iconColor.withOpacity(0.18)),
+        border: Border.all(color: iconColor.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -511,7 +516,7 @@ class _RentBannerShell extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -546,7 +551,7 @@ class _RentBannerShell extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.72),
+              color: Colors.white.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
@@ -608,9 +613,7 @@ class _RentHistorySection extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          history.kosName.isEmpty
-                              ? 'Kos'
-                              : history.kosName,
+                          history.kosName.isEmpty ? 'Kos' : history.kosName,
                           style: const TextStyle(
                             color: UserTheme.text,
                             fontWeight: FontWeight.w900,
@@ -659,11 +662,11 @@ class _RentHistorySection extends StatelessWidget {
       if (item.status == 'pending') return false;
       final activeUntil = item.activeUntil;
       if (activeUntil == null) return true;
-      final until = DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
+      final until =
+          DateTime(activeUntil.year, activeUntil.month, activeUntil.day);
       return until.isBefore(today);
     }).toList();
   }
-
 }
 
 class _ProfileHeader extends StatelessWidget {
@@ -754,7 +757,6 @@ class _ProfileHeader extends StatelessWidget {
     }
     return NetworkImage(value);
   }
-
 }
 
 class _KosCodeCard extends StatelessWidget {

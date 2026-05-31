@@ -41,8 +41,8 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Kata sandi berhasil diubah!'),
+      const SnackBar(
+        content: Text('Kata sandi berhasil diubah!'),
         backgroundColor: AppTheme.primaryGreen,
       ),
     );
@@ -181,7 +181,7 @@ class _OwnerSecurityPageState extends State<OwnerSecurityPage> {
               subtitle: const Text('Aktifkan OTP untuk login lebih aman'),
               trailing: Switch(
                 value: _isTwoFactor, 
-                activeColor: AppTheme.primaryGreen,
+                activeThumbColor: AppTheme.primaryGreen,
                 onChanged: (val) {
                   setState(() {
                     _isTwoFactor = val;

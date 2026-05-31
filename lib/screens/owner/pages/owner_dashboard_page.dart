@@ -3,11 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../app/app_theme.dart';
 import '../../../auth/auth_scope.dart';
 import '../../../core/api_service.dart';
-import 'owner_finance_page.dart';
-import 'owner_notifications_page.dart';
 import 'owner_security_page.dart';
 import 'owner_help_page.dart';
-import '../subpages/owner_tenants_page.dart';
 
 class OwnerDashboardPage extends StatefulWidget {
   const OwnerDashboardPage({super.key, this.onNavigateToFinance});

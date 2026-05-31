@@ -67,8 +67,8 @@ class OwnerHelpPage extends StatelessWidget {
               }
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Permintaan bantuan berhasil dikirim! Kami akan menghubungi Anda segera.'),
+                const SnackBar(
+                  content: Text('Permintaan bantuan berhasil dikirim! Kami akan menghubungi Anda segera.'),
                   backgroundColor: AppTheme.primaryGreen,
                 ),
               );

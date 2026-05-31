@@ -62,6 +62,22 @@ function handleGet(mysqli $conn, string $ownerId, ?string $kosId, ?string $roomI
     validateKosOwnership($conn, $kosId, $ownerId);
 
     if ($roomId) {
+        $history = $_GET['history'] ?? null;
+        if ($history === 'tenants') {
+            echo json_encode([
+                'success' => true,
+                'data' => getTenantHistory($conn, $kosId, $roomId),
+            ]);
+            return;
+        }
+        if ($history === 'payments') {
+            echo json_encode([
+                'success' => true,
+                'data' => getPaymentHistory($conn, $kosId, $roomId),
+            ]);
+            return;
+        }
+
         $stmt = $conn->prepare("
             SELECT r.*, k.title AS kos_title
             FROM kos_rooms r
@@ -128,6 +144,9 @@ function handlePost(mysqli $conn, string $ownerId): void {
     }
     if (!in_array($status, ['available', 'occupied', 'maintenance'])) {
         throw new Exception('Status tidak valid. Gunakan: available, occupied, maintenance', 400);
+    }
+    if ($status === 'occupied') {
+        throw new Exception('Kamar baru belum bisa langsung berstatus terisi. Approve penyewa terlebih dahulu agar data penyewa terhubung.', 400);
     }
     if (!in_array($rentalType, ['daily', 'monthly', 'yearly'])) {
         throw new Exception('rental_type tidak valid. Gunakan: daily, monthly, yearly', 400);
@@ -228,6 +247,9 @@ function handlePut(mysqli $conn, string $ownerId, string $roomId): void {
         if (!in_array($body['status'], ['available', 'occupied', 'maintenance'])) {
             throw new Exception('Status tidak valid', 400);
         }
+        if ($body['status'] === 'occupied' && !hasStrictActiveTenant($conn, $roomId)) {
+            throw new Exception('Status terisi membutuhkan penyewa aktif. Approve pengajuan penyewa terlebih dahulu.', 400);
+        }
         $fields[] = 'status = ?';
         $values[] = $body['status'];
         $types   .= 's';
@@ -313,6 +335,18 @@ function validateKosOwnership(mysqli $conn, string $kosId, string $ownerId): voi
     if (!$found) throw new Exception('Kos tidak ditemukan atau bukan milik Anda', 403);
 }
 
+function columnExists(mysqli $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+    );
+    if (!$stmt) return false;
+    $stmt->bind_param('ss', $table, $column);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
 function getJsonBody(): array {
     $raw = file_get_contents('php://input');
     $data = json_decode($raw, true);
@@ -382,7 +416,193 @@ function getRoomFacilities(mysqli $conn, string $roomId): array {
     );
 }
 
+function getActiveTenant(mysqli $conn, string $roomId, string $roomStatus = ''): ?array {
+    $phoneSelect = columnExists($conn, 'users', 'phone') ? 'u.phone' : 'NULL AS phone';
+    $stmt = $conn->prepare("
+        SELECT
+            rr.id AS registration_id,
+            rr.user_id,
+            rr.status,
+            rr.start_date,
+            rr.end_date,
+            rr.registered_at,
+            u.display_name,
+            u.email,
+            $phoneSelect
+        FROM room_registrations rr
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE rr.room_id = ?
+          AND rr.status IN ('approved', 'active')
+          AND (rr.end_date IS NULL OR rr.end_date >= CURDATE())
+        ORDER BY
+          CASE WHEN rr.end_date IS NULL THEN 0 ELSE 1 END,
+          rr.start_date DESC,
+          rr.registered_at DESC
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->bind_param("s", $roomId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if ($row) return tenantSummaryPayload($row);
+
+    if ($roomStatus !== 'occupied') return null;
+
+    $fallbackStmt = $conn->prepare("
+        SELECT
+            rr.id AS registration_id,
+            rr.user_id,
+            rr.status,
+            rr.start_date,
+            rr.end_date,
+            rr.registered_at,
+            u.display_name,
+            u.email,
+            $phoneSelect
+        FROM room_registrations rr
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE rr.room_id = ?
+          AND rr.status NOT IN ('rejected', 'cancelled')
+        ORDER BY
+          CASE WHEN rr.status IN ('approved', 'active') THEN 0 ELSE 1 END,
+          rr.start_date DESC,
+          rr.registered_at DESC
+        LIMIT 1
+    ");
+    if (!$fallbackStmt) return null;
+    $fallbackStmt->bind_param("s", $roomId);
+    $fallbackStmt->execute();
+    $fallback = $fallbackStmt->get_result()->fetch_assoc();
+    $fallbackStmt->close();
+
+    return $fallback ? tenantSummaryPayload($fallback) : null;
+}
+
+function hasStrictActiveTenant(mysqli $conn, string $roomId): bool {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) AS total
+        FROM room_registrations
+        WHERE room_id = ?
+          AND status IN ('approved', 'active')
+          AND (end_date IS NULL OR end_date >= CURDATE())
+    ");
+    if (!$stmt) return false;
+    $stmt->bind_param("s", $roomId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($row['total'] ?? 0) > 0;
+}
+
+function getTenantHistory(mysqli $conn, string $kosId, string $roomId): array {
+    $hasPhone = columnExists($conn, 'users', 'phone');
+    $phoneSelect = $hasPhone ? 'u.phone' : 'NULL AS phone';
+    $phoneGroup = $hasPhone ? 'u.phone' : 'NULL';
+    $stmt = $conn->prepare("
+        SELECT
+            rr.id AS registration_id,
+            rr.user_id,
+            rr.status,
+            rr.start_date,
+            rr.end_date,
+            rr.registered_at,
+            rr.reject_reason,
+            u.display_name,
+            u.email,
+            $phoneSelect,
+            COUNT(ph.id) AS payment_count,
+            SUM(CASE WHEN ph.payment_status = 'paid' THEN ph.amount ELSE 0 END) AS total_paid
+        FROM room_registrations rr
+        INNER JOIN users u ON u.id = rr.user_id
+        LEFT JOIN payment_history ph ON ph.registration_id = rr.id
+        WHERE rr.kos_id = ? AND rr.room_id = ?
+        GROUP BY
+            rr.id, rr.user_id, rr.status, rr.start_date, rr.end_date,
+            rr.registered_at, rr.reject_reason, u.display_name, u.email, $phoneGroup
+        ORDER BY
+            CASE WHEN rr.status IN ('approved', 'active') AND (rr.end_date IS NULL OR rr.end_date >= CURDATE()) THEN 0 ELSE 1 END,
+            rr.registered_at DESC
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param("ss", $kosId, $roomId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return array_map('tenantHistoryPayload', $rows);
+}
+
+function getPaymentHistory(mysqli $conn, string $kosId, string $roomId): array {
+    $stmt = $conn->prepare("
+        SELECT
+            ph.id,
+            ph.registration_id,
+            ph.amount,
+            ph.period_month,
+            ph.payment_status,
+            ph.payment_method,
+            ph.proof_url,
+            ph.paid_at,
+            ph.created_at,
+            rr.status AS registration_status,
+            u.display_name,
+            u.email
+        FROM payment_history ph
+        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE rr.kos_id = ? AND rr.room_id = ?
+        ORDER BY ph.created_at DESC, ph.id DESC
+    ");
+    if (!$stmt) return [];
+    $stmt->bind_param("ss", $kosId, $roomId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return array_map('paymentHistoryPayload', $rows);
+}
+
+function tenantSummaryPayload(array $row): array {
+    return [
+        'registrationId' => (string)$row['registration_id'],
+        'userId' => (string)$row['user_id'],
+        'name' => $row['display_name'] ?? 'User',
+        'email' => $row['email'] ?? '',
+        'phone' => $row['phone'] ?? '',
+        'status' => $row['status'] ?? '',
+        'startDate' => $row['start_date'] ?? null,
+        'endDate' => $row['end_date'] ?? null,
+        'registeredAt' => $row['registered_at'] ?? null,
+    ];
+}
+
+function tenantHistoryPayload(array $row): array {
+    return array_merge(tenantSummaryPayload($row), [
+        'rejectReason' => $row['reject_reason'] ?? null,
+        'paymentCount' => (int)($row['payment_count'] ?? 0),
+        'totalPaid' => (int)($row['total_paid'] ?? 0),
+    ]);
+}
+
+function paymentHistoryPayload(array $row): array {
+    return [
+        'id' => (int)$row['id'],
+        'registrationId' => (string)$row['registration_id'],
+        'tenantName' => $row['display_name'] ?? 'User',
+        'tenantEmail' => $row['email'] ?? '',
+        'amount' => (int)($row['amount'] ?? 0),
+        'periodMonth' => $row['period_month'] ?? '',
+        'paymentStatus' => $row['payment_status'] ?? '',
+        'paymentMethod' => $row['payment_method'] ?? '',
+        'proofUrl' => $row['proof_url'] ?? null,
+        'paidAt' => $row['paid_at'] ?? null,
+        'createdAt' => $row['created_at'] ?? null,
+        'registrationStatus' => $row['registration_status'] ?? '',
+    ];
+}
+
 function formatRoom(mysqli $conn, array $row): array {
+    $activeTenant = getActiveTenant($conn, $row['id'], $row['status'] ?? '');
+
     return [
         'id'            => $row['id'],
         'kosId'         => $row['kos_id'],
@@ -394,6 +614,10 @@ function formatRoom(mysqli $conn, array $row): array {
         'maxOccupant'   => (int)$row['max_occupant'],
         'rental_type'   => $row['rental_type'] ?? 'monthly',
         'facilities'    => getRoomFacilities($conn, $row['id']),
+        'activeTenant'  => $activeTenant,
+        'tenantDataStatus' => $activeTenant
+            ? 'linked'
+            : (($row['status'] ?? '') === 'occupied' ? 'missing_registration' : 'none'),
         'description'   => $row['description'],
         'createdAt'     => $row['created_at'],
         'updatedAt'     => $row['updated_at'],

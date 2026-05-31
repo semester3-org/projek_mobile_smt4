@@ -401,7 +401,7 @@ class _NotifCard extends StatelessWidget {
                         Text(time, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
                         const Spacer(),
                         if (onTap != null)
-                          Text(
+                          const Text(
                             'Lihat Detail →',
                             style: TextStyle(color: AppTheme.primaryGreen, fontWeight: FontWeight.bold, fontSize: 12),
                           ),

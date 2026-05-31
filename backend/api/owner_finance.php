@@ -43,16 +43,78 @@ if ($method === 'PUT') {
     sendJson(false, null, 'Method not allowed', 405);
 }
 
+function financePeriodFilter(): array {
+    $period = $_GET['period'] ?? 'day';
+    if (!in_array($period, ['day', 'month', 'year'], true)) {
+        $period = 'day';
+    }
+
+    if ($period === 'month') {
+        $value = $_GET['month'] ?? date('Y-m');
+        if (!preg_match('/^\d{4}-\d{2}$/', $value)) {
+            $value = date('Y-m');
+        }
+        return [
+            'period' => $period,
+            'value' => $value,
+            'label' => date('F Y', strtotime($value . '-01')),
+            'sql' => " AND (ph.period_month = ? OR DATE_FORMAT(COALESCE(ph.paid_at, ph.created_at), '%Y-%m') = ?)",
+            'types' => 'ss',
+            'params' => [$value, $value],
+        ];
+    }
+
+    if ($period === 'year') {
+        $value = $_GET['year'] ?? date('Y');
+        if (!preg_match('/^\d{4}$/', $value)) {
+            $value = date('Y');
+        }
+        return [
+            'period' => $period,
+            'value' => $value,
+            'label' => $value,
+            'sql' => " AND (LEFT(ph.period_month, 4) = ? OR YEAR(COALESCE(ph.paid_at, ph.created_at)) = ?)",
+            'types' => 'ss',
+            'params' => [$value, $value],
+        ];
+    }
+
+    $value = $_GET['date'] ?? date('Y-m-d');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        $value = date('Y-m-d');
+    }
+    return [
+        'period' => $period,
+        'value' => $value,
+        'label' => date('d M Y', strtotime($value)),
+        'sql' => " AND DATE(COALESCE(ph.paid_at, ph.created_at)) = ?",
+        'types' => 's',
+        'params' => [$value],
+    ];
+}
+
+function bindFinanceParams(mysqli_stmt $stmt, string $ownerId, array $filter): void {
+    $types = 's' . $filter['types'];
+    $params = array_merge([$ownerId], $filter['params']);
+    $refs = [$types];
+    foreach ($params as $key => $value) {
+        $refs[] = &$params[$key];
+    }
+    call_user_func_array([$stmt, 'bind_param'], $refs);
+}
+
 function handleGet(mysqli $conn, string $ownerId): void {
+    $filter = financePeriodFilter();
+
     // 1. Total Pendapatan Lunas (paid)
     $totalStmt = $conn->prepare("
         SELECT SUM(ph.amount) as total_paid
         FROM payment_history ph
         INNER JOIN room_registrations rr ON rr.id = ph.registration_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
-        WHERE k.owner_id = ? AND ph.payment_status = 'paid'
+        WHERE k.owner_id = ? AND ph.payment_status = 'paid' {$filter['sql']}
     ");
-    $totalStmt->bind_param('s', $ownerId);
+    bindFinanceParams($totalStmt, $ownerId, $filter);
     $totalStmt->execute();
     $totalRes = $totalStmt->get_result()->fetch_assoc();
     $totalStmt->close();
@@ -68,9 +130,9 @@ function handleGet(mysqli $conn, string $ownerId): void {
         FROM payment_history ph
         INNER JOIN room_registrations rr ON rr.id = ph.registration_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
-        WHERE k.owner_id = ?
+        WHERE k.owner_id = ? {$filter['sql']}
     ");
-    $statusStmt->bind_param('s', $ownerId);
+    bindFinanceParams($statusStmt, $ownerId, $filter);
     $statusStmt->execute();
     $statusRes = $statusStmt->get_result()->fetch_assoc();
     $statusStmt->close();
@@ -118,6 +180,7 @@ function handleGet(mysqli $conn, string $ownerId): void {
         
         $daily[] = [
             'label' => $dayLabel,
+            'filterValue' => $date,
             'value' => (int)($res['amt'] ?? 0),
         ];
     }
@@ -148,6 +211,7 @@ function handleGet(mysqli $conn, string $ownerId): void {
         
         $monthly[] = [
             'label' => $monthLabel,
+            'filterValue' => $month,
             'value' => (int)($res['amt'] ?? 0),
         ];
     }
@@ -177,6 +241,7 @@ function handleGet(mysqli $conn, string $ownerId): void {
         
         $yearly[] = [
             'label' => (string)$year,
+            'filterValue' => (string)$year,
             'value' => (int)($res['amt'] ?? 0),
         ];
     }
@@ -205,10 +270,10 @@ function handleGet(mysqli $conn, string $ownerId): void {
         INNER JOIN users u ON u.id = rr.user_id
         INNER JOIN kos_rooms r ON r.id = rr.room_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
-        WHERE k.owner_id = ?
+        WHERE k.owner_id = ? {$filter['sql']}
         ORDER BY ph.created_at DESC, ph.id DESC
     ");
-    $txStmt->bind_param('s', $ownerId);
+    bindFinanceParams($txStmt, $ownerId, $filter);
     $txStmt->execute();
     $rows = $txStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $txStmt->close();
@@ -241,6 +306,11 @@ function handleGet(mysqli $conn, string $ownerId): void {
             'efficiency' => $efficiencyPercent,
             'occupied' => $occupiedRooms,
             'total' => $totalRooms,
+        ],
+        'selectedPeriod' => [
+            'type' => $filter['period'],
+            'value' => $filter['value'],
+            'label' => $filter['label'],
         ],
         'charts' => [
             'daily' => $daily,

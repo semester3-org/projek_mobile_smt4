@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
@@ -90,9 +91,15 @@ class _PaymentItem {
 }
 
 class _ChartData {
-  const _ChartData({required this.label, required this.value});
+  const _ChartData({
+    required this.label,
+    required this.value,
+    required this.filterValue,
+  });
+
   final String label;
-  final double value; 
+  final double value;
+  final String filterValue;
 }
 
 class OwnerFinancePage extends StatefulWidget {
@@ -104,6 +111,9 @@ class OwnerFinancePage extends StatefulWidget {
 
 class _OwnerFinancePageState extends State<OwnerFinancePage> {
   int _tab = 0; // 0 = Harian, 1 = Bulanan, 2 = Tahunan
+  DateTime _selectedDate = DateTime.now();
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  int _selectedYear = DateTime.now().year;
   PaymentStatus? _filterStatus;
   String _filterKosTitle = 'semua';
 
@@ -114,7 +124,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
   int _paidCount = 0;
   int _unpaidCount = 0;
   int _overdueCount = 0;
-  
+
   Map<String, dynamic> _occupancy = {
     'efficiency': 0,
     'occupied': 0,
@@ -136,7 +146,10 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       _error = null;
     });
 
-    final res = await ApiService.get('api/owner_finance');
+    final res = await ApiService.get(
+      'api/owner_finance',
+      queryParams: _financeQueryParams,
+    );
     if (!mounted) return;
 
     if (!res.success) {
@@ -152,7 +165,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       final summary = data['summary'] as Map<String, dynamic>;
       final occ = data['occupancy'] as Map<String, dynamic>;
       final ch = data['charts'] as Map<String, dynamic>;
-      
+
       final list = data['payments'] as List<dynamic>;
       final List<_PaymentItem> mappedPayments = list.map((item) {
         final stVal = item['paymentStatus'] as String;
@@ -197,10 +210,110 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     if (_charts.isEmpty) return const [];
     final key = _tab == 1 ? 'monthly' : (_tab == 2 ? 'yearly' : 'daily');
     final list = _charts[key] as List<dynamic>? ?? const [];
-    return list.map((e) => _ChartData(
-      label: e['label'] as String,
-      value: (e['proportion'] as num).toDouble(),
-    )).toList();
+    return list
+        .map((e) => _ChartData(
+              label: e['label'] as String,
+              value: (e['proportion'] as num).toDouble(),
+              filterValue: e['filterValue'] as String? ?? '',
+            ))
+        .toList();
+  }
+
+  Map<String, String> get _financeQueryParams {
+    if (_tab == 1) {
+      return {
+        'period': 'month',
+        'month': DateFormat('yyyy-MM').format(_selectedMonth),
+      };
+    }
+    if (_tab == 2) {
+      return {
+        'period': 'year',
+        'year': _selectedYear.toString(),
+      };
+    }
+    return {
+      'period': 'day',
+      'date': DateFormat('yyyy-MM-dd').format(_selectedDate),
+    };
+  }
+
+  String get _periodLabel {
+    if (_tab == 1) return DateFormat('MMMM yyyy').format(_selectedMonth);
+    if (_tab == 2) return _selectedYear.toString();
+    return DateFormat('d MMMM yyyy').format(_selectedDate);
+  }
+
+  String get _periodHelper {
+    if (_tab == 1) return 'Keuntungan untuk bulan yang dipilih';
+    if (_tab == 2) return 'Keuntungan untuk tahun yang dipilih';
+    return 'Keuntungan untuk tanggal yang dipilih';
+  }
+
+  Future<void> _setTab(int tab) async {
+    if (_tab == tab) return;
+    setState(() => _tab = tab);
+    await _loadFinanceData();
+  }
+
+  Future<void> _pickPeriod() async {
+    if (_tab == 1) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _selectedMonth,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100, 12, 31),
+        initialDatePickerMode: DatePickerMode.year,
+      );
+      if (picked == null || !mounted) return;
+      setState(() => _selectedMonth = DateTime(picked.year, picked.month));
+      await _loadFinanceData();
+      return;
+    }
+
+    if (_tab == 2) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime(_selectedYear),
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100, 12, 31),
+        initialDatePickerMode: DatePickerMode.year,
+      );
+      if (picked == null || !mounted) return;
+      setState(() => _selectedYear = picked.year);
+      await _loadFinanceData();
+      return;
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100, 12, 31),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedDate = picked);
+    await _loadFinanceData();
+  }
+
+  Future<void> _selectChartPeriod(_ChartData item) async {
+    if (item.filterValue.isEmpty) return;
+    if (_tab == 1) {
+      final parts = item.filterValue.split('-');
+      if (parts.length == 2) {
+        setState(() {
+          _selectedMonth = DateTime(
+            int.parse(parts[0]),
+            int.parse(parts[1]),
+          );
+        });
+      }
+    } else if (_tab == 2) {
+      setState(() => _selectedYear = int.parse(item.filterValue));
+    } else {
+      setState(() => _selectedDate = DateTime.parse(item.filterValue));
+    }
+    await _loadFinanceData();
   }
 
   int get _highlightIndex {
@@ -218,12 +331,12 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
 
   Future<void> _confirmPayment(_PaymentItem item) async {
     Navigator.pop(context); // Close details bottom sheet
-    
+
     setState(() {
       _isLoading = true;
     });
 
-    final res = await ApiService.post('api/owner_finance', {
+    final res = await ApiService.put('api/owner_finance', {
       'paymentId': item.id,
     });
 
@@ -401,10 +514,12 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                 _DetailRow(label: 'Periode Bulan', value: item.periodMonth),
                 _DetailRow(label: 'Nominal', value: _formatPrice(item.amount)),
                 _DetailRow(
-                    label: 'Status Pembayaran', value: item.paymentStatus.dbValue),
+                    label: 'Status Pembayaran',
+                    value: item.paymentStatus.dbValue),
                 _DetailRow(
                     label: 'Metode Pembayaran',
-                    value: PaymentMethodHelper.getDisplayName(item.paymentMethod)),
+                    value:
+                        PaymentMethodHelper.getDisplayName(item.paymentMethod)),
                 _DetailRow(label: 'Waktu Bayar', value: item.paidAt ?? '-'),
                 const SizedBox(height: 16),
                 if (item.paymentStatus == PaymentStatus.unpaid ||
@@ -456,7 +571,8 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        Icon(Icons.error_outline,
+                            size: 48, color: Colors.red.shade400),
                         const SizedBox(height: 12),
                         Text(
                           _error!,
@@ -491,17 +607,19 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                               tabs.length,
                               (i) => Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 4),
                                   child: FilledButton.tonal(
                                     style: FilledButton.styleFrom(
                                       backgroundColor: i == _tab
-                                          ? AppTheme.primaryGreen.withOpacity(0.14)
+                                          ? AppTheme.primaryGreen
+                                              .withValues(alpha: 0.14)
                                           : Colors.transparent,
                                       foregroundColor: i == _tab
                                           ? AppTheme.primaryGreen
                                           : Colors.grey.shade700,
                                     ),
-                                    onPressed: () => setState(() => _tab = i),
+                                    onPressed: () => _setTab(i),
                                     child: Text(tabs[i]),
                                   ),
                                 ),
@@ -511,10 +629,61 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.calendar_month_rounded,
+                                  color: AppTheme.primaryGreen,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _periodLabel,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _periodHelper,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton.filledTonal(
+                                tooltip: 'Pilih periode',
+                                onPressed: _pickPeriod,
+                                icon: const Icon(Icons.edit_calendar_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       _MoneyCard(
-                        title: 'Total Pemasukan (paid)',
+                        title: 'Keuntungan Periode Ini',
                         value: _formatPrice(_totalPaid),
-                        delta: 'Semua kos terintegrasi database',
+                        delta: 'Transaksi lunas pada $_periodLabel',
                         icon: Icons.payments_rounded,
                       ),
                       const SizedBox(height: 12),
@@ -545,13 +714,16 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                         children: [
                           Text(
                             'Pendapatan vs Transaksi',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
                           ),
                           TextButton(
-                            onPressed: _loadFinanceData,
-                            child: const Text('Refresh Grafik'),
+                            onPressed: _pickPeriod,
+                            child: const Text('Pilih Periode'),
                           ),
                         ],
                       ),
@@ -572,6 +744,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                           key: ValueKey(_tab),
                           data: _chartData,
                           highlightIndex: _highlightIndex,
+                          onBarTap: _selectChartPeriod,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -586,14 +759,18 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                         children: [
                           Text(
                             'Riwayat Pembayaran',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
                           ),
                           OutlinedButton.icon(
                             onPressed: _showFilterDialog,
                             icon: const Icon(Icons.filter_list_rounded),
-                            label: Text(hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
+                            label: Text(
+                                hasActiveFilter ? 'Filter (Aktif)' : 'Filter'),
                           ),
                         ],
                       ),
@@ -627,10 +804,12 @@ class _DynamicChart extends StatelessWidget {
     super.key,
     required this.data,
     required this.highlightIndex,
+    required this.onBarTap,
   });
 
   final List<_ChartData> data;
   final int highlightIndex;
+  final ValueChanged<_ChartData> onBarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -639,36 +818,40 @@ class _DynamicChart extends StatelessWidget {
     final bars = List.generate(data.length, (i) {
       final item = data[i];
       final isHighlight = i == highlightIndex;
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: SizedBox(
-          width: isScrollable ? 40 : null,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                height: 120 * item.value,
-                decoration: BoxDecoration(
-                  color: isHighlight
-                      ? AppTheme.primaryGreen
-                      : AppTheme.primaryGreen.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(10),
+      return GestureDetector(
+        onTap: () => onBarTap(item),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: SizedBox(
+            width: isScrollable ? 40 : null,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic,
+                  height: 120 * item.value,
+                  decoration: BoxDecoration(
+                    color: isHighlight
+                        ? AppTheme.primaryGreen
+                        : AppTheme.primaryGreen.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                item.label,
-                style: TextStyle(
-                  color: isHighlight
-                      ? AppTheme.primaryGreen
-                      : Colors.grey.shade700,
-                  fontSize: isScrollable ? 10 : 12,
-                  fontWeight: isHighlight ? FontWeight.w700 : FontWeight.normal,
+                const SizedBox(height: 8),
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    color: isHighlight
+                        ? AppTheme.primaryGreen
+                        : Colors.grey.shade700,
+                    fontSize: isScrollable ? 10 : 12,
+                    fontWeight:
+                        isHighlight ? FontWeight.w700 : FontWeight.normal,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -714,9 +897,9 @@ class _StatusSummaryChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -725,7 +908,9 @@ class _StatusSummaryChip extends StatelessWidget {
                 style: TextStyle(
                     fontWeight: FontWeight.w900, color: color, fontSize: 16)),
             const SizedBox(width: 4),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 11, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -770,14 +955,16 @@ class _TxTile extends StatelessWidget {
               status == PaymentStatus.paid
                   ? '+ ${_formatPrice(payment.amount)}'
                   : _formatPrice(payment.amount),
-              style:
-                  TextStyle(color: status.color, fontWeight: FontWeight.w900, fontSize: 13),
+              style: TextStyle(
+                  color: status.color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13),
             ),
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: status.color.withOpacity(0.1),
+                color: status.color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -810,8 +997,12 @@ class _DetailRow extends StatelessWidget {
         children: [
           Text(label,
               style: TextStyle(
-                  color: Colors.grey.shade600, fontFamily: 'monospace', fontSize: 12)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  color: Colors.grey.shade600,
+                  fontFamily: 'monospace',
+                  fontSize: 12)),
+          Text(value,
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         ],
       ),
     );
@@ -853,7 +1044,9 @@ class _MoneyCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                  Text(title,
+                      style:
+                          TextStyle(color: Colors.grey.shade700, fontSize: 13)),
                   const SizedBox(height: 6),
                   Text(
                     value,
@@ -862,7 +1055,9 @@ class _MoneyCard extends StatelessWidget {
                         ),
                   ),
                   const SizedBox(height: 4),
-                  Text(delta, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                  Text(delta,
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 ],
               ),
             ),
@@ -902,14 +1097,16 @@ class _EfficiencyCard extends StatelessWidget {
             width: 54,
             height: 54,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
+              color: Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(18),
             ),
             alignment: Alignment.center,
             child: Text(
               '$efficiency%',
-              style:
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -921,7 +1118,9 @@ class _EfficiencyCard extends StatelessWidget {
                     style: TextStyle(color: Colors.white70)),
                 const SizedBox(height: 4),
                 Text(
-                  efficiency >= 80 ? 'Sangat Baik' : (efficiency >= 50 ? 'Cukup Baik' : 'Perlu Promosi'),
+                  efficiency >= 80
+                      ? 'Sangat Baik'
+                      : (efficiency >= 50 ? 'Cukup Baik' : 'Perlu Promosi'),
                   style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
@@ -930,7 +1129,8 @@ class _EfficiencyCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '$occupied dari $total kamar terisi',
-                  style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
                 ),
               ],
             ),

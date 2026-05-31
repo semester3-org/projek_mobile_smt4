@@ -151,15 +151,30 @@ function paymentHistoryIdColumn(mysqli $conn): ?array {
     return $row ?: null;
 }
 
-function paymentHistoryUsesManualStringId(mysqli $conn): bool {
+function paymentHistoryUsesAutoIncrementId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+
+    $extra = strtolower((string)($column['extra'] ?? ''));
+    return strpos($extra, 'auto_increment') !== false;
+}
+
+function paymentHistoryUsesStringId(mysqli $conn): bool {
     $column = paymentHistoryIdColumn($conn);
     if (!$column) return false;
 
     $dataType = strtolower((string)($column['data_type'] ?? ''));
-    $extra = strtolower((string)($column['extra'] ?? ''));
     $isStringType = in_array($dataType, ['char', 'varchar', 'text'], true);
+    return $isStringType;
+}
 
-    return $isStringType && strpos($extra, 'auto_increment') === false;
+function nextPaymentHistoryNumericId(mysqli $conn): int {
+    $result = $conn->query("SELECT COALESCE(MAX(CAST(id AS UNSIGNED)), 0) + 1 AS next_id FROM payment_history");
+    if (!$result) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $row = $result->fetch_assoc();
+    return max(1, (int)($row['next_id'] ?? 1));
 }
 
 function latestPaymentHistoryId(mysqli $conn, string $registrationId, string $period): string {
@@ -184,8 +199,9 @@ function createPaymentHistoryForGeneratedBill(
     int $amount,
     string $period
 ): string {
-    if (paymentHistoryUsesManualStringId($conn)) {
-        $billingId = uuid();
+    if (!paymentHistoryUsesAutoIncrementId($conn)) {
+        $usesStringId = paymentHistoryUsesStringId($conn);
+        $billingId = $usesStringId ? uuid() : nextPaymentHistoryNumericId($conn);
         $insert = $conn->prepare("
             INSERT INTO payment_history
                 (id, registration_id, amount, period_month, payment_status, payment_method, created_at)
@@ -194,14 +210,18 @@ function createPaymentHistoryForGeneratedBill(
         if (!$insert) {
             sendError('Database error: ' . $conn->error, 500);
         }
-        $insert->bind_param('ssis', $billingId, $registrationId, $amount, $period);
+        if ($usesStringId) {
+            $insert->bind_param('ssis', $billingId, $registrationId, $amount, $period);
+        } else {
+            $insert->bind_param('isis', $billingId, $registrationId, $amount, $period);
+        }
         if (!$insert->execute()) {
             $error = $insert->error;
             $insert->close();
             sendError('Gagal membuat tagihan pembayaran: ' . $error, 500);
         }
         $insert->close();
-        return $billingId;
+        return (string)$billingId;
     }
 
     $insert = $conn->prepare("

@@ -474,6 +474,7 @@ class MerchantProductReview {
     required this.productId,
     required this.productName,
     required this.reviewer,
+    this.reviewerEmail = '',
     required this.rating,
     required this.comment,
     required this.createdAt,
@@ -484,6 +485,7 @@ class MerchantProductReview {
   final String productId;
   final String productName;
   final String reviewer;
+  final String reviewerEmail;
   final double rating;
   final String comment;
   final DateTime createdAt;
@@ -495,6 +497,7 @@ class MerchantProductReview {
       productId: json['productId'] as String? ?? '',
       productName: json['productName'] as String? ?? '',
       reviewer: json['reviewer'] as String? ?? 'User',
+      reviewerEmail: json['reviewerEmail'] as String? ?? '',
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       comment: json['comment'] as String? ?? '',
       createdAt: _parseMerchantDate(json['createdAt']),

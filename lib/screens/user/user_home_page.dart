@@ -11,7 +11,6 @@ import '../profile/billing_list_page.dart';
 import '../profile/notification_list_page.dart';
 import 'order_detail_page.dart';
 import 'user_catering_subscriptions_page.dart';
-import 'user_recommendations_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
@@ -168,19 +167,6 @@ class _UserHomePageState extends State<UserHomePage> {
                     _AnnouncementCard(dashboard: _dashboard!),
                     const SizedBox(height: 28),
                   ],
-                  UserSectionHeader(
-                    title: 'Rekomendasi Menu',
-                    actionLabel: 'Lihat Semua',
-                    onAction: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const UserRecommendationsPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _RecommendationList(dashboard: _dashboard!),
                   const UserBottomSpacer(),
                 ],
               ),
@@ -484,74 +470,6 @@ class _AnnouncementCard extends StatelessWidget {
           ),
           const Icon(Icons.chevron_right_rounded, color: UserTheme.muted),
         ],
-      ),
-    );
-  }
-}
-
-class _RecommendationList extends StatelessWidget {
-  const _RecommendationList({required this.dashboard});
-
-  final UserDashboard dashboard;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 208,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: dashboard.recommendations.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
-        itemBuilder: (context, index) {
-          final item = dashboard.recommendations[index];
-          return SizedBox(
-            width: 238,
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  UserImage(
-                    url: item.imageUrl,
-                    icon: Icons.restaurant_rounded,
-                    height: 126,
-                    width: double.infinity,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: UserTheme.text,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          formatUserCurrency(item.price),
-                          style: const TextStyle(
-                            color: UserTheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
       ),
     );
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/api_service.dart';
 import '../core/auth_storage.dart';
 import 'roles.dart';
@@ -119,24 +118,8 @@ class AuthState extends ChangeNotifier {
         return 'Gagal mendapatkan profil pengguna dari Firebase.';
       }
 
-      // 1. Save data to Firebase (Firestore) - Non-blocking background task with timeout
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(firebaseUser.uid)
-          .set({
-            'uid': firebaseUser.uid,
-            'email': firebaseUser.email,
-            'displayName': firebaseUser.displayName ?? 'Google User',
-            'photoUrl': firebaseUser.photoURL,
-            'role': 'user', // default role
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true))
-          .timeout(const Duration(seconds: 2))
-          .catchError((firestoreError) {
-            debugPrint('Firestore sync warning: $firestoreError');
-          });
-
-      // 2. Save data to MySQL via backend API
+      // Source of truth app ada di backend MySQL. Firebase dipakai untuk
+      // Google Auth/FCM saja, jadi tidak perlu write ke Firestore.
       final result = await ApiService.loginWithGoogle(
         email: firebaseUser.email ?? '',
         displayName: firebaseUser.displayName ?? 'Google User',

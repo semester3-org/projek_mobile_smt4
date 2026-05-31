@@ -54,6 +54,9 @@ class MerchantMenuItem {
     required this.description,
     required this.price,
     required this.imageUrl,
+    this.merchantId = '',
+    this.merchantName = '',
+    this.merchantType = '',
     this.category = '',
     this.unit = '',
     this.price20Days,
@@ -81,6 +84,9 @@ class MerchantMenuItem {
   final String id;
   final String name;
   final String description;
+  final String merchantId;
+  final String merchantName;
+  final String merchantType;
 
   /// Harga Full Day (catering) atau harga layanan (laundry).
   final double price;
@@ -137,6 +143,9 @@ class MerchantMenuItem {
       description: json['description'] as String? ?? '',
       price: price30,
       imageUrl: json['imageUrl'] as String? ?? '',
+      merchantId: json['merchantId'] as String? ?? '',
+      merchantName: json['merchantName'] as String? ?? '',
+      merchantType: json['merchantType'] as String? ?? '',
       category: json['category'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
       price20Days: (json['price20Days'] as num?)?.toDouble(),
@@ -175,6 +184,9 @@ class MerchantMenuItem {
       'description': description,
       'price': price,
       'imageUrl': imageUrl,
+      'merchantId': merchantId,
+      'merchantName': merchantName,
+      'merchantType': merchantType,
       'category': category,
       'unit': unit,
       'price20Days': price20Days,

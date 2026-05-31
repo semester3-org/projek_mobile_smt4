@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import '../../core/payment_methods.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/billing_record.dart';
 import '../user/user_theme.dart';
@@ -24,10 +25,11 @@ class BillingDetailPage extends StatefulWidget {
   State<BillingDetailPage> createState() => _BillingDetailPageState();
 }
 
-class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindingObserver {
+class _BillingDetailPageState extends State<BillingDetailPage>
+    with WidgetsBindingObserver {
   late BillingRecord _billing;
   late String _billingLookupId;
-  String _method = 'GoPay QRIS';
+  String _method = 'qris';
   String? _lastMidtransOrderId;
   bool _cancelling = false;
   bool _paying = false;
@@ -61,7 +63,8 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
     final result = await UserRepository.getBillings();
     if (!mounted || !result.isSuccess) return null;
 
-    final matches = result.data!.where((billing) => billing.id == _billingLookupId);
+    final matches =
+        result.data!.where((billing) => billing.id == _billingLookupId);
     if (matches.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tagihan sudah tidak aktif.')),
@@ -133,8 +136,9 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
     final billing = _billing;
     final isPaid = billing.isPaid;
     final stopRenewal = isPaid || widget.cancellationMeansStopRenewal;
-    final activeUntil =
-        widget.activeUntilForStopRenewal ?? billing.activeUntil ?? billing.dueDate;
+    final activeUntil = widget.activeUntilForStopRenewal ??
+        billing.activeUntil ??
+        billing.dueDate;
     if (billing.isCancelled) return;
     final confirm = await showDialog<bool>(
       context: context,
@@ -183,7 +187,7 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
               ? 'Sewa tidak diperpanjang. Masa aktif tetap sampai ${formatShortDate(activeUntil)}.'
               : widget.cancellationMeansStopRenewal
                   ? 'Sewa tidak diperpanjang. Masa aktif tetap sampai ${formatShortDate(activeUntil)}.'
-              : 'Order berhasil dibatalkan.',
+                  : 'Order berhasil dibatalkan.',
         ),
       ),
     );
@@ -199,8 +203,8 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
     final result = await UserRepository.createMidtransPayment(
       orderId: billing.id,
       amount: billing.amount,
-      customerName: 'Pelanggan Kos',
-      customerEmail: 'customer@example.com',
+      customerName: '',
+      customerEmail: '',
       paymentMethod: _method,
     );
 
@@ -209,7 +213,8 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
 
     if (!result.isSuccess) {
       messenger.showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Gagal membuat pembayaran Midtrans')),
+        SnackBar(
+            content: Text(result.error ?? 'Gagal membuat pembayaran Midtrans')),
       );
       return;
     }
@@ -260,12 +265,12 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
     final billing = _billing;
     final isPaid = billing.isPaid;
     final isCancelled = billing.isCancelled;
-    final paymentWindowBase =
-        widget.activeUntilForStopRenewal ?? billing.activeUntil ?? billing.dueDate;
+    final paymentWindowBase = widget.activeUntilForStopRenewal ??
+        billing.activeUntil ??
+        billing.dueDate;
     final isPastPaymentWindow =
         billing.canPay && _isPastPaymentWindow(paymentWindowBase);
-    final paymentLimitDate =
-        paymentWindowBase.add(const Duration(days: 1));
+    final paymentLimitDate = paymentWindowBase.add(const Duration(days: 1));
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -465,7 +470,7 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Metode pembayaran terakhir',
+                  'Pilih channel yang umum tersedia',
                   style: TextStyle(
                     color: UserTheme.muted,
                     fontWeight: FontWeight.w700,
@@ -473,53 +478,17 @@ class _BillingDetailPageState extends State<BillingDetailPage> with WidgetsBindi
                   ),
                 ),
                 const SizedBox(height: 12),
-                _PaymentMethodCard(
-                  title: _method,
-                  subtitle: 'Sesuai pilihan terakhir Anda',
-                  icon: Icons.history_rounded,
-                  selected: true,
-                  onTap: () {},
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Semua metode pembayaran',
-                  style: TextStyle(
-                    color: UserTheme.muted,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                ..._billingPaymentOptions.map(
+                  (option) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _PaymentMethodCard(
+                      title: PaymentMethodHelper.getDisplayName(option.key),
+                      subtitle: option.subtitle,
+                      icon: option.icon,
+                      selected: _method == option.key,
+                      onTap: () => setState(() => _method = option.key),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                _PaymentMethodCard(
-                  title: 'GoPay QRIS',
-                  subtitle: 'QRIS untuk GoPay, OVO, Dana',
-                  icon: Icons.qr_code_2_rounded,
-                  selected: _method == 'GoPay QRIS',
-                  onTap: () => setState(() => _method = 'GoPay QRIS'),
-                ),
-                const SizedBox(height: 12),
-                _PaymentMethodCard(
-                  title: 'Virtual Account',
-                  subtitle: 'BCA, Mandiri, BNI, BRI, Danamon',
-                  icon: Icons.account_balance_rounded,
-                  selected: _method == 'Virtual Account',
-                  onTap: () => setState(() => _method = 'Virtual Account'),
-                ),
-                const SizedBox(height: 12),
-                _PaymentMethodCard(
-                  title: 'Kartu Kredit / Debit',
-                  subtitle: 'Visa, Mastercard, JCB',
-                  icon: Icons.credit_card_rounded,
-                  selected: _method == 'Kartu Kredit / Debit',
-                  onTap: () => setState(() => _method = 'Kartu Kredit / Debit'),
-                ),
-                const SizedBox(height: 12),
-                _PaymentMethodCard(
-                  title: 'ShopeePay QRIS',
-                  subtitle: 'Bayar cepat lewat ShopeePay',
-                  icon: Icons.shopping_bag_rounded,
-                  selected: _method == 'ShopeePay QRIS',
-                  onTap: () => setState(() => _method = 'ShopeePay QRIS'),
                 ),
               ],
             ),
@@ -631,10 +600,14 @@ class _PaymentMethodCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: selected ? UserTheme.primaryDark : const Color(0xFFF0F2F5),
+                  color: selected
+                      ? UserTheme.primaryDark
+                      : const Color(0xFFF0F2F5),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: selected ? Colors.white : UserTheme.primaryDark, size: 22),
+                child: Icon(icon,
+                    color: selected ? Colors.white : UserTheme.primaryDark,
+                    size: 22),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -660,7 +633,9 @@ class _PaymentMethodCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
                 color: selected ? UserTheme.primaryDark : UserTheme.muted,
               ),
             ],
@@ -670,6 +645,56 @@ class _PaymentMethodCard extends StatelessWidget {
     );
   }
 }
+
+class _BillingPaymentOption {
+  const _BillingPaymentOption({
+    required this.key,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String key;
+  final String subtitle;
+  final IconData icon;
+}
+
+const _billingPaymentOptions = [
+  _BillingPaymentOption(
+    key: 'qris',
+    subtitle: 'DANA, OVO, LinkAja, dan mobile banking lewat QRIS',
+    icon: Icons.qr_code_2_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'gopay',
+    subtitle: 'Bayar langsung menggunakan GoPay',
+    icon: Icons.account_balance_wallet_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'shopeepay',
+    subtitle: 'Bayar langsung menggunakan ShopeePay',
+    icon: Icons.shopping_bag_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'bca',
+    subtitle: 'Virtual Account BCA',
+    icon: Icons.account_balance_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'mandiri',
+    subtitle: 'Bill Payment / Virtual Account Mandiri',
+    icon: Icons.account_balance_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'bni',
+    subtitle: 'Virtual Account BNI',
+    icon: Icons.account_balance_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'cimb',
+    subtitle: 'CIMB Niaga Clicks',
+    icon: Icons.account_balance_rounded,
+  ),
+];
 
 class _PropertySummary extends StatelessWidget {
   const _PropertySummary({required this.billing});

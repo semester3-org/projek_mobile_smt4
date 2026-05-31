@@ -92,7 +92,7 @@ function midtransEnabledPayments(string $paymentMethod): array {
     if (textContains($normalizedMethod, 'virtual account') ||
         textContains($normalizedMethod, 'bank') ||
         textContains($normalizedMethod, 'transfer')) {
-        return ['bank_transfer'];
+        return ['bca_va', 'bni_va', 'echannel', 'cimb_clicks'];
     }
     if (textContains($normalizedMethod, 'e-wallet') ||
         textContains($normalizedMethod, 'ewallet')) {
@@ -134,6 +134,84 @@ function ensurePaymentPeriodColumn(mysqli $conn): void {
         ALTER TABLE payment_history
         MODIFY period_month VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL
     ");
+}
+
+function billingPaymentContext(mysqli $conn, string $billingId, ?string $userId = null): ?array {
+    $userSql = $userId !== null && $userId !== '' ? ' AND rr.user_id = ?' : '';
+    $stmt = $conn->prepare("
+        SELECT
+            ph.id,
+            ph.amount,
+            ph.payment_status,
+            ph.period_month,
+            rr.user_id,
+            k.owner_id,
+            k.title AS kos_title,
+            r.room_number,
+            u.display_name,
+            u.email
+        FROM payment_history ph
+        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE ph.id = ?
+          AND rr.status IN ('active', 'approved')
+          $userSql
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    if ($userSql !== '') {
+        $stmt->bind_param('ss', $billingId, $userId);
+    } else {
+        $stmt->bind_param('s', $billingId);
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function notifyBillingPaymentPaid(mysqli $conn, array $context): void {
+    try {
+        require_once __DIR__ . '/merchant_helpers.php';
+        merchantEnsureSchema($conn);
+
+        $billingId = (string)($context['id'] ?? '');
+        $amount = (int)round((float)($context['amount'] ?? 0));
+        $kosTitle = (string)($context['kos_title'] ?? 'kos');
+        $roomNumber = (string)($context['room_number'] ?? '-');
+        $tenantName = (string)($context['display_name'] ?? 'Penyewa');
+        $amountLabel = 'Rp ' . number_format($amount, 0, ',', '.');
+
+        if (!empty($context['owner_id'])) {
+            merchantCreateNotification(
+                $conn,
+                (string)$context['owner_id'],
+                'Pembayaran sewa masuk',
+                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.',
+                'payment',
+                'Lihat Keuangan',
+                'owner:finance',
+                'important'
+            );
+        }
+
+        if (!empty($context['user_id'])) {
+            merchantCreateNotification(
+                $conn,
+                (string)$context['user_id'],
+                'Pembayaran sewa berhasil',
+                'Pembayaran kamar ' . $roomNumber . ' di ' . $kosTitle . ' sudah diterima. Masa sewa Anda diperbarui otomatis.',
+                'payment',
+                'Lihat Tagihan',
+                'billing:' . $billingId,
+                'important'
+            );
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to notify billing payment paid: ' . $e->getMessage());
+    }
 }
 
 function resolveBillingIdForPayment(mysqli $conn, string $requestedOrderId, string $userId, int $amount): string {
@@ -532,6 +610,8 @@ if ($action === 'sync_status') {
         $localStatus = localPaymentStatus($transactionStatus);
 
         require_once __DIR__ . '/../config/db.php';
+        $paymentContext = billingPaymentContext($conn, $billingId, (string)$userId);
+        $wasAlreadyPaid = strtolower((string)($paymentContext['payment_status'] ?? '')) === 'paid';
         $stmt = $conn->prepare("
             UPDATE payment_history ph
             INNER JOIN room_registrations rr ON rr.id = ph.registration_id
@@ -551,6 +631,10 @@ if ($action === 'sync_status') {
         $stmt->execute();
         $affectedRows = $stmt->affected_rows;
         $stmt->close();
+
+        if ($localStatus === 'paid' && !$wasAlreadyPaid && $paymentContext) {
+            notifyBillingPaymentPaid($conn, $paymentContext);
+        }
 
         sendSuccess([
             'billing_id' => $billingId,
@@ -581,6 +665,22 @@ $amount = (int)round($amount);
 require_once __DIR__ . '/../config/db.php';
 ensurePaymentPeriodColumn($conn);
 $billingId = resolveBillingIdForPayment($conn, $orderId, (string)$userId, $amount);
+
+$billingContext = billingPaymentContext($conn, $billingId, (string)$userId);
+if ($billingContext) {
+    if ($customerName === '' || strtolower($customerName) === 'pelanggan kos') {
+        $customerName = (string)($billingContext['display_name'] ?? $customerName);
+    }
+    if ($customerEmail === '' || strtolower($customerEmail) === 'customer@example.com') {
+        $customerEmail = (string)($billingContext['email'] ?? $customerEmail);
+    }
+}
+if ($customerName === '') {
+    $customerName = 'Penyewa Kos';
+}
+if ($customerEmail === '') {
+    $customerEmail = 'customer@example.com';
+}
 
 // Midtrans order_id must be unique and max 50 characters.
 $orderSuffix = date('His') . mt_rand(100, 999);
@@ -627,20 +727,7 @@ if (count($normalizedItems) === 0) {
     $items = $normalizedItems;
 }
 
-$normalizedMethod = strtolower($paymentMethod);
-$enabledPayments = [];
-
-if (textContains($normalizedMethod, 'shopeepay')) {
-    $enabledPayments = ['shopeepay', 'qris'];
-} elseif (textContains($normalizedMethod, 'bca') || textContains($normalizedMethod, 'mandiri') || textContains($normalizedMethod, 'virtual account') || textContains($normalizedMethod, 'bank')) {
-    $enabledPayments = ['bank_transfer'];
-} elseif (textContains($normalizedMethod, 'qris') || textContains($normalizedMethod, 'gopay') || textContains($normalizedMethod, 'ovo') || textContains($normalizedMethod, 'dana')) {
-    $enabledPayments = ['gopay', 'qris'];
-} elseif (textContains($normalizedMethod, 'credit') || textContains($normalizedMethod, 'debit') || textContains($normalizedMethod, 'kartu')) {
-    $enabledPayments = ['credit_card'];
-} else {
-    sendError('Payment method tidak didukung: ' . $paymentMethod, 400);
-}
+$enabledPayments = midtransEnabledPayments($paymentMethod);
 
 $transactionParams = [
     'transaction_details' => [

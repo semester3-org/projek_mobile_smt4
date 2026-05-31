@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+require_once __DIR__ . '/merchant_helpers.php';
 
 function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
     http_response_code($code);
@@ -264,10 +265,18 @@ function handlePut(mysqli $conn, string $ownerId): void {
 
     // Validasi kepemilikan transaksi: pastikan transaksi tersebut merujuk pada kos milik owner
     $valStmt = $conn->prepare("
-        SELECT ph.id, rr.room_id, u.display_name
+        SELECT
+            ph.id,
+            ph.payment_status,
+            rr.room_id,
+            rr.user_id,
+            u.display_name,
+            r.room_number,
+            k.title AS kos_title
         FROM payment_history ph
         INNER JOIN room_registrations rr ON rr.id = ph.registration_id
         INNER JOIN users u ON u.id = rr.user_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
         INNER JOIN kos_listings k ON k.id = rr.kos_id
         WHERE ph.id = ? AND k.owner_id = ?
         LIMIT 1
@@ -279,6 +288,13 @@ function handlePut(mysqli $conn, string $ownerId): void {
 
     if (!$tx) {
         sendJson(false, null, 'Transaksi tidak ditemukan atau bukan milik kos Anda', 404);
+    }
+
+    if (($tx['payment_status'] ?? '') === 'paid') {
+        sendJson(true, true, 'Pembayaran penyewa ' . $tx['display_name'] . ' sudah tercatat lunas');
+    }
+    if (($tx['payment_status'] ?? '') === 'cancelled') {
+        sendJson(false, null, 'Transaksi sudah dibatalkan dan tidak bisa dikonfirmasi', 400);
     }
 
     // Update status transaksi menjadi paid (lunas)
@@ -302,6 +318,22 @@ function handlePut(mysqli $conn, string $ownerId): void {
     $roomStmt->bind_param('s', $tx['room_id']);
     $roomStmt->execute();
     $roomStmt->close();
+
+    try {
+        merchantEnsureSchema($conn);
+        merchantCreateNotification(
+            $conn,
+            (string)$tx['user_id'],
+            'Pembayaran sewa dikonfirmasi',
+            'Pembayaran kamar ' . ($tx['room_number'] ?? '-') . ' di ' . ($tx['kos_title'] ?? 'kos Anda') . ' sudah dikonfirmasi owner.',
+            'payment',
+            'Lihat Tagihan',
+            'billing:' . (string)$paymentId,
+            'important'
+        );
+    } catch (Throwable $e) {
+        error_log('Failed to notify owner manual payment confirmation: ' . $e->getMessage());
+    }
 
     sendJson(true, true, 'Pembayaran penyewa ' . $tx['display_name'] . ' berhasil dikonfirmasi');
 }

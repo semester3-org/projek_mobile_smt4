@@ -8,6 +8,11 @@ import '../data/repositories/user_repository.dart';
 import '../models/notification.dart';
 import '../screens/merchant/pages/shared/merchant_notifications_page.dart';
 import '../screens/merchant/pages/shared/merchant_order_detail_page.dart';
+import '../screens/owner/pages/owner_finance_page.dart';
+import '../screens/owner/pages/owner_notifications_page.dart';
+import '../screens/owner/subpages/owner_tenants_page.dart';
+import '../screens/profile/billing_detail_page.dart';
+import '../screens/profile/billing_list_page.dart';
 import '../screens/profile/notification_list_page.dart';
 import '../screens/user/merchant_detail_page.dart';
 import '../screens/user/order_detail_page.dart';
@@ -161,13 +166,25 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     if (_alertedNotificationIds.contains(notification.id)) return false;
 
     final type = notification.type.toLowerCase();
-    if (type == 'payment' || type == 'promo') return true;
+    if (type == 'payment' ||
+        type == 'promo' ||
+        type == 'booking' ||
+        type == 'billing') {
+      return true;
+    }
 
     final text =
         '${notification.type} ${notification.title} ${notification.message}'
             .toLowerCase();
-    if (type == 'order' || type == 'laundry') {
+    if (type == 'order' ||
+        type == 'laundry' ||
+        type == 'booking' ||
+        type == 'billing') {
       return [
+        'pengajuan',
+        'disetujui',
+        'ditolak',
+        'tagihan',
         'diterima',
         'total pembayaran',
         'pembayaran berhasil',
@@ -248,6 +265,10 @@ class NotificationDeliveryService with WidgetsBindingObserver {
         return Icons.payments_outlined;
       case 'promo':
         return Icons.local_offer_outlined;
+      case 'booking':
+        return Icons.home_work_outlined;
+      case 'billing':
+        return Icons.receipt_long_outlined;
       case 'laundry':
       case 'order':
         return Icons.receipt_long_outlined;
@@ -288,6 +309,48 @@ class NotificationDeliveryService with WidgetsBindingObserver {
       }
     }
 
+    if (actionUrl.startsWith('billing:')) {
+      final navigator = appNavigatorKey.currentState;
+      if (navigator != null) {
+        final billingId = actionUrl.substring('billing:'.length);
+        final result = await UserRepository.getBillings();
+        final matches =
+            result.data?.where((billing) => billing.id == billingId).toList() ??
+                const [];
+        if (matches.isNotEmpty) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => BillingDetailPage(billing: matches.first),
+            ),
+          );
+          return;
+        }
+
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const BillingListPage(),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (actionUrl.startsWith('owner:')) {
+      final destination = actionUrl.substring('owner:'.length);
+      Widget page = const OwnerNotificationsPage();
+      if (destination == 'finance') {
+        page = const OwnerFinancePage();
+      } else if (destination == 'tenants') {
+        page = const OwnerTenantsPage();
+      }
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => page,
+        ),
+      );
+      return;
+    }
+
     if (actionUrl.startsWith('merchant:') || actionUrl.startsWith('promo:')) {
       final prefix = actionUrl.startsWith('promo:') ? 'promo:' : 'merchant:';
       if (await _openMerchant(actionUrl.substring(prefix.length))) {
@@ -299,7 +362,9 @@ class NotificationDeliveryService with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => _role == UserRole.merchant
             ? const MerchantNotificationsPage()
-            : const NotificationListPage(),
+            : _role == UserRole.owner
+                ? const OwnerNotificationsPage()
+                : const NotificationListPage(),
       ),
     );
   }

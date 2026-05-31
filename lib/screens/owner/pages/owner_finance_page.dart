@@ -223,7 +223,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
       _isLoading = true;
     });
 
-    final res = await ApiService.post('api/owner_finance', {
+    final res = await ApiService.put('api/owner_finance', {
       'paymentId': item.id,
     });
 

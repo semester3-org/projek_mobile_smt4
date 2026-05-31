@@ -16,10 +16,10 @@ class PaymentMethodHelper {
 
     // E-Wallet
     'gopay': 'GoPay',
-    'ovo': 'OVO',
-    'dana': 'DANA',
+    'ovo': 'QRIS (OVO)',
+    'dana': 'QRIS (DANA)',
     'shopeepay': 'ShopeePay',
-    'linkaja': 'LinkAja',
+    'linkaja': 'QRIS (LinkAja)',
 
     // QRIS
     'qris': 'QRIS',
@@ -47,10 +47,10 @@ class PaymentMethodHelper {
 
     // E-Wallet Category
     'gopay': 'E-Wallet',
-    'ovo': 'E-Wallet',
-    'dana': 'E-Wallet',
+    'ovo': 'QRIS',
+    'dana': 'QRIS',
     'shopeepay': 'E-Wallet',
-    'linkaja': 'E-Wallet',
+    'linkaja': 'QRIS',
 
     // QRIS Category
     'qris': 'QRIS',
@@ -93,12 +93,11 @@ class PaymentMethodHelper {
   /// Opsi pembayaran untuk form checkout user.
   static List<String> checkoutOptionKeys({required bool isLaundry}) {
     const bank = ['bca', 'mandiri', 'bni', 'cimb'];
-    const wallet = ['gopay', 'dana', 'shopeepay', 'ovo'];
-    const other = ['qris'];
+    const online = ['qris', 'gopay', 'shopeepay'];
     if (isLaundry) {
-      return ['cod', ...bank, ...wallet, ...other];
+      return ['cod', ...bank, ...online];
     }
-    return [...bank, ...wallet, ...other];
+    return [...bank, ...online];
   }
 
   /// Get all payment methods grouped by category

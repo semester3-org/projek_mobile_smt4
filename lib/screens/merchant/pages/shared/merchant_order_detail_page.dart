@@ -641,7 +641,7 @@ class _LaundryWeighingCard extends StatelessWidget {
           const Divider(height: 30),
           _PriceLine(
             title: 'Subtotal',
-            subtitle: previewing ? 'Menghitung promo...' : 'Layanan + tambahan',
+            subtitle: previewing ? 'Menghitung promo...' : '',
             price: effectiveSubtotal > 0
                 ? formatMerchantCurrency(effectiveSubtotal)
                 : 'Menunggu penimbangan',

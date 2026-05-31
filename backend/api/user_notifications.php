@@ -67,7 +67,10 @@ try {
             $stmt = $conn->prepare("
                 SELECT COUNT(*) AS total
                 FROM app_notifications
-                WHERE user_id = ? AND read_at IS NULL
+                WHERE user_id = ?
+                  AND read_at IS NULL
+                  AND title NOT LIKE 'Tes Notifikasi%'
+                  AND title <> 'Tes Push Backend'
             ");
             if (!$stmt) merchantSendJson(false, null, 'Database error', 500);
             $stmt->bind_param('s', $userId);
@@ -88,6 +91,8 @@ try {
                    " . ($hasActionUrl ? "action_url" : "NULL") . " AS action_url
             FROM app_notifications
             WHERE user_id = ?
+              AND title NOT LIKE 'Tes Notifikasi%'
+              AND title <> 'Tes Push Backend'
             ORDER BY created_at DESC, id DESC
             LIMIT ?
         ");

@@ -105,8 +105,9 @@ function userMerchantFallbackMenu(string $type, string $merchantId): array {
 
 function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $includePromos = true, ?string $userId = null, bool $summaryOnly = false): array {
     if (!merchantTableExists($conn, 'products')) {
-        return userMerchantFallbackMenu($type, $merchantId);
+        return [];
     }
+    $limit = $summaryOnly ? 8 : 20;
     $stmt = $conn->prepare("
         SELECT p.*,
                COALESCE((
@@ -122,20 +123,17 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
         FROM products p
         WHERE p.merchant_id = ? AND p.is_active = 1
         ORDER BY p.updated_at DESC, p.id DESC
-        LIMIT 20
+        LIMIT $limit
     ");
-    if (!$stmt) return userMerchantFallbackMenu($type, $merchantId);
+    if (!$stmt) return [];
     $stmt->bind_param('s', $merchantId);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     if (empty($rows)) return [];
-    if ($summaryOnly && count($rows) > 8) {
-        $rows = array_slice($rows, 0, 8);
-    }
     $hasPromoTable = $includePromos && merchantTableExists($conn, 'merchant_promos');
     $userId = trim((string)$userId);
-    return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable, $userId) {
+    return array_map(function ($row) use ($type, $conn, $merchantId, $hasPromoTable, $userId, $summaryOnly) {
         $price30 = (float)($row['harga'] ?? 0);
         $productId = (int)($row['id'] ?? 0);
         $promoDiscount = 0.0;
@@ -193,7 +191,9 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
                 isset($row['duration_value']) ? (int)$row['duration_value'] : null,
                 $row['duration_unit'] ?? 'day'
             );
-            $payload['addons'] = $productId > 0 ? merchantProductAddons($conn, $productId) : [];
+            $payload['addons'] = !$summaryOnly && $productId > 0
+                ? merchantProductAddons($conn, $productId)
+                : [];
         }
         return $payload;
     }, $rows);
@@ -311,7 +311,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
     $menu = $merchantId !== ''
         ? userMerchantMenu($conn, $type, $merchantId, $includeDetail, $userId, $summaryOnly)
-        : userMerchantFallbackMenu($type, $placeId);
+        : [];
     $minPrice = 0;
     foreach ($menu as $item) {
         $price = (float)$item['price'];
@@ -538,9 +538,6 @@ try {
             $seenMerchantIds[$dedupeKey] = true;
         }
         $data[] = userMerchantPayload($conn, $row, $type, $userLat, $userLng, $id !== '', $userId, $summaryOnly);
-    }
-    if (empty($data)) {
-        $data = userMerchantFallback($type);
     }
     usort($data, fn($a, $b) => $a['distanceKm'] <=> $b['distanceKm']);
 

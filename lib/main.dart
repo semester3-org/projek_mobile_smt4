@@ -243,7 +243,10 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
       final permissionKey = '${session.email}:${session.role.name}';
       if (_lastPermissionPromptKey != permissionKey) {
         _lastPermissionPromptKey = permissionKey;
-        unawaited(_requestLoginRuntimePermissions());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _auth.session?.email != session.email) return;
+          unawaited(_requestLoginRuntimePermissions());
+        });
       }
     } else {
       _lastPermissionPromptKey = null;

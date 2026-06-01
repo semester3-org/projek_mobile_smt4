@@ -396,14 +396,37 @@ class _ActiveRentBanner extends StatelessWidget {
       return !until.isBefore(today);
     }).toList();
 
-    items.sort((a, b) {
+    final deduped = <String, ActiveRentHistory>{};
+    for (final item in items) {
+      final key =
+          '${item.kosAccessCode.trim().toUpperCase()}|${item.roomNumber.trim().toUpperCase()}';
+      final effectiveKey = key == '|' ? item.registrationId : key;
+      final existing = deduped[effectiveKey];
+      if (existing == null || _shouldReplaceRent(existing, item)) {
+        deduped[effectiveKey] = item;
+      }
+    }
+
+    final visibleItems = deduped.values.toList();
+    visibleItems.sort((a, b) {
       if (a.status == 'pending' && b.status != 'pending') return -1;
       if (a.status != 'pending' && b.status == 'pending') return 1;
       final aDate = a.activeUntil ?? DateTime(9999);
       final bDate = b.activeUntil ?? DateTime(9999);
       return aDate.compareTo(bDate);
     });
-    return items;
+    return visibleItems;
+  }
+
+  bool _shouldReplaceRent(ActiveRentHistory existing, ActiveRentHistory next) {
+    if (existing.status == 'pending' && next.status != 'pending') return true;
+    if (existing.status != 'pending' && next.status == 'pending') return false;
+    final existingUntil = existing.activeUntil;
+    final nextUntil = next.activeUntil;
+    if (existingUntil == null) return nextUntil != null;
+    if (nextUntil == null) return false;
+    return nextUntil.isAfter(existingUntil) ||
+        nextUntil.isAtSameMomentAs(existingUntil);
   }
 
   Widget _bannerForRent(ActiveRentHistory rent) {

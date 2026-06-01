@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/user_location_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
 import '../profile/notification_list_page.dart';
@@ -32,6 +31,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
   List<UserMerchant> _merchants = [];
   Set<String> _favoriteKeys = {};
   bool _loading = true;
+  String? _error;
   String _selectedFilter = 'Semua';
   String _selectedPackageCategory = 'Semua kategori';
   String _selectedDeliveryType = 'Semua tipe';
@@ -98,20 +98,13 @@ class _MerchantListPageState extends State<MerchantListPage> {
     if (!silent) {
       setState(() {
         _loading = true;
+        _error = null;
         _locationUnavailable = false;
       });
     }
 
-    final coords = widget.showLocationPrompt
-        ? await UserLocationService.current()
-        : await UserLocationService.current();
-    if (widget.showLocationPrompt && coords == null && mounted) {
-      setState(() => _locationUnavailable = true);
-    }
     final result = await UserRepository.getMerchants(
       widget.type,
-      latitude: coords?.latitude,
-      longitude: coords?.longitude,
       forceRefresh: forceRefresh,
     );
     final favoriteKeys = await UserRepository.getFavoriteMerchantKeys();
@@ -119,6 +112,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
     setState(() {
       _merchants = result.data ?? [];
       _favoriteKeys = favoriteKeys;
+      _error = result.isSuccess ? null : result.error;
       _loading = false;
     });
   }
@@ -384,6 +378,13 @@ class _MerchantListPageState extends State<MerchantListPage> {
                     ),
                   ],
                   const SizedBox(height: 22),
+                  if (_error != null) ...[
+                    _LoadErrorBanner(
+                      message: _error!,
+                      onRetry: () => _load(forceRefresh: true),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   if (filtered.isEmpty)
                     _EmptyMerchantState(type: widget.type)
                   else
@@ -1012,6 +1013,48 @@ class _LocationUnavailableBanner extends StatelessWidget {
           TextButton(
             onPressed: onRetry,
             child: const Text('Coba Lagi'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadErrorBanner extends StatelessWidget {
+  const _LoadErrorBanner({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFC2C2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: UserTheme.danger),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: UserTheme.text,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Muat Ulang'),
           ),
         ],
       ),

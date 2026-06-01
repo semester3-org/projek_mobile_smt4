@@ -227,6 +227,7 @@ function activeRentHistory(mysqli $conn, string $userId): array {
     $stmt->close();
 
     $items = [];
+    $slotIndexes = [];
     $today = date('Y-m-d');
     foreach ($rows as $row) {
         $paidPeriods = (int)($row['paid_periods'] ?? 0);
@@ -252,7 +253,7 @@ function activeRentHistory(mysqli $conn, string $userId): array {
             continue;
         }
 
-        $items[] = [
+        $item = [
             'registrationId' => $row['registration_id'],
             'kosName' => $row['kos_name'],
             'kosAccessCode' => $row['access_code'],
@@ -265,6 +266,36 @@ function activeRentHistory(mysqli $conn, string $userId): array {
             'paidPeriods' => $paidPeriods,
             'status' => $row['status'],
         ];
+
+        $slotKey = strtoupper(trim((string)($row['access_code'] ?? ''))) . '|' .
+            strtoupper(trim((string)($row['room_number'] ?? '')));
+        if ($slotKey === '|') {
+            $slotKey = (string)($row['registration_id'] ?? count($items));
+        }
+
+        if (isset($slotIndexes[$slotKey])) {
+            $existingIndex = $slotIndexes[$slotKey];
+            $existing = $items[$existingIndex];
+            $existingUntil = (string)($existing['activeUntil'] ?? '');
+            $nextUntil = (string)($item['activeUntil'] ?? '');
+            $existingPending = ($existing['status'] ?? '') === 'pending';
+            $nextPending = ($item['status'] ?? '') === 'pending';
+
+            $shouldReplace = false;
+            if ($existingPending && !$nextPending) {
+                $shouldReplace = true;
+            } elseif ($existingPending === $nextPending && $nextUntil !== '' && $nextUntil >= $existingUntil) {
+                $shouldReplace = true;
+            }
+
+            if ($shouldReplace) {
+                $items[$existingIndex] = $item;
+            }
+            continue;
+        }
+
+        $slotIndexes[$slotKey] = count($items);
+        $items[] = $item;
     }
 
     return $items;

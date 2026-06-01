@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/payment_methods.dart';
-import '../../core/user_location_service.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
@@ -54,12 +53,9 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   Future<void> _load({
     bool forceRefresh = false,
   }) async {
-    final coords = await UserLocationService.current();
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
       id: _merchantId,
-      latitude: coords?.latitude,
-      longitude: coords?.longitude,
       forceRefresh: forceRefresh,
     );
     if (!mounted) return;
@@ -309,12 +305,9 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     if (!mounted) return;
 
     if (result.isSuccess) {
-      final coords = await UserLocationService.current();
       final refreshed = await UserRepository.getMerchantDetail(
         type: _merchant.type,
         id: _merchantId,
-        latitude: coords?.latitude,
-        longitude: coords?.longitude,
         forceRefresh: true,
       );
       if (!mounted) return;
@@ -374,12 +367,9 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     );
     if (!mounted) return;
     if (result.isSuccess) {
-      final coords = await UserLocationService.current();
       final refreshed = await UserRepository.getMerchantDetail(
         type: _merchant.type,
         id: _merchantId,
-        latitude: coords?.latitude,
-        longitude: coords?.longitude,
         forceRefresh: true,
       );
       if (!mounted) return;

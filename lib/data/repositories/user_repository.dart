@@ -122,7 +122,10 @@ class UserRepository {
     );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackMerchants(type));
+      if (cached != null) {
+        return RepoResult.ok(List<UserMerchant>.of(cached.items));
+      }
+      return RepoResult.fail(res.message ?? 'Gagal memuat merchant');
     }
 
     try {
@@ -130,14 +133,17 @@ class UserRepository {
           .map((e) => UserMerchant.fromJson(e as Map<String, dynamic>))
           .toList();
       final unique = _dedupeMerchants(list);
-      final items = unique.isEmpty ? _fallbackMerchants(type) : unique;
+      final items = unique;
       _merchantListCache[cacheKey] = _MerchantListCacheEntry(
         List<UserMerchant>.of(items),
         DateTime.now(),
       );
       return RepoResult.ok(items);
     } catch (_) {
-      return RepoResult.ok(_fallbackMerchants(type));
+      if (cached != null) {
+        return RepoResult.ok(List<UserMerchant>.of(cached.items));
+      }
+      return const RepoResult.fail('Gagal membaca data merchant');
     }
   }
 
@@ -167,7 +173,8 @@ class UserRepository {
     );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackMerchants(type).first);
+      if (cached != null) return RepoResult.ok(cached.item);
+      return RepoResult.fail(res.message ?? 'Gagal memuat detail merchant');
     }
 
     try {
@@ -177,7 +184,8 @@ class UserRepository {
           _MerchantDetailCacheEntry(merchant, DateTime.now());
       return RepoResult.ok(merchant);
     } catch (_) {
-      return RepoResult.ok(_fallbackMerchants(type).first);
+      if (cached != null) return RepoResult.ok(cached.item);
+      return const RepoResult.fail('Gagal membaca detail merchant');
     }
   }
 

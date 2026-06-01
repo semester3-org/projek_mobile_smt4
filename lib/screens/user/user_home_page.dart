@@ -32,8 +32,7 @@ class _UserHomePageState extends State<UserHomePage> {
   bool _didLoad = false;
   bool _loadingDashboard = false;
   StreamSubscription<void>? _dashboardRefreshSub;
-  late final VoidCallback _orderStatusHandler =
-      () => _load(silent: true, forceRefresh: true);
+  void _orderStatusHandler() => _load(silent: true, forceRefresh: true);
 
   @override
   void initState() {

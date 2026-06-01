@@ -206,6 +206,9 @@ class NotificationDeliveryService with WidgetsBindingObserver {
               'room',
           status: item['isRead'] == true ? 'dibaca' : 'baru',
           createdAt: DateTime.now(),
+          actionUrl: item['actionUrl']?.toString(),
+          hasAction: (item['actionUrl']?.toString() ?? '').isNotEmpty,
+          actionButtonText: item['actionButtonText']?.toString(),
         );
       }).toList();
     }
@@ -336,7 +339,16 @@ class NotificationDeliveryService with WidgetsBindingObserver {
   }
 
   Future<void> _openNotification(AppNotification notification) async {
-    await UserRepository.markNotificationRead(notification.id);
+    if (_role == UserRole.merchant) {
+      await MerchantRepository.markNotificationRead(notification.id);
+    } else if (_role == UserRole.owner) {
+      await ApiService.put('api/owner_notifications', {
+        'id': notification.id,
+        'action': 'mark_read',
+      });
+    } else {
+      await UserRepository.markNotificationRead(notification.id);
+    }
 
     final actionUrl = notification.actionUrl ?? '';
     if (actionUrl.startsWith('order:')) {

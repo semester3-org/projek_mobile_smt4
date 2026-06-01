@@ -173,7 +173,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     final methods = PaymentMethodHelper.checkoutOptionKeys(isLaundry: false);
     var selected = (_order.paymentMethod ?? '').toLowerCase();
     if (!methods.contains(selected)) {
-      selected = 'qris';
+      selected = methods.isEmpty ? '' : methods.first;
     }
     return showModalBottomSheet<String>(
       context: context,
@@ -248,15 +248,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     if (raw.contains('bca')) return 'bca';
     if (raw.contains('mandiri') || raw.contains('echannel')) return 'mandiri';
     if (raw.contains('bni')) return 'bni';
-    if (raw.contains('cimb')) return 'cimb';
     if (raw.contains('gopay')) return 'gopay';
     if (raw.contains('shopee')) return 'shopeepay';
-    if (raw.contains('ovo') ||
-        raw.contains('dana') ||
-        raw.contains('linkaja')) {
-      return 'qris';
-    }
-    if (raw.contains('qris')) return 'qris';
     return null;
   }
 
@@ -806,6 +799,8 @@ class _CateringActiveCard extends StatelessWidget {
     final active = order.isCateringSubscription &&
         !order.isSubscriptionCancellationRequested &&
         order.status != 'cancelled';
+    final hasPeriod = order.subscriptionStartDate != null &&
+        order.subscriptionEndDate != null;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -846,11 +841,13 @@ class _CateringActiveCard extends StatelessWidget {
             order.merchantName,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
           ),
-          const SizedBox(height: 14),
-          Text(
-            'Periode: ${order.subscriptionStartDate != null ? formatShortDate(order.subscriptionStartDate!) : '-'} — ${order.subscriptionEndDate != null ? formatShortDate(order.subscriptionEndDate!) : '-'}',
-            style: const TextStyle(color: Colors.white, fontSize: 13),
-          ),
+          if (hasPeriod) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Periode: ${order.subscriptionStartDate != null ? formatShortDate(order.subscriptionStartDate!) : '-'} — ${order.subscriptionEndDate != null ? formatShortDate(order.subscriptionEndDate!) : '-'}',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ],
           const SizedBox(height: 8),
           Text(
             formatUserCurrency(order.totalAmount),
@@ -1693,6 +1690,8 @@ class _SubscriptionInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = order.subscriptionStatus ?? 'pending_payment';
+    final hasPeriod = order.subscriptionStartDate != null &&
+        order.subscriptionEndDate != null;
     return _InfoCard(
       icon: Icons.calendar_month_outlined,
       title: 'Status Langganan',
@@ -1701,20 +1700,18 @@ class _SubscriptionInfoCard extends StatelessWidget {
           label: 'Paket',
           value: '${order.subscriptionDays ?? 0} hari',
         ),
-        const SizedBox(height: 10),
-        _SubscriptionLine(
-          label: 'Mulai',
-          value: order.subscriptionStartDate == null
-              ? '-'
-              : formatShortDate(order.subscriptionStartDate!),
-        ),
-        const SizedBox(height: 10),
-        _SubscriptionLine(
-          label: 'Berakhir',
-          value: order.subscriptionEndDate == null
-              ? '-'
-              : formatShortDate(order.subscriptionEndDate!),
-        ),
+        if (hasPeriod) ...[
+          const SizedBox(height: 10),
+          _SubscriptionLine(
+            label: 'Mulai',
+            value: formatShortDate(order.subscriptionStartDate!),
+          ),
+          const SizedBox(height: 10),
+          _SubscriptionLine(
+            label: 'Berakhir',
+            value: formatShortDate(order.subscriptionEndDate!),
+          ),
+        ],
         const SizedBox(height: 10),
         _SubscriptionLine(
           label: 'Status',

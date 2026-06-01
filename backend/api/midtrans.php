@@ -72,12 +72,6 @@ function midtransEnabledPayments(string $paymentMethod): array {
     if (textContains($normalizedMethod, 'mandiri') || textContains($normalizedMethod, 'echannel')) {
         return ['echannel'];
     }
-    if (textContains($normalizedMethod, 'cimb')) {
-        return ['cimb_clicks'];
-    }
-    if (textContains($normalizedMethod, 'qris')) {
-        return ['qris'];
-    }
     if (textContains($normalizedMethod, 'gopay')) {
         return ['gopay'];
     }
@@ -86,17 +80,18 @@ function midtransEnabledPayments(string $paymentMethod): array {
     }
     if (textContains($normalizedMethod, 'ovo') ||
         textContains($normalizedMethod, 'dana') ||
+        textContains($normalizedMethod, 'qris') ||
         textContains($normalizedMethod, 'linkaja')) {
-        return ['qris'];
+        return ['gopay', 'shopeepay'];
     }
     if (textContains($normalizedMethod, 'virtual account') ||
         textContains($normalizedMethod, 'bank') ||
         textContains($normalizedMethod, 'transfer')) {
-        return ['bca_va', 'bni_va', 'echannel', 'cimb_clicks'];
+        return ['bca_va', 'bni_va', 'echannel'];
     }
     if (textContains($normalizedMethod, 'e-wallet') ||
         textContains($normalizedMethod, 'ewallet')) {
-        return ['qris'];
+        return ['gopay', 'shopeepay'];
     }
     if (textContains($normalizedMethod, 'credit') ||
         textContains($normalizedMethod, 'debit') ||
@@ -492,7 +487,7 @@ if ($action === 'create_order_payment') {
     }
     $paymentMethod = $paymentMethodInput !== '' ? $paymentMethodInput : (string)($order['payment_method'] ?? '');
     if ($paymentMethod === '') {
-        $paymentMethod = $serviceType === 'catering' ? 'GoPay/QRIS' : 'Transfer Bank';
+        $paymentMethod = 'bca';
     }
     if ($serviceType === 'catering' &&
         (textContains(strtolower($paymentMethod), 'cod') || textContains(strtolower($paymentMethod), 'cash'))) {
@@ -761,7 +756,7 @@ $orderId = trim((string)($body['order_id'] ?? ''));
 $amount = isset($body['amount']) ? (float)$body['amount'] : 0;
 $customerName = trim((string)($body['customer_name'] ?? ''));
 $customerEmail = trim((string)($body['customer_email'] ?? ''));
-$paymentMethod = trim((string)($body['payment_method'] ?? 'QRIS'));
+$paymentMethod = trim((string)($body['payment_method'] ?? 'bca'));
 $items = $body['items'] ?? [];
 
 if ($orderId === '' || $amount <= 0) {

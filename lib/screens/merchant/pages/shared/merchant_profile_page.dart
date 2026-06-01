@@ -36,10 +36,23 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
   String _photoUrl = '';
   double? _latitude;
   double? _longitude;
+  bool _editing = false;
+  bool _dirty = false;
+  String _originalFingerprint = '';
 
   @override
   void initState() {
     super.initState();
+    for (final controller in [
+      _nameCtrl,
+      _descriptionCtrl,
+      _phoneCtrl,
+      _addressCtrl,
+      _openCtrl,
+      _closeCtrl,
+    ]) {
+      controller.addListener(_refreshDirtyState);
+    }
     _load();
   }
 
@@ -73,6 +86,9 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       _photoUrl = profile.photoUrl;
       _latitude = profile.latitude;
       _longitude = profile.longitude;
+      _originalFingerprint = _profileFingerprint();
+      _editing = false;
+      _dirty = false;
     }
     setState(() {
       _profile = profile;
@@ -93,6 +109,7 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     setState(() {
       _photoUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
     });
+    _refreshDirtyState();
   }
 
   Future<void> _useCurrentLocation() async {
@@ -113,11 +130,8 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     setState(() {
       _latitude = position.latitude;
       _longitude = position.longitude;
-      if (_addressCtrl.text.trim().isEmpty) {
-        _addressCtrl.text =
-            'Lokasi merchant (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})';
-      }
     });
+    _refreshDirtyState();
   }
 
   Future<void> _pickLocation() async {
@@ -139,10 +153,13 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       _latitude = result.latitude;
       _longitude = result.longitude;
     });
+    _refreshDirtyState();
   }
 
   Future<void> _save() async {
     final auth = AuthScope.of(context);
+    if (!_editing || !_dirty || _saving) return;
+
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nama merchant wajib diisi')),
@@ -169,7 +186,21 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     if (result.isSuccess && result.data != null) {
       await auth.updateDisplayName(result.data!.businessName);
       if (!mounted) return;
-      setState(() => _profile = result.data);
+      setState(() {
+        _profile = result.data;
+        _editing = false;
+        _dirty = false;
+        _nameCtrl.text = result.data!.businessName;
+        _descriptionCtrl.text = result.data!.description;
+        _phoneCtrl.text = result.data!.phone;
+        _addressCtrl.text = result.data!.address;
+        _openCtrl.text = result.data!.openTime;
+        _closeCtrl.text = result.data!.closeTime;
+        _photoUrl = result.data!.photoUrl;
+        _latitude = result.data!.latitude;
+        _longitude = result.data!.longitude;
+        _originalFingerprint = _profileFingerprint();
+      });
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
           0,
@@ -221,6 +252,97 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     setState(() {
       controller.text = _formatTimeOfDay(picked);
     });
+    _refreshDirtyState();
+  }
+
+  String _profileFingerprint() {
+    String norm(String value) => value.trim();
+    return [
+      norm(_nameCtrl.text),
+      norm(_descriptionCtrl.text),
+      norm(_phoneCtrl.text),
+      norm(_addressCtrl.text),
+      norm(_openCtrl.text),
+      norm(_closeCtrl.text),
+      norm(_photoUrl),
+      _latitude?.toStringAsFixed(8) ?? '',
+      _longitude?.toStringAsFixed(8) ?? '',
+    ].join('|');
+  }
+
+  void _refreshDirtyState() {
+    if (!mounted) return;
+    final nextDirty = _editing && _profileFingerprint() != _originalFingerprint;
+    if (nextDirty != _dirty) {
+      setState(() => _dirty = nextDirty);
+    }
+  }
+
+  void _startEditing() {
+    setState(() {
+      _editing = true;
+      _dirty = _profileFingerprint() != _originalFingerprint;
+    });
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (!_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        420,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_editing || !_dirty) return true;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Perubahan belum disimpan'),
+        content: const Text(
+          'Simpan perubahan profil merchant sebelum keluar dari mode edit?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: const Text('Buang'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: const Text('Lanjut Edit'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (choice == 'save') {
+      await _save();
+      return !_dirty;
+    }
+    if (choice == 'discard') {
+      final profile = _profile;
+      if (profile != null) {
+        setState(() {
+          _editing = false;
+          _dirty = false;
+          _nameCtrl.text = profile.businessName;
+          _descriptionCtrl.text = profile.description;
+          _phoneCtrl.text = profile.phone;
+          _addressCtrl.text = profile.address;
+          _openCtrl.text = profile.openTime;
+          _closeCtrl.text = profile.closeTime;
+          _photoUrl = profile.photoUrl;
+          _latitude = profile.latitude;
+          _longitude = profile.longitude;
+          _originalFingerprint = _profileFingerprint();
+        });
+      }
+      return true;
+    }
+    return false;
   }
 
   TimeOfDay _timeOfDayFromText(String value) {
@@ -251,101 +373,116 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         ? profile!.email
         : auth.session?.email ?? '-';
 
-    return MerchantPage(
-      scrollController: _scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
-      topBar: MerchantTopBar(
-        title: 'Profil',
-        showAvatar: false,
-        actionLabel: _saving ? 'Menyimpan...' : 'Simpan',
-        onAction: _saving || _loading ? null : _save,
-      ),
-      children: [
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.only(top: 120),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_error != null)
-          _ErrorCard(error: _error!, onRetry: _load)
-        else if (profile != null) ...[
-          _MerchantProfileHeader(
-            profile: profile,
-            photoUrl: _photoUrl,
-            displayName: _nameCtrl.text.trim().isEmpty
-                ? profile.businessName
-                : _nameCtrl.text.trim(),
-            onTap: _pickPhoto,
-          ),
-          const SizedBox(height: 14),
-          _PerformanceSection(
-            profile: profile,
-            onReviewsTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const MerchantProductReviewsPage(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 18),
-          _InfoTile(
-            icon: Icons.email_outlined,
-            label: 'Email',
-            value: email,
-          ),
-          _InfoTile(
-            icon: profile.merchantType == 'laundry'
-                ? Icons.local_laundry_service_outlined
-                : Icons.restaurant_outlined,
-            label: 'Jenis Merchant',
-            value: profile.merchantType == 'laundry' ? 'Laundry' : 'Catering',
-          ),
-          _InfoTile(
-            icon: Icons.badge_outlined,
-            label: 'ID Merchant',
-            value: profile.merchantCode.isEmpty
-                ? profile.id
-                : profile.merchantCode,
-          ),
-          _InfoTile(
-            icon: Icons.schedule_rounded,
-            label: 'Jam Operasional',
-            value: '${_openCtrl.text.trim()} - ${_closeCtrl.text.trim()}',
-          ),
-          const SizedBox(height: 18),
-          _ProfileFormCard(
-            nameController: _nameCtrl,
-            descriptionController: _descriptionCtrl,
-            phoneController: _phoneCtrl,
-            addressController: _addressCtrl,
-            openController: _openCtrl,
-            closeController: _closeCtrl,
-            latitude: _latitude,
-            longitude: _longitude,
-            onUseCurrentLocation: _useCurrentLocation,
-            onPickLocation: _pickLocation,
-            onPickOpenTime: () => _pickOperationalTime(_openCtrl),
-            onPickCloseTime: () => _pickOperationalTime(_closeCtrl),
-          ),
-          const SizedBox(height: 18),
-          _ActionTile(
-            icon: Icons.lock_reset_rounded,
-            label: 'Ubah Kata Sandi',
-            onTap: _openChangePassword,
-          ),
-          _ActionTile(
-            icon: Icons.logout_rounded,
-            label: 'Keluar',
-            danger: true,
-            onTap: () {
-              auth.logout();
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-          ),
-          const MerchantBottomSpacer(),
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmDiscardChanges() && context.mounted) {
+          Navigator.of(context).maybePop();
+        }
+      },
+      child: MerchantPage(
+        scrollController: _scrollCtrl,
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+        topBar: MerchantTopBar(
+          title: _editing ? 'Edit Profil' : 'Profil',
+          showAvatar: false,
+          actionLabel: _editing ? (_saving ? 'Menyimpan...' : 'Simpan') : null,
+          onAction: _editing && _dirty && !_saving && !_loading ? _save : null,
+        ),
+        children: [
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.only(top: 120),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null)
+            _ErrorCard(error: _error!, onRetry: _load)
+          else if (profile != null) ...[
+            _MerchantProfileHeader(
+              profile: profile,
+              photoUrl: _photoUrl,
+              displayName: _nameCtrl.text.trim().isEmpty
+                  ? profile.businessName
+                  : _nameCtrl.text.trim(),
+              onEdit: _startEditing,
+            ),
+            const SizedBox(height: 14),
+            _PerformanceSection(
+              profile: profile,
+              onReviewsTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const MerchantProductReviewsPage(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            _InfoTile(
+              icon: Icons.email_outlined,
+              label: 'Email',
+              value: email,
+            ),
+            _InfoTile(
+              icon: profile.merchantType == 'laundry'
+                  ? Icons.local_laundry_service_outlined
+                  : Icons.restaurant_outlined,
+              label: 'Jenis Merchant',
+              value: profile.merchantType == 'laundry' ? 'Laundry' : 'Catering',
+            ),
+            _InfoTile(
+              icon: Icons.badge_outlined,
+              label: 'ID Merchant',
+              value: profile.merchantCode.isEmpty
+                  ? profile.id
+                  : profile.merchantCode,
+            ),
+            _InfoTile(
+              icon: Icons.schedule_rounded,
+              label: 'Jam Operasional',
+              value: '${_openCtrl.text.trim()} - ${_closeCtrl.text.trim()}',
+            ),
+            const SizedBox(height: 18),
+            if (_editing)
+              _ProfileFormCard(
+                nameController: _nameCtrl,
+                descriptionController: _descriptionCtrl,
+                phoneController: _phoneCtrl,
+                addressController: _addressCtrl,
+                openController: _openCtrl,
+                closeController: _closeCtrl,
+                latitude: _latitude,
+                longitude: _longitude,
+                photoUrl: _photoUrl,
+                merchantType: profile.merchantType,
+                onPickPhoto: _pickPhoto,
+                onUseCurrentLocation: _useCurrentLocation,
+                onPickLocation: _pickLocation,
+                onPickOpenTime: () => _pickOperationalTime(_openCtrl),
+                onPickCloseTime: () => _pickOperationalTime(_closeCtrl),
+              )
+            else
+              _ReadonlyMerchantDetail(profile: profile),
+            const SizedBox(height: 18),
+            _ActionTile(
+              icon: Icons.lock_reset_rounded,
+              label: 'Ubah Kata Sandi',
+              onTap: _editing ? _openChangePassword : null,
+            ),
+            _ActionTile(
+              icon: Icons.logout_rounded,
+              label: 'Keluar',
+              danger: true,
+              onTap: () {
+                auth.logout();
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+            const MerchantBottomSpacer(),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -355,93 +492,73 @@ class _MerchantProfileHeader extends StatelessWidget {
     required this.profile,
     required this.photoUrl,
     required this.displayName,
-    required this.onTap,
+    required this.onEdit,
   });
 
   final MerchantProfile profile;
   final String photoUrl;
   final String displayName;
-  final VoidCallback onTap;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(24),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [MerchantPalette.shadow(opacity: 0.05)],
-          ),
-          child: Row(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [MerchantPalette.shadow(opacity: 0.05)],
+        ),
+        child: Row(
+          children: [
+            ClipOval(
+              child: MerchantImage(
+                url: photoUrl,
+                icon: profile.merchantType == 'laundry'
+                    ? Icons.local_laundry_service_outlined
+                    : Icons.restaurant_rounded,
+                width: 72,
+                height: 72,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipOval(
-                    child: MerchantImage(
-                      url: photoUrl,
-                      icon: profile.merchantType == 'laundry'
-                          ? Icons.local_laundry_service_outlined
-                          : Icons.restaurant_rounded,
-                      width: 72,
-                      height: 72,
+                  Text(
+                    displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: MerchantPalette.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  Positioned(
-                    right: -2,
-                    bottom: 2,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: MerchantPalette.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(
-                        Icons.add_a_photo_rounded,
-                        color: Colors.white,
-                        size: 15,
-                      ),
-                    ),
+                  const SizedBox(height: 6),
+                  Text(
+                    profile.address.isEmpty
+                        ? 'Alamat merchant belum diisi'
+                        : profile.address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: MerchantPalette.muted),
                   ),
                 ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: MerchantPalette.text,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      profile.address.isEmpty
-                          ? 'Alamat merchant belum diisi'
-                          : profile.address,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: MerchantPalette.muted),
-                    ),
-                  ],
-                ),
+            ),
+            IconButton(
+              tooltip: 'Edit profil merchant',
+              onPressed: onEdit,
+              icon: const Icon(
+                Icons.edit_rounded,
+                color: MerchantPalette.primary,
               ),
-              const Icon(Icons.edit_rounded, color: MerchantPalette.muted),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -577,6 +694,9 @@ class _ProfileFormCard extends StatelessWidget {
     required this.closeController,
     required this.latitude,
     required this.longitude,
+    required this.photoUrl,
+    required this.merchantType,
+    required this.onPickPhoto,
     required this.onUseCurrentLocation,
     required this.onPickLocation,
     required this.onPickOpenTime,
@@ -591,6 +711,9 @@ class _ProfileFormCard extends StatelessWidget {
   final TextEditingController closeController;
   final double? latitude;
   final double? longitude;
+  final String photoUrl;
+  final String merchantType;
+  final VoidCallback onPickPhoto;
   final VoidCallback onUseCurrentLocation;
   final VoidCallback onPickLocation;
   final VoidCallback onPickOpenTime;
@@ -615,6 +738,12 @@ class _ProfileFormCard extends StatelessWidget {
               fontWeight: FontWeight.w900,
               fontSize: 16,
             ),
+          ),
+          const SizedBox(height: 14),
+          _MerchantPhotoEditRow(
+            photoUrl: photoUrl,
+            merchantType: merchantType,
+            onPickPhoto: onPickPhoto,
           ),
           const SizedBox(height: 14),
           _ProfileInput(
@@ -692,6 +821,159 @@ class _ProfileFormCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MerchantPhotoEditRow extends StatelessWidget {
+  const _MerchantPhotoEditRow({
+    required this.photoUrl,
+    required this.merchantType,
+    required this.onPickPhoto,
+  });
+
+  final String photoUrl;
+  final String merchantType;
+  final VoidCallback onPickPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        ClipOval(
+          child: MerchantImage(
+            url: photoUrl,
+            icon: merchantType == 'laundry'
+                ? Icons.local_laundry_service_outlined
+                : Icons.restaurant_rounded,
+            width: 58,
+            height: 58,
+          ),
+        ),
+        const SizedBox(width: 14),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Foto Toko',
+                style: TextStyle(
+                  color: MerchantPalette.text,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 3),
+              Text(
+                'Foto ini tampil di halaman merchant user.',
+                style: TextStyle(color: MerchantPalette.muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        IconButton.filled(
+          tooltip: 'Ubah foto toko',
+          onPressed: onPickPhoto,
+          icon: const Icon(Icons.add_a_photo_rounded),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReadonlyMerchantDetail extends StatelessWidget {
+  const _ReadonlyMerchantDetail({required this.profile});
+
+  final MerchantProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [MerchantPalette.shadow(opacity: 0.05)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Detail Merchant',
+            style: TextStyle(
+              color: MerchantPalette.text,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _InfoLine(label: 'Nama Merchant', value: profile.businessName),
+          _InfoLine(
+            label: 'Deskripsi',
+            value: profile.description.isEmpty
+                ? 'Belum ada deskripsi'
+                : profile.description,
+          ),
+          _InfoLine(
+            label: 'Nomor Kontak',
+            value: profile.phone.isEmpty ? 'Belum diisi' : profile.phone,
+          ),
+          _InfoLine(
+            label: 'Alamat',
+            value: profile.address.isEmpty ? 'Belum diisi' : profile.address,
+          ),
+          _InfoLine(
+            label: 'Jam Operasional',
+            value: '${profile.openTime} - ${profile.closeTime}',
+            last: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({
+    required this.label,
+    required this.value,
+    this.last = false,
+  });
+
+  final String label;
+  final String value;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 116,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: MerchantPalette.muted,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: MerchantPalette.text,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
           ),
         ],
       ),

@@ -2191,20 +2191,22 @@ class _HeaderCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.location_on_outlined,
-                  size: 18, color: UserTheme.muted),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  merchant.address,
-                  style: const TextStyle(color: UserTheme.muted),
+          if (merchant.address.trim().isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.location_on_outlined,
+                    size: 18, color: UserTheme.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    merchant.address,
+                    style: const TextStyle(color: UserTheme.muted),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -2263,19 +2265,20 @@ class _MerchantSummary extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                 ],
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 18, color: UserTheme.muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        merchant.address,
-                        style: const TextStyle(color: UserTheme.muted),
+                if (merchant.address.trim().isNotEmpty)
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          size: 18, color: UserTheme.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          merchant.address,
+                          style: const TextStyle(color: UserTheme.muted),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -2328,9 +2331,9 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 UserImage(
                   url: widget.item.imageUrl,
                   icon: Icons.local_laundry_service_rounded,
-                  width: 84,
-                  height: 84,
-                  borderRadius: BorderRadius.circular(14),
+                  width: 72,
+                  height: 72,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -2442,8 +2445,8 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                   url: widget.item.imageUrl,
                   icon: Icons.restaurant_rounded,
                   width: double.infinity,
-                  height: 180,
-                  borderRadius: BorderRadius.circular(16),
+                  height: 150,
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 const SizedBox(height: 16),
                 Text(

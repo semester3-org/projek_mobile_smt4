@@ -27,8 +27,7 @@ class UserRepository {
   static const Duration _favoriteKeysCacheTtl = Duration(seconds: 15);
   static _DashboardCacheEntry? _dashboardCache;
   static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
-  static final Map<String, _MerchantDetailCacheEntry> _merchantDetailCache =
-      {};
+  static final Map<String, _MerchantDetailCacheEntry> _merchantDetailCache = {};
   static _ProfileCacheEntry? _profileCache;
   static Set<String>? _favoriteKeysCache;
   static DateTime? _favoriteKeysCachedAt;
@@ -340,16 +339,16 @@ class UserRepository {
     final res = await ApiService.get('api/user_orders');
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackOrders());
+      return RepoResult.fail(res.message ?? 'Gagal memuat pesanan');
     }
 
     try {
       final list = (res.data!['data'] as List)
           .map((e) => Order.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list.isEmpty ? _fallbackOrders() : list);
-    } catch (_) {
-      return RepoResult.ok(_fallbackOrders());
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan: $e');
     }
   }
 
@@ -1032,229 +1031,6 @@ class UserRepository {
     } catch (e) {
       return RepoResult.fail('Gagal membaca data ulasan: $e');
     }
-  }
-
-  static List<UserMerchant> _fallbackMerchants(String type) {
-    switch (type) {
-      case 'laundry':
-        return const [
-          UserMerchant(
-            id: 'l1',
-            type: 'laundry',
-            name: 'Clean & Fresh Laundry',
-            subtitle: 'Antar jemput dan express 6 jam',
-            address: 'Jl. Sudirman No. 45, Jakarta Pusat',
-            rating: 4.8,
-            reviewCount: 120,
-            distanceKm: 0.8,
-            imageUrl:
-                'https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=900',
-            status: 'Tersedia',
-            tags: ['ANTAR JEMPUT', 'EXPRESS 6 JAM'],
-            minPrice: 8000,
-            priceUnit: '/kg',
-            eta: '25-30 mnt',
-            openHours: '08:00 - 21:00',
-            description:
-                'Laundry cepat dengan layanan cuci lipat, setrika, satuan, dan antar jemput area Sentra Ruang.',
-            phone: '+62 812-3456-7890',
-            email: 'halo@cleanfresh.id',
-            menuItems: [
-              MerchantMenuItem(
-                id: 'l1-s1',
-                name: 'Cuci Lipat (Kg)',
-                description: 'Regular',
-                price: 8000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=400',
-              ),
-              MerchantMenuItem(
-                id: 'l1-s2',
-                name: 'Cuci Setrika (Kg)',
-                description: 'Rapi dan wangi',
-                price: 12000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1521656693074-0ef32e80a5d5?w=400',
-              ),
-            ],
-            reviews: [
-              MerchantReview(
-                reviewer: 'Siska Amelia',
-                rating: 5,
-                comment:
-                    'Hasil cucian sangat bersih dan wangi. Pengirimannya juga cepat, kurirnya ramah.',
-                timeLabel: '2 hari yang lalu',
-              ),
-              MerchantReview(
-                reviewer: 'Budi Santoso',
-                rating: 4,
-                comment:
-                    'Layanan oke, lipatan rapi sekali. Secara keseluruhan puas dengan hasilnya.',
-                timeLabel: '1 minggu yang lalu',
-              ),
-            ],
-          ),
-          UserMerchant(
-            id: 'l2',
-            type: 'laundry',
-            name: 'Kiloan Express',
-            subtitle: 'Cuci sepatu dan kiloan cepat',
-            address: 'Jl. Melati No. 18, Jakarta Selatan',
-            rating: 4.5,
-            reviewCount: 80,
-            distanceKm: 1.2,
-            imageUrl:
-                'https://images.unsplash.com/photo-1626806819282-2c1dc01a5e0c?w=900',
-            status: 'Tersedia',
-            tags: ['CUCI SEPATU', 'KILOAN'],
-            minPrice: 7500,
-            priceUnit: '/kg',
-            eta: '35-45 mnt',
-            openHours: '07:00 - 22:00',
-            description:
-                'Pilihan praktis untuk cuci kiloan, sepatu, dan perawatan pakaian harian.',
-            phone: '+62 812-1111-2244',
-            email: 'cs@kiloanexpress.id',
-            menuItems: [],
-            reviews: [],
-          ),
-        ];
-      case 'catering':
-        return const [
-          UserMerchant(
-            id: 'cat1',
-            type: 'catering',
-            name: 'Green Garden Catering',
-            subtitle: 'Masakan sehat dan diet kalori',
-            address: 'Jl. Kemang Raya No. 9, Jakarta Selatan',
-            rating: 4.8,
-            reviewCount: 124,
-            distanceKm: 1.2,
-            imageUrl:
-                'https://images.unsplash.com/photo-1543353071-873f17a7a088?w=900',
-            status: 'Tersedia',
-            tags: ['DIET SEHAT', 'HARIAN'],
-            minPrice: 25000,
-            priceUnit: '',
-            eta: '25-30 mnt',
-            openHours: '08:00 - 20:00',
-            description:
-                'Menu harian bergizi untuk penghuni kos, cocok untuk makan siang dan makan malam.',
-            phone: '+62 812-4455-7788',
-            email: 'order@greengarden.id',
-            menuItems: [
-              MerchantMenuItem(
-                id: 'cat1-m1',
-                name: 'Paket Nasi Kotak Premium',
-                description: 'Lengkap dengan 5 lauk pauk',
-                price: 45000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400',
-              ),
-              MerchantMenuItem(
-                id: 'cat1-m2',
-                name: 'Catering Diet Sehat',
-                description: 'Rendah kalori, tinggi protein',
-                price: 55000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400',
-              ),
-            ],
-            reviews: [
-              MerchantReview(
-                reviewer: 'Anita Wijaya',
-                rating: 5,
-                comment:
-                    'Makanannya enak dan porsinya pas. Kemasan juga sangat rapi.',
-                timeLabel: '2 jam yang lalu',
-              ),
-              MerchantReview(
-                reviewer: 'Budi Santoso',
-                rating: 4.5,
-                comment:
-                    'Pengirimannya tepat waktu. Menu catering dietnya membantu pola makan.',
-                timeLabel: 'Kemarin',
-              ),
-            ],
-          ),
-          UserMerchant(
-            id: 'cat2',
-            type: 'catering',
-            name: 'Dapur Nusantara',
-            subtitle: 'Masakan tradisional Indonesia',
-            address: 'Jl. Panglima Polim No. 11',
-            rating: 4.9,
-            reviewCount: 210,
-            distanceKm: 2.5,
-            imageUrl:
-                'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=900',
-            status: 'Tersedia',
-            tags: ['NASI BOX', 'PRASMANAN'],
-            minPrice: 35000,
-            priceUnit: '',
-            eta: '35-45 mnt',
-            openHours: '07:00 - 21:00',
-            description: 'Menu nusantara untuk kebutuhan harian dan acara kos.',
-            phone: '+62 812-9988-1010',
-            email: 'dapur@nusantara.id',
-            menuItems: [],
-            reviews: [],
-          ),
-        ];
-      default:
-        return const [];
-    }
-  }
-
-  static List<Order> _fallbackOrders() {
-    return [
-      Order(
-        id: 'SR-CATER-88219',
-        merchantName: 'Dapur Nusantara',
-        service: 'catering',
-        orderDate: DateTime(2023, 10, 24, 14, 20),
-        totalAmount: 90000,
-        status: 'pending',
-        paymentMethod: 'GOPAY',
-        items: [
-          OrderItem(
-            name: 'Nasi Goreng Spesial Nusantara',
-            quantity: 2,
-            price: 35000,
-            subtotal: 70000,
-          ),
-          OrderItem(
-            name: 'Es Jeruk Peras Murni',
-            quantity: 1,
-            price: 15000,
-            subtotal: 15000,
-          ),
-        ],
-      ),
-      Order(
-        id: 'SR-LAUNDRY-001',
-        merchantName: 'Clean & Fresh Laundry Express',
-        service: 'laundry',
-        orderDate: DateTime(2023, 10, 24, 14, 20),
-        totalAmount: 70000,
-        status: 'pending',
-        paymentMethod: 'GOPAY',
-        items: [
-          OrderItem(
-            name: 'Cuci Lipat (Regular)',
-            quantity: 5,
-            price: 8000,
-            subtotal: 40000,
-          ),
-          OrderItem(
-            name: 'Cuci Satuan - Jaket',
-            quantity: 1,
-            price: 25000,
-            subtotal: 25000,
-          ),
-        ],
-      ),
-    ];
   }
 
   static List<AppNotification> _fallbackNotifications() {

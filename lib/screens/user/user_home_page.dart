@@ -500,14 +500,25 @@ class _HomeCateringSubscriptions extends StatefulWidget {
 class _HomeCateringSubscriptionsState
     extends State<_HomeCateringSubscriptions> {
   List<CateringSubscriber> _active = [];
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _load(silent: true),
+    );
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
     final result = await UserRepository.getCateringSubscriptions(status: 'all');
     if (!mounted) return;
     final items = (result.data ?? [])
@@ -546,6 +557,8 @@ class _CateringActiveHero extends StatelessWidget {
     final title = subscription.productName.isNotEmpty
         ? subscription.productName
         : subscription.packageLabel;
+    final hasPeriod = (subscription.startDate ?? '').trim().isNotEmpty &&
+        (subscription.endDate ?? '').trim().isNotEmpty;
     final status = subscription.subscriptionStatus.toLowerCase();
     final statusLabel = switch (status) {
       'active' => 'AKTIF',
@@ -649,32 +662,44 @@ class _CateringActiveHero extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.date_range_outlined,
-                    size: 17,
-                    color: Color(0xFFB85F00),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${_fmt(subscription.startDate)} - ${_fmt(subscription.endDate)}',
-                      style: const TextStyle(
-                        color: UserTheme.text,
-                        fontWeight: FontWeight.w700,
+              if (hasPeriod)
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.date_range_outlined,
+                      size: 17,
+                      color: Color(0xFFB85F00),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${_fmt(subscription.startDate)} - ${_fmt(subscription.endDate)}',
+                        style: const TextStyle(
+                          color: UserTheme.text,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  Text(
+                    Text(
+                      formatUserCurrency(subscription.totalAmount),
+                      style: const TextStyle(
+                        color: Color(0xFFB85F00),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
                     formatUserCurrency(subscription.totalAmount),
                     style: const TextStyle(
                       color: Color(0xFFB85F00),
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                ],
-              ),
+                ),
             ],
           ),
         ),

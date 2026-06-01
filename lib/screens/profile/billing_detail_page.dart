@@ -29,7 +29,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     with WidgetsBindingObserver {
   late BillingRecord _billing;
   late String _billingLookupId;
-  String _method = 'qris';
+  String _method = 'bca';
   String? _lastMidtransOrderId;
   bool _cancelling = false;
   bool _paying = false;
@@ -661,21 +661,6 @@ class _BillingPaymentOption {
 
 const _billingPaymentOptions = [
   _BillingPaymentOption(
-    key: 'qris',
-    subtitle: 'DANA, OVO, LinkAja, dan mobile banking lewat QRIS',
-    icon: Icons.qr_code_2_rounded,
-  ),
-  _BillingPaymentOption(
-    key: 'gopay',
-    subtitle: 'Bayar langsung menggunakan GoPay',
-    icon: Icons.account_balance_wallet_rounded,
-  ),
-  _BillingPaymentOption(
-    key: 'shopeepay',
-    subtitle: 'Bayar langsung menggunakan ShopeePay',
-    icon: Icons.shopping_bag_rounded,
-  ),
-  _BillingPaymentOption(
     key: 'bca',
     subtitle: 'Virtual Account BCA',
     icon: Icons.account_balance_rounded,
@@ -691,9 +676,14 @@ const _billingPaymentOptions = [
     icon: Icons.account_balance_rounded,
   ),
   _BillingPaymentOption(
-    key: 'cimb',
-    subtitle: 'CIMB Niaga Clicks',
-    icon: Icons.account_balance_rounded,
+    key: 'gopay',
+    subtitle: 'Bayar langsung menggunakan GoPay',
+    icon: Icons.account_balance_wallet_rounded,
+  ),
+  _BillingPaymentOption(
+    key: 'shopeepay',
+    subtitle: 'Bayar langsung menggunakan ShopeePay',
+    icon: Icons.shopping_bag_rounded,
   ),
 ];
 

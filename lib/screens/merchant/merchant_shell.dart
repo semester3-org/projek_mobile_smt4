@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../data/repositories/merchant_repository.dart';
 import 'pages/laundry/laundry_dashboard_page.dart';
 import 'pages/laundry/laundry_orders_page.dart';
 import 'pages/laundry/laundry_services_page.dart';
@@ -96,6 +99,7 @@ class MerchantBottomNav extends StatelessWidget {
                   activeIcon: _items[i].$2,
                   label: _items[i].$3,
                   selected: i == currentIndex,
+                  showBadge: i == 1,
                   onTap: () => onChanged(i),
                 ),
               ),
@@ -112,6 +116,7 @@ class _MerchantBottomNavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.selected,
+    this.showBadge = false,
     required this.onTap,
   });
 
@@ -119,6 +124,7 @@ class _MerchantBottomNavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final bool selected;
+  final bool showBadge;
   final VoidCallback onTap;
 
   @override
@@ -138,7 +144,13 @@ class _MerchantBottomNavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(selected ? activeIcon : icon, size: 22, color: color),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(selected ? activeIcon : icon, size: 22, color: color),
+                if (showBadge) const _MerchantOrderBadge(),
+              ],
+            ),
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -153,6 +165,75 @@ class _MerchantBottomNavItem extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MerchantOrderBadge extends StatefulWidget {
+  const _MerchantOrderBadge();
+
+  @override
+  State<_MerchantOrderBadge> createState() => _MerchantOrderBadgeState();
+}
+
+class _MerchantOrderBadgeState extends State<_MerchantOrderBadge> {
+  Timer? _timer;
+  int _count = 0;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 18), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    try {
+      final result = await MerchantRepository.getOrders(status: 'pending');
+      if (!mounted) return;
+      final next = result.data?.length ?? 0;
+      if (next != _count) {
+        setState(() => _count = next);
+      }
+    } finally {
+      _loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_count <= 0) return const SizedBox.shrink();
+    return Positioned(
+      right: -10,
+      top: -9,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: MerchantPalette.danger,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white, width: 1.4),
+        ),
+        child: Text(
+          _count > 99 ? '99+' : _count.toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
       ),
     );

@@ -10,19 +10,11 @@ class PaymentMethodHelper {
     'echannel': 'Transfer Bank Mandiri',
     'bni': 'Transfer Bank BNI',
     'bni_va': 'Transfer Bank BNI',
-    'cimb': 'Transfer Bank CIMB Niaga',
-    'cimb_clicks': 'Transfer Bank CIMB Niaga',
     'bank_transfer': 'Transfer Bank',
 
     // E-Wallet
     'gopay': 'GoPay',
-    'ovo': 'QRIS (OVO)',
-    'dana': 'QRIS (DANA)',
     'shopeepay': 'ShopeePay',
-    'linkaja': 'QRIS (LinkAja)',
-
-    // QRIS
-    'qris': 'QRIS',
 
     // Credit Card
     'credit_card': 'Kartu Kredit',
@@ -41,19 +33,11 @@ class PaymentMethodHelper {
     'echannel': 'Transfer Bank',
     'bni': 'Transfer Bank',
     'bni_va': 'Transfer Bank',
-    'cimb': 'Transfer Bank',
-    'cimb_clicks': 'Transfer Bank',
     'bank_transfer': 'Transfer Bank',
 
     // E-Wallet Category
     'gopay': 'E-Wallet',
-    'ovo': 'QRIS',
-    'dana': 'QRIS',
     'shopeepay': 'E-Wallet',
-    'linkaja': 'QRIS',
-
-    // QRIS Category
-    'qris': 'QRIS',
 
     // Card Category
     'credit_card': 'Kartu Kredit/Debit',
@@ -92,8 +76,8 @@ class PaymentMethodHelper {
 
   /// Opsi pembayaran untuk form checkout user.
   static List<String> checkoutOptionKeys({required bool isLaundry}) {
-    const bank = ['bca', 'mandiri', 'bni', 'cimb'];
-    const online = ['qris', 'gopay', 'shopeepay'];
+    const bank = ['bca', 'mandiri', 'bni'];
+    const online = ['gopay', 'shopeepay'];
     if (isLaundry) {
       return ['cod', ...bank, ...online];
     }
@@ -103,9 +87,8 @@ class PaymentMethodHelper {
   /// Get all payment methods grouped by category
   static Map<String, List<String>> getGroupedMethods() {
     final Map<String, List<String>> grouped = {
-      'Bank': [],
+      'Transfer Bank': [],
       'E-Wallet': [],
-      'QRIS': [],
       'Kartu Kredit/Debit': [],
       'Bayar di Tempat': [],
     };

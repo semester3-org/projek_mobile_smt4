@@ -149,7 +149,7 @@ try {
 
     $limit = isset($_GET['limit']) ? max(1, min(50, (int)$_GET['limit'])) : 50;
     $stmt = $conn->prepare("
-        SELECT id, title, message, type, read_at, created_at
+        SELECT id, title, message, type, action_text, action_url, read_at, created_at
         FROM app_notifications
         WHERE user_id = ?
           AND title NOT LIKE 'Tes Notifikasi%'
@@ -175,6 +175,9 @@ try {
             'subtitle' => $message,
             'time' => ownerTimeLabel($row['created_at'] ?? null),
             'category' => ownerNotificationCategory($row['type'] ?? null, $title, $message),
+            'type' => (string)($row['type'] ?? 'info'),
+            'actionButtonText' => $row['action_text'] ?? null,
+            'actionUrl' => $row['action_url'] ?? null,
             'isRead' => !empty($row['read_at']),
         ];
     }

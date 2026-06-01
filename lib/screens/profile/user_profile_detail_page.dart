@@ -195,6 +195,12 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => _openEditProfile(profile),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit profil'),
+                ),
               ],
             ),
           ),
@@ -231,21 +237,9 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
             label: 'Alamat',
             value: _optionalValue(profile.address),
           ),
-          _InfoTile(
-            icon: Icons.map_outlined,
-            label: 'Koordinat',
-            value: profile.latitude == null || profile.longitude == null
-                ? 'Belum dipilih'
-                : '${profile.latitude!.toStringAsFixed(6)}, ${profile.longitude!.toStringAsFixed(6)}',
-          ),
           const SizedBox(height: 18),
           const _SectionTitle('Pengaturan'),
           const SizedBox(height: 12),
-          _ActionTile(
-            icon: Icons.edit_outlined,
-            label: 'Edit Profil',
-            onTap: () => _openEditProfile(profile),
-          ),
           _ActionTile(
             icon: Icons.lock_outline,
             label: 'Ubah Kata Sandi',
@@ -295,6 +289,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   double? _latitude;
   double? _longitude;
   bool _saving = false;
+  bool _dirty = false;
+  late String _originalFingerprint;
 
   @override
   void initState() {
@@ -306,6 +302,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     _photoValue = profile.photoUrl ?? '';
     _latitude = profile.latitude;
     _longitude = profile.longitude;
+    _originalFingerprint = _fingerprint();
+    _nameCtrl.addListener(_refreshDirty);
+    _phoneCtrl.addListener(_refreshDirty);
+    _addressCtrl.addListener(_refreshDirty);
   }
 
   @override
@@ -346,6 +346,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       setState(() {
         _photoValue = 'data:image/jpeg;base64,${base64Encode(bytes)}';
       });
+      _refreshDirty();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -371,9 +372,11 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       _latitude = result.latitude;
       _longitude = result.longitude;
     });
+    _refreshDirty();
   }
 
   Future<void> _submit() async {
+    if (!_dirty || _saving) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final auth = AuthScope.of(context);
@@ -397,6 +400,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profil berhasil diperbarui')),
       );
+      setState(() {
+        _dirty = false;
+        _originalFingerprint = _fingerprint();
+      });
       Navigator.of(context).pop(result.data);
       return;
     }
@@ -406,134 +413,214 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     );
   }
 
+  String _fingerprint() {
+    String norm(String value) => value.trim();
+    return [
+      norm(_nameCtrl.text),
+      norm(_phoneCtrl.text),
+      norm(_addressCtrl.text),
+      norm(_photoValue),
+      _latitude?.toStringAsFixed(8) ?? '',
+      _longitude?.toStringAsFixed(8) ?? '',
+    ].join('|');
+  }
+
+  void _refreshDirty() {
+    if (!mounted) return;
+    final next = _fingerprint() != _originalFingerprint;
+    if (next != _dirty) setState(() => _dirty = next);
+  }
+
+  Future<bool> _confirmClose() async {
+    if (!_dirty) return true;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Perubahan belum disimpan'),
+        content: const Text('Simpan perubahan profil sebelum menutup form?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: const Text('Buang'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: const Text('Lanjut Edit'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (choice == 'save') {
+      await _submit();
+      return false;
+    }
+    return choice == 'discard';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(22),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Edit Profil',
-                style: TextStyle(
-                  color: UserTheme.text,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmClose() && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(22),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Edit Profil',
+                  style: TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Center(
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 42,
-                      backgroundColor: UserTheme.softBlue,
-                      backgroundImage: _selectedImage(),
-                      child: _selectedImage() == null
-                          ? Text(
-                              _nameCtrl.text.trim().isEmpty
-                                  ? 'U'
-                                  : _nameCtrl.text.trim()[0].toUpperCase(),
-                              style: const TextStyle(
-                                color: UserTheme.primary,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _saving ? null : _pickPhoto,
-                          icon: const Icon(Icons.photo_library_outlined),
-                          label: const Text('Pilih Foto'),
-                        ),
-                        if (_photoValue.trim().isNotEmpty)
-                          TextButton.icon(
-                            onPressed: _saving
-                                ? null
-                                : () => setState(() => _photoValue = ''),
-                            icon: const Icon(Icons.delete_outline),
-                            label: const Text('Hapus'),
+                const SizedBox(height: 18),
+                Center(
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 42,
+                        backgroundColor: UserTheme.softBlue,
+                        backgroundImage: _selectedImage(),
+                        child: _selectedImage() == null
+                            ? Text(
+                                _nameCtrl.text.trim().isEmpty
+                                    ? 'U'
+                                    : _nameCtrl.text.trim()[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _saving ? null : _pickPhoto,
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: const Text('Pilih Foto'),
                           ),
-                      ],
+                          if (_photoValue.trim().isNotEmpty)
+                            TextButton.icon(
+                              onPressed: _saving
+                                  ? null
+                                  : () {
+                                      setState(() => _photoValue = '');
+                                      _refreshDirty();
+                                    },
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Hapus'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _ProfileTextField(
+                  controller: _nameCtrl,
+                  label: 'Nama Lengkap',
+                  icon: Icons.person_outline_rounded,
+                  validator: (value) {
+                    final text = (value ?? '').trim();
+                    if (text.isEmpty) {
+                      return 'Nama wajib diisi';
+                    }
+                    if (RegExp(r'\d').hasMatch(text)) {
+                      return 'Nama tidak boleh berisi angka';
+                    }
+                    if (text.length < 3) {
+                      return 'Nama minimal 3 karakter';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _ProfileTextField(
+                  controller: _phoneCtrl,
+                  label: 'Nomor Telepon',
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    final text = (value ?? '').trim();
+                    if (text.isEmpty) return 'Nomor telepon wajib diisi';
+                    if (!RegExp(r'^[0-9+ ]{10,16}$').hasMatch(text)) {
+                      return 'Nomor telepon tidak valid';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _ProfileTextField(
+                  controller: _addressCtrl,
+                  label: 'Alamat',
+                  icon: Icons.location_on_outlined,
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : _pickLocation,
+                    icon: const Icon(Icons.map_outlined),
+                    label: Text(
+                      _latitude == null || _longitude == null
+                          ? 'Pilih Lokasi dari Peta'
+                          : 'Ubah Lokasi dari Peta',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _saving
+                            ? null
+                            : () async {
+                                if (await _confirmClose() && context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                        child: const Text('Batal'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _saving || !_dirty ? null : _submit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: UserTheme.primary,
+                        ),
+                        child: Text(_saving ? 'Menyimpan...' : 'Simpan'),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
-              _ProfileTextField(
-                controller: _nameCtrl,
-                label: 'Nama Lengkap',
-                icon: Icons.person_outline_rounded,
-                validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
-                    return 'Nama wajib diisi';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              _ProfileTextField(
-                controller: _phoneCtrl,
-                label: 'Nomor Telepon',
-                icon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 12),
-              _ProfileTextField(
-                controller: _addressCtrl,
-                label: 'Alamat',
-                icon: Icons.location_on_outlined,
-                maxLines: 3,
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _saving ? null : _pickLocation,
-                  icon: const Icon(Icons.map_outlined),
-                  label: Text(
-                    _latitude == null || _longitude == null
-                        ? 'Pilih Lokasi dari Peta'
-                        : 'Ubah Lokasi dari Peta',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          _saving ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Batal'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _saving ? null : _submit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: UserTheme.primary,
-                      ),
-                      child: Text(_saving ? 'Menyimpan...' : 'Simpan'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

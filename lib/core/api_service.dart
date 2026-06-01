@@ -45,7 +45,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://192.168.18.52:8000';
+      return 'http://10.0.2.2:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {
@@ -420,7 +420,9 @@ class ApiService {
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
     } on TimeoutException {
       return const ApiResponse(
-          success: false, statusCode: 0, message: 'Request timeout. Coba lagi.');
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');

@@ -114,12 +114,12 @@ class ApiRequestor
         // merging with Config::$curlOptions
         if (count(Config::$curlOptions)) {
             // We need to combine headers manually, because it's array and it will no be merged
-            if (Config::$curlOptions[CURLOPT_HTTPHEADER]) {
-                $mergedHeaders = array_merge($curl_options[CURLOPT_HTTPHEADER], Config::$curlOptions[CURLOPT_HTTPHEADER]);
+            $customHeaders = isset(Config::$curlOptions[CURLOPT_HTTPHEADER]) ? Config::$curlOptions[CURLOPT_HTTPHEADER] : array();
+            if ($customHeaders) {
+                $mergedHeaders = array_merge($curl_options[CURLOPT_HTTPHEADER], $customHeaders);
                 $headerOptions = array(CURLOPT_HTTPHEADER => $mergedHeaders);
             } else {
-                $mergedHeaders = array();
-                $headerOptions = array(CURLOPT_HTTPHEADER => $mergedHeaders);
+                $headerOptions = array();
             }
 
             $curl_options = array_replace_recursive($curl_options, Config::$curlOptions, $headerOptions);

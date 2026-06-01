@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/midtrans_launcher.dart';
 import '../../core/payment_methods.dart';
 import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
@@ -117,21 +117,14 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
 
     final midtransOrderId = result.data!['midtrans_order_id'] as String? ?? '';
     final url = result.data!['payment_url'] as String? ?? '';
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
+    if (url.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('URL pembayaran tidak valid')),
       );
       return;
     }
 
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.inAppBrowserView,
-      webViewConfiguration: const WebViewConfiguration(
-        enableJavaScript: true,
-      ),
-    );
+    final launched = await launchMidtransPaymentUrl(url);
     if (!mounted) return;
     if (!launched) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -470,6 +463,18 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
             : PaymentMethodHelper.getDisplayName(order.paymentMethod);
     final hasPaymentMethod = paymentMethodRaw.isNotEmpty &&
         paymentMethodLabel.toLowerCase() != 'metode pembayaran';
+    final merchantStatus = (order.merchantStatus ?? '').toLowerCase();
+    final codCompleted = order.isCashOnDelivery &&
+        (order.status == 'completed' ||
+            merchantStatus == 'done' ||
+            merchantStatus == 'completed');
+    final paymentStatusDisplayLabel = codCompleted
+        ? 'Sudah dibayar'
+        : order.paymentStatusLabel?.isNotEmpty == true
+            ? order.paymentStatusLabel!
+            : order.isCashOnDelivery
+                ? 'Belum Dibayar'
+                : 'Menunggu pembayaran';
     final paymentHelperText = paymentCancelled
         ? ''
         : _canConfirmManualPayment
@@ -586,11 +591,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
               ],
               _SubscriptionLine(
                 label: 'Status Pembayaran',
-                value: order.paymentStatusLabel?.isNotEmpty == true
-                    ? order.paymentStatusLabel!
-                    : order.isCashOnDelivery
-                        ? 'Belum Dibayar'
-                        : 'Menunggu pembayaran',
+                value: paymentStatusDisplayLabel,
                 strong: true,
               ),
               if (paymentHelperText.isNotEmpty) ...[
@@ -1120,7 +1121,7 @@ class _LaundryServiceInfoCard extends StatelessWidget {
 
   String get _estimatedLabel {
     final finishAt = order.estimatedFinishAt;
-    final duration = _durationLabel;
+    final duration = finishAt != null ? '' : _durationLabel;
     if (finishAt != null) {
       final dateLabel = _formatLongIndonesianDate(finishAt);
       return duration.isEmpty ? dateLabel : '$dateLabel (± $duration)';
@@ -1283,7 +1284,8 @@ class _OrderItemsCard extends StatelessWidget {
                                     ),
                                   ),
                                 ],
-                                if ((item.description ?? '').isNotEmpty) ...[
+                                if (!isLaundry &&
+                                    (item.description ?? '').isNotEmpty) ...[
                                   const SizedBox(height: 4),
                                   Text(
                                     item.description!,
@@ -1596,13 +1598,20 @@ class _PaymentStatusNotice extends StatelessWidget {
     final label = order.paymentStatusLabel?.trim().isNotEmpty == true
         ? order.paymentStatusLabel!
         : 'Pembayaran tercatat';
+    final merchant = (order.merchantStatus ?? '').toLowerCase();
+    final codCompleted = order.isCashOnDelivery &&
+        (order.status == 'completed' ||
+            merchant == 'done' ||
+            merchant == 'completed');
     final effectiveLabel = cancelled
         ? 'Pesanan dibatalkan.'
-        : order.isCateringSubscription &&
-                (order.merchantStatus ?? '').toLowerCase() != 'accepted' &&
-                !order.isPaid
-            ? 'Menunggu persetujuan merchant. Tombol pembayaran akan muncul setelah pesanan disetujui.'
-            : label;
+        : codCompleted
+            ? 'Sudah dibayar'
+            : order.isCateringSubscription &&
+                    (order.merchantStatus ?? '').toLowerCase() != 'accepted' &&
+                    !order.isPaid
+                ? 'Menunggu persetujuan merchant. Tombol pembayaran akan muncul setelah pesanan disetujui.'
+                : label;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),

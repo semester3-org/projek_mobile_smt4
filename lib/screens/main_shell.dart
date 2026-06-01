@@ -5,6 +5,7 @@ import 'laundry/laundry_page.dart';
 import 'profile/profile_page.dart';
 import 'user/user_home_page.dart';
 import 'user/user_theme.dart';
+import '../widgets/exit_guard.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -22,56 +23,58 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          UserHomePage(onSelectTab: _selectTab),
-          const LaundryPage(),
-          const CateringPage(),
-          const ProfilePage(),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [UserTheme.softShadow(opacity: 0.09)],
-          ),
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: _selectTab,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: UserTheme.primary,
-            unselectedItemColor: const Color(0xFF94A3B8),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home_rounded),
-                label: 'Beranda',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.local_laundry_service_outlined),
-                activeIcon: Icon(Icons.local_laundry_service_rounded),
-                label: 'Laundry',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.restaurant_outlined),
-                activeIcon: Icon(Icons.restaurant_rounded),
-                label: 'Catering',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                activeIcon: Icon(Icons.person_rounded),
-                label: 'Profil',
-              ),
-            ],
+    return ExitGuard(
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            UserHomePage(onSelectTab: _selectTab),
+            const LaundryPage(),
+            const CateringPage(),
+            const ProfilePage(),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [UserTheme.softShadow(opacity: 0.09)],
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: _selectTab,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: UserTheme.primary,
+              unselectedItemColor: const Color(0xFF94A3B8),
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home_rounded),
+                  label: 'Beranda',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.local_laundry_service_outlined),
+                  activeIcon: Icon(Icons.local_laundry_service_rounded),
+                  label: 'Laundry',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.restaurant_outlined),
+                  activeIcon: Icon(Icons.restaurant_rounded),
+                  label: 'Catering',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline_rounded),
+                  activeIcon: Icon(Icons.person_rounded),
+                  label: 'Profil',
+                ),
+              ],
+            ),
           ),
         ),
       ),

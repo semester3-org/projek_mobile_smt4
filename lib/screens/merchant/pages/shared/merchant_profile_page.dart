@@ -270,6 +270,25 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     ].join('|');
   }
 
+  void _restoreProfileDraft({bool editing = false}) {
+    final profile = _profile;
+    if (profile == null) return;
+    setState(() {
+      _editing = editing;
+      _dirty = false;
+      _nameCtrl.text = profile.businessName;
+      _descriptionCtrl.text = profile.description;
+      _phoneCtrl.text = profile.phone;
+      _addressCtrl.text = profile.address;
+      _openCtrl.text = profile.openTime;
+      _closeCtrl.text = profile.closeTime;
+      _photoUrl = profile.photoUrl;
+      _latitude = profile.latitude;
+      _longitude = profile.longitude;
+      _originalFingerprint = _profileFingerprint();
+    });
+  }
+
   void _refreshDirtyState() {
     if (!mounted) return;
     final nextDirty = _editing && _profileFingerprint() != _originalFingerprint;
@@ -323,26 +342,25 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       return !_dirty;
     }
     if (choice == 'discard') {
-      final profile = _profile;
-      if (profile != null) {
-        setState(() {
-          _editing = false;
-          _dirty = false;
-          _nameCtrl.text = profile.businessName;
-          _descriptionCtrl.text = profile.description;
-          _phoneCtrl.text = profile.phone;
-          _addressCtrl.text = profile.address;
-          _openCtrl.text = profile.openTime;
-          _closeCtrl.text = profile.closeTime;
-          _photoUrl = profile.photoUrl;
-          _latitude = profile.latitude;
-          _longitude = profile.longitude;
-          _originalFingerprint = _profileFingerprint();
-        });
-      }
+      _restoreProfileDraft();
       return true;
     }
     return false;
+  }
+
+  Future<void> _handleEditBack() async {
+    if (_saving) return;
+    if (!_dirty) {
+      _restoreProfileDraft();
+    } else {
+      await _confirmDiscardChanges();
+    }
+    if (!mounted || _editing || !_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
   }
 
   TimeOfDay _timeOfDayFromText(String value) {
@@ -374,9 +392,13 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         : auth.session?.email ?? '-';
 
     return PopScope(
-      canPop: !_dirty,
+      canPop: !_editing && !_dirty,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_editing) {
+          await _handleEditBack();
+          return;
+        }
         if (await _confirmDiscardChanges() && context.mounted) {
           Navigator.of(context).maybePop();
         }
@@ -386,7 +408,9 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
         topBar: MerchantTopBar(
           title: _editing ? 'Edit Profil' : 'Profil',
+          showBack: _editing,
           showAvatar: false,
+          onBack: _handleEditBack,
           actionLabel: _editing ? (_saving ? 'Menyimpan...' : 'Simpan') : null,
           onAction: _editing && _dirty && !_saving && !_loading ? _save : null,
         ),

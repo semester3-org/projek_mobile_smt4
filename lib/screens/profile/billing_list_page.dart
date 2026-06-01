@@ -90,15 +90,6 @@ class _BillingListPageState extends State<BillingListPage> {
               fontWeight: FontWeight.w800,
             ),
           ),
-          actions: const [
-            Padding(
-              padding: EdgeInsets.only(right: 18),
-              child: CircleAvatar(
-                backgroundColor: UserTheme.primaryDark,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-            ),
-          ],
         ),
         body: RefreshIndicator(
           onRefresh: _load,

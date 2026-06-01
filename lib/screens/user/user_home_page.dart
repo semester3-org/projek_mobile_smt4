@@ -127,23 +127,7 @@ class _UserHomePageState extends State<UserHomePage> {
               );
             },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => widget.onSelectTab(3),
-              child: CircleAvatar(
-                backgroundColor: UserTheme.softBlue,
-                child: Text(
-                  displayName.isEmpty ? 'U' : displayName[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: UserTheme.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: RefreshIndicator(
@@ -161,12 +145,38 @@ class _UserHomePageState extends State<UserHomePage> {
                         ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    'Halo, $displayName',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: UserTheme.text,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Halo, $displayName',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: UserTheme.text,
+                              ),
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => widget.onSelectTab(3),
+                        child: CircleAvatar(
+                          backgroundColor: UserTheme.softBlue,
+                          child: Text(
+                            displayName.isEmpty
+                                ? 'U'
+                                : displayName[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: UserTheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 22),
                   _BillingHero(dashboard: _dashboard!),

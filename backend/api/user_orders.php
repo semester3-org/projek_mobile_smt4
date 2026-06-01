@@ -119,15 +119,18 @@ function userOrderPayload(mysqli $conn, array $row): array {
     $paymentRaw = strtolower((string)($order['paymentStatus'] ?? ''));
     $methodRaw = strtolower((string)($order['paymentMethod'] ?? ''));
     $isCod = str_contains($methodRaw, 'cod') || str_contains($methodRaw, 'cash');
-    $userPaymentStatusLabel = match ($paymentRaw) {
-        'awaiting_weighing' => 'Menunggu penimbangan',
-        'payment_submitted' => 'Menunggu verifikasi pembayaran',
-        'paid' => 'Sudah dibayar',
-        'cod' => 'Belum dibayar',
-        'cancelled' => 'Pembayaran batal',
-        'waiting_payment', 'unpaid' => $isCod ? 'Belum dibayar' : 'Menunggu pembayaran',
-        default => 'Menunggu pembayaran',
-    };
+    $isCompletedCod = $isCod && in_array(strtolower((string)($order['status'] ?? '')), ['done', 'completed'], true);
+    $userPaymentStatusLabel = $isCompletedCod
+        ? 'Sudah dibayar'
+        : match ($paymentRaw) {
+            'awaiting_weighing' => 'Menunggu penimbangan',
+            'payment_submitted' => 'Menunggu verifikasi pembayaran',
+            'paid' => 'Sudah dibayar',
+            'cod' => 'Belum dibayar',
+            'cancelled' => 'Pembayaran batal',
+            'waiting_payment', 'unpaid' => $isCod ? 'Belum dibayar' : 'Menunggu pembayaran',
+            default => 'Menunggu pembayaran',
+        };
 
     return [
         'id' => $order['code'],

@@ -918,10 +918,54 @@ class _PromoFormState extends State<_PromoForm> {
     return null;
   }
 
+  List<MerchantProduct> get _targetProductsForRisk {
+    if (_targetAllProducts) return widget.products;
+    return widget.products
+        .where((product) => _selectedProductIds.contains(product.id))
+        .toList();
+  }
+
+  double? get _cheapestTargetProductPrice {
+    double? cheapest;
+    for (final product in _targetProductsForRisk) {
+      if (product.price <= 0) continue;
+      cheapest = cheapest == null || product.price < cheapest
+          ? product.price
+          : cheapest;
+    }
+    return cheapest;
+  }
+
+  bool get _showDiscountRiskWarning {
+    if (_discountValue <= 0) return false;
+    if (_discountType == 'percentage') return _discountValue >= 50;
+
+    final cheapest = _cheapestTargetProductPrice;
+    if (cheapest == null || cheapest <= 0) return _discountValue >= 50000;
+    return _discountValue >= cheapest * 0.5;
+  }
+
+  String get _discountRiskMessage {
+    final targetScope = _targetAllProducts
+        ? 'karena promo berlaku untuk semua produk'
+        : 'karena promo berlaku untuk produk terpilih';
+
+    if (_discountType == 'percentage') {
+      if (_discountValue >= 80) {
+        return 'Diskon ini sangat tinggi. Cek margin tiap produk, batas maksimal potongan, kuota promo, dan periode aktif $targetScope. Pastikan produk harga rendah tetap aman setelah diskon.';
+      }
+      return 'Diskon besar bisa mengurangi laba. Sebelum publish, cek harga modal, maksimal potongan, kuota penggunaan, dan periode promo $targetScope.';
+    }
+
+    final cheapest = _cheapestTargetProductPrice;
+    final cheapestText =
+        cheapest == null ? 'produk termurah' : formatMerchantCurrency(cheapest);
+    return 'Potongan nominal ini besar dibanding $cheapestText. Pastikan harga setelah promo tidak di bawah modal, terutama jika targetnya mencakup banyak produk.';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool showWarning =
-        (_discountType == 'percentage' && _discountValue >= 50);
+    final bool showWarning = _showDiscountRiskWarning;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1060,15 +1104,15 @@ class _PromoFormState extends State<_PromoForm> {
                   border: Border.all(
                       color: MerchantPalette.warning.withValues(alpha: 0.5)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded,
+                    const Icon(Icons.warning_amber_rounded,
                         color: MerchantPalette.warning, size: 20),
-                    SizedBox(width: 8),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Diskon besar dapat mengurangi keuntungan penjualan. Gunakan diskon tinggi dengan pertimbangan margin produk.',
-                        style: TextStyle(
+                        _discountRiskMessage,
+                        style: const TextStyle(
                             color: MerchantPalette.warning,
                             fontSize: 12,
                             height: 1.3),

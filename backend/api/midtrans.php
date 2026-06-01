@@ -128,6 +128,131 @@ function tableExists(mysqli $conn, string $table): bool {
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function uuid(): string {
+    $data = random_bytes(16);
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
+function paymentHistoryIdColumn(mysqli $conn): ?array {
+    $stmt = $conn->prepare("
+        SELECT DATA_TYPE AS data_type, EXTRA AS extra
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'payment_history'
+          AND column_name = 'id'
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function paymentHistoryUsesAutoIncrementId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+
+    $extra = strtolower((string)($column['extra'] ?? ''));
+    return strpos($extra, 'auto_increment') !== false;
+}
+
+function paymentHistoryUsesStringId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+
+    $dataType = strtolower((string)($column['data_type'] ?? ''));
+    $isStringType = in_array($dataType, ['char', 'varchar', 'text'], true);
+    return $isStringType;
+}
+
+function nextPaymentHistoryNumericId(mysqli $conn): int {
+    $result = $conn->query("SELECT COALESCE(MAX(CAST(id AS UNSIGNED)), 0) + 1 AS next_id FROM payment_history");
+    if (!$result) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $row = $result->fetch_assoc();
+    return max(1, (int)($row['next_id'] ?? 1));
+}
+
+function latestPaymentHistoryId(mysqli $conn, string $registrationId, string $period): string {
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM payment_history
+        WHERE registration_id = ? AND period_month = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ");
+    if (!$stmt) return '';
+    $stmt->bind_param('ss', $registrationId, $period);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return isset($row['id']) ? (string)$row['id'] : '';
+}
+
+function createPaymentHistoryForGeneratedBill(
+    mysqli $conn,
+    string $registrationId,
+    int $amount,
+    string $period
+): string {
+    if (!paymentHistoryUsesAutoIncrementId($conn)) {
+        $usesStringId = paymentHistoryUsesStringId($conn);
+        $billingId = $usesStringId ? uuid() : nextPaymentHistoryNumericId($conn);
+        $insert = $conn->prepare("
+            INSERT INTO payment_history
+                (id, registration_id, amount, period_month, payment_status, payment_method, created_at)
+            VALUES (?, ?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
+        ");
+        if (!$insert) {
+            sendError('Database error: ' . $conn->error, 500);
+        }
+        if ($usesStringId) {
+            $insert->bind_param('ssis', $billingId, $registrationId, $amount, $period);
+        } else {
+            $insert->bind_param('isis', $billingId, $registrationId, $amount, $period);
+        }
+        if (!$insert->execute()) {
+            $error = $insert->error;
+            $insert->close();
+            sendError('Gagal membuat tagihan pembayaran: ' . $error, 500);
+        }
+        $insert->close();
+        return (string)$billingId;
+    }
+
+    $insert = $conn->prepare("
+        INSERT INTO payment_history
+            (registration_id, amount, period_month, payment_status, payment_method, created_at)
+        VALUES (?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
+    ");
+    if (!$insert) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $insert->bind_param('sis', $registrationId, $amount, $period);
+    if (!$insert->execute()) {
+        $error = $insert->error;
+        $insert->close();
+        sendError('Gagal membuat tagihan pembayaran: ' . $error, 500);
+    }
+    $insert->close();
+
+    $billingId = (string)$conn->insert_id;
+    if ($billingId !== '' && $billingId !== '0') {
+        return $billingId;
+    }
+
+    $fallbackId = latestPaymentHistoryId($conn, $registrationId, $period);
+    if ($fallbackId !== '') {
+        return $fallbackId;
+    }
+
+    sendError('Tagihan dibuat, tetapi ID pembayaran tidak bisa dibaca dari database', 500);
+}
+
 function ensurePaymentPeriodColumn(mysqli $conn): void {
     if (!tableExists($conn, 'payment_history')) return;
     $conn->query("
@@ -264,24 +389,7 @@ function resolveBillingIdForPayment(mysqli $conn, string $requestedOrderId, stri
             return (string)$existingRow['id'];
         }
 
-        $insert = $conn->prepare("
-            INSERT INTO payment_history
-                (registration_id, amount, period_month, payment_status, payment_method, created_at)
-            VALUES (?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
-        ");
-        if (!$insert) {
-            sendError('Database error: ' . $conn->error, 500);
-        }
-        $insert->bind_param('sis', $registrationId, $amount, $period);
-        $insert->execute();
-        $billingId = (string)$conn->insert_id;
-        $insert->close();
-
-        if ($billingId === '' || $billingId === '0') {
-            sendError('Gagal membuat tagihan pembayaran', 500);
-        }
-
-        return $billingId;
+        return createPaymentHistoryForGeneratedBill($conn, $registrationId, $amount, $period);
     }
 
     $billingId = preg_replace('/[^A-Za-z0-9\-_]/', '-', $requestedOrderId);

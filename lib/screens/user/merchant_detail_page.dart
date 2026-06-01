@@ -51,13 +51,16 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     super.dispose();
   }
 
-  Future<void> _load({bool silent = false}) async {
+  Future<void> _load({
+    bool forceRefresh = false,
+  }) async {
     final coords = await UserLocationService.current();
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
       id: _merchantId,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
+      forceRefresh: forceRefresh,
     );
     if (!mounted) return;
     setState(() {
@@ -312,6 +315,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         id: _merchantId,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
+        forceRefresh: true,
       );
       if (!mounted) return;
       setState(() {
@@ -376,6 +380,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         id: _merchantId,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
+        forceRefresh: true,
       );
       if (!mounted) return;
       setState(() {
@@ -436,7 +441,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         ),
         body: RefreshIndicator(
           color: UserTheme.primary,
-          onRefresh: _load,
+          onRefresh: () => _load(forceRefresh: true),
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(

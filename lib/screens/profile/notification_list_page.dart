@@ -24,6 +24,8 @@ class _NotificationListPageState extends State<NotificationListPage> {
   String _filter = 'semua';
   Timer? _clockTimer;
   StreamSubscription<void>? _notificationSubscription;
+  bool _loadingNotifications = false;
+  DateTime? _lastLoadedAt;
 
   static const _filters = [
     ('semua', 'Semua'),
@@ -52,13 +54,26 @@ class _NotificationListPageState extends State<NotificationListPage> {
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (!silent) setState(() => _loading = true);
-    final result = await UserRepository.getNotifications();
-    if (!mounted) return;
-    setState(() {
-      _notifications = result.data ?? [];
-      _loading = false;
-    });
+    final now = DateTime.now();
+    if (silent &&
+        _lastLoadedAt != null &&
+        now.difference(_lastLoadedAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    if (_loadingNotifications) return;
+    _loadingNotifications = true;
+    try {
+      if (!silent) setState(() => _loading = true);
+      final result = await UserRepository.getNotifications();
+      if (!mounted) return;
+      setState(() {
+        _notifications = result.data ?? [];
+        _loading = false;
+      });
+      _lastLoadedAt = DateTime.now();
+    } finally {
+      _loadingNotifications = false;
+    }
   }
 
   Future<void> _markAllRead() async {

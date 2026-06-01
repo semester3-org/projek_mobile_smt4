@@ -32,21 +32,26 @@ class _UserHomePageState extends State<UserHomePage> {
   bool _didLoad = false;
   bool _loadingDashboard = false;
   StreamSubscription<void>? _dashboardRefreshSub;
+  void _orderStatusHandler() => _load(silent: true, forceRefresh: true);
 
   @override
   void initState() {
     super.initState();
     _dashboardRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
-      if (mounted) _load();
+      if (mounted) _load(forceRefresh: true);
     });
     RealtimeService().startUserOrderPolling();
-    RealtimeService().addEventListener('order_status_updated', _load);
+    RealtimeService().addEventListener(
+      'order_status_updated',
+      _orderStatusHandler,
+    );
   }
 
   @override
   void dispose() {
     _dashboardRefreshSub?.cancel();
-    RealtimeService().removeEventListener('order_status_updated', _load);
+    RealtimeService()
+        .removeEventListener('order_status_updated', _orderStatusHandler);
     RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
@@ -59,25 +64,34 @@ class _UserHomePageState extends State<UserHomePage> {
     _load();
   }
 
-  Future<void> _load({bool silent = false}) async {
+  Future<void> _load({
+    bool silent = false,
+    bool forceRefresh = false,
+  }) async {
     if (_loadingDashboard) return;
     _loadingDashboard = true;
     final session = AuthScope.of(context).session;
     final displayName = session?.displayName ?? 'User';
-    if (!silent) {
-      setState(() {
-        _dashboard ??= UserDashboard.fallback(displayName);
-        _loading = _dashboard == null;
-      });
-    }
-    final result = await UserRepository.getDashboard(displayName: displayName);
-    if (!mounted) return;
+    try {
+      if (!silent) {
+        setState(() {
+          _dashboard ??= UserDashboard.fallback(displayName);
+          _loading = _dashboard == null;
+        });
+      }
+      final result = await UserRepository.getDashboard(
+        displayName: displayName,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) return;
 
-    setState(() {
-      _dashboard = result.data ?? UserDashboard.fallback(displayName);
-      _loading = false;
+      setState(() {
+        _dashboard = result.data ?? UserDashboard.fallback(displayName);
+        _loading = false;
+      });
+    } finally {
       _loadingDashboard = false;
-    });
+    }
   }
 
   @override
@@ -133,7 +147,7 @@ class _UserHomePageState extends State<UserHomePage> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         color: UserTheme.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator())

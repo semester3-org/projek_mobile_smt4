@@ -300,6 +300,7 @@ class _UserNotificationIconButtonState
     extends State<UserNotificationIconButton> {
   StreamSubscription<void>? _subscription;
   int _unreadCount = 0;
+  bool _loadingCount = false;
 
   @override
   void initState() {
@@ -317,9 +318,16 @@ class _UserNotificationIconButtonState
   }
 
   Future<void> _loadCount() async {
-    final count = await UserRepository.unreadNotificationCount();
-    if (!mounted) return;
-    setState(() => _unreadCount = count);
+    if (_loadingCount) return;
+    _loadingCount = true;
+    try {
+      final count = await UserRepository.unreadNotificationCount();
+      if (!mounted) return;
+      if (_unreadCount == count) return;
+      setState(() => _unreadCount = count);
+    } finally {
+      _loadingCount = false;
+    }
   }
 
   @override

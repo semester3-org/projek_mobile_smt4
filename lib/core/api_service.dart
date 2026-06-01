@@ -24,6 +24,8 @@ class ApiResponse<T> {
 
 class ApiService {
   static final http.Client _client = http.Client();
+  static final Map<String, Future<ApiResponse<Map<String, dynamic>>>>
+      _inFlightGets = {};
   static const String _configuredBaseUrl =
       String.fromEnvironment('API_BASE_URL');
 
@@ -73,6 +75,7 @@ class ApiService {
     required String email,
     required String password,
     required String displayName,
+    required String phone,
     required String role,
     String? merchantType,
   }) async {
@@ -81,6 +84,7 @@ class ApiService {
         'email': email.trim().toLowerCase(),
         'password': password,
         'displayName': displayName.trim(),
+        'phone': phone.trim(),
         'role': role.toLowerCase(),
       };
 
@@ -384,18 +388,39 @@ class ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    var uri = Uri.parse('$baseUrl/$endpoint');
+    if (queryParams != null) {
+      uri = uri.replace(queryParameters: queryParams);
+    }
+
+    final headers = await _authHeaders();
+    final authKey = headers['Authorization'] ?? '';
+    final cacheKey = '$uri|$authKey';
+    final existing = _inFlightGets[cacheKey];
+    if (existing != null) return existing;
+
+    final request = _get(uri, headers).whenComplete(() {
+      _inFlightGets.remove(cacheKey);
+    });
+    _inFlightGets[cacheKey] = request;
+    return request;
+  }
+
+  static Future<ApiResponse<Map<String, dynamic>>> _get(
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
     try {
-      var uri = Uri.parse('$baseUrl/$endpoint');
-      if (queryParams != null) {
-        uri = uri.replace(queryParameters: queryParams);
-      }
       final response = await _client
-          .get(uri, headers: await _authHeaders())
+          .get(uri, headers: headers)
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false, statusCode: 0, message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');

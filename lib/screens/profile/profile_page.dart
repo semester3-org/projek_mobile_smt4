@@ -36,7 +36,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _profileRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
-      if (mounted) _load();
+      if (mounted) _load(forceRefresh: true);
     });
   }
 
@@ -56,12 +56,13 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     final session = AuthScope.of(context).session;
     final result = await UserRepository.getProfile(
       displayName: session?.displayName ?? 'User',
       email: session?.email ?? '',
       role: session?.role.label ?? 'User',
+      forceRefresh: forceRefresh,
     );
     if (!mounted) return;
     setState(() {
@@ -197,7 +198,7 @@ class _ProfilePageState extends State<ProfilePage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: () => _load(forceRefresh: true),
               color: UserTheme.primary,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
@@ -211,7 +212,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             builder: (_) => const UserProfileDetailPage(),
                           ),
                         )
-                        .then((_) => _load()),
+                        .then((_) => _load(forceRefresh: true)),
                   ),
                   if (_profile != null) ...[
                     const SizedBox(height: 14),

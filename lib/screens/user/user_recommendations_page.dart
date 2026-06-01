@@ -23,13 +23,16 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(forceRefresh: true);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     setState(() => _loading = true);
     final displayName = AuthScope.of(context).session?.displayName ?? 'User';
-    final result = await UserRepository.getDashboard(displayName: displayName);
+    final result = await UserRepository.getDashboard(
+      displayName: displayName,
+      forceRefresh: forceRefresh,
+    );
     if (!mounted) return;
     setState(() {
       _items = result.data?.recommendations ?? const [];
@@ -80,7 +83,7 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         color: UserTheme.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator())

@@ -28,6 +28,14 @@ class MerchantRepository {
     }
   }
 
+  static void clearSessionCache() {
+    _dashboardCache = null;
+    _ordersCache.clear();
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
   static Future<RepoResult<MerchantDashboard>> getDashboard() async {
     final cached = _dashboardCache;
     if (cached != null &&

@@ -23,6 +23,8 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   String? _error;
   String _filter = 'semua';
   StreamSubscription<void>? _notificationSubscription;
+  bool _loadingNotifications = false;
+  DateTime? _lastLoadedAt;
 
   static const _filters = [
     ('semua', 'Semua'),
@@ -47,19 +49,32 @@ class _MerchantNotificationsPageState extends State<MerchantNotificationsPage> {
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (!silent) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
+    final now = DateTime.now();
+    if (silent &&
+        _lastLoadedAt != null &&
+        now.difference(_lastLoadedAt!) < const Duration(seconds: 2)) {
+      return;
     }
-    final result = await MerchantRepository.getNotifications();
-    if (!mounted) return;
-    setState(() {
-      _items = result.data ?? [];
-      _error = result.error;
-      _loading = false;
-    });
+    if (_loadingNotifications) return;
+    _loadingNotifications = true;
+    try {
+      if (!silent) {
+        setState(() {
+          _loading = true;
+          _error = null;
+        });
+      }
+      final result = await MerchantRepository.getNotifications();
+      if (!mounted) return;
+      setState(() {
+        _items = result.data ?? [];
+        _error = result.error;
+        _loading = false;
+      });
+      _lastLoadedAt = DateTime.now();
+    } finally {
+      _loadingNotifications = false;
+    }
   }
 
   Future<void> _markAllRead() async {

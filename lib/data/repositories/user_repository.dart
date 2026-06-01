@@ -19,9 +19,19 @@ class UserRepository {
   static const String _profileKey = 'user_profile';
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
-  static const Duration _merchantListCacheTtl = Duration(seconds: 25);
+  static const Duration _dashboardCacheTtl = Duration(seconds: 12);
+  static const Duration _merchantListCacheTtl = Duration(seconds: 10);
+  static const Duration _merchantDetailCacheTtl = Duration(seconds: 12);
   static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
+  static const Duration _profileCacheTtl = Duration(seconds: 15);
+  static const Duration _favoriteKeysCacheTtl = Duration(seconds: 15);
+  static _DashboardCacheEntry? _dashboardCache;
   static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
+  static final Map<String, _MerchantDetailCacheEntry> _merchantDetailCache =
+      {};
+  static _ProfileCacheEntry? _profileCache;
+  static Set<String>? _favoriteKeysCache;
+  static DateTime? _favoriteKeysCachedAt;
   static int? _unreadNotificationCountCache;
   static DateTime? _unreadNotificationCountCachedAt;
   static final StreamController<void> _notificationCountController =
@@ -48,9 +58,29 @@ class UserRepository {
     }
   }
 
+  static void clearSessionCache() {
+    _dashboardCache = null;
+    _merchantListCache.clear();
+    _merchantDetailCache.clear();
+    _profileCache = null;
+    _favoriteKeysCache = null;
+    _favoriteKeysCachedAt = null;
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
   static Future<RepoResult<UserDashboard>> getDashboard({
     required String displayName,
+    bool forceRefresh = false,
   }) async {
+    final cached = _dashboardCache;
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _dashboardCacheTtl) {
+      return RepoResult.ok(cached.dashboard);
+    }
+
     final res = await ApiService.get('api/user_dashboard');
 
     if (!res.success) {
@@ -59,7 +89,9 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserDashboard.fromJson(data));
+      final dashboard = UserDashboard.fromJson(data);
+      _dashboardCache = _DashboardCacheEntry(dashboard, DateTime.now());
+      return RepoResult.ok(dashboard);
     } catch (_) {
       return RepoResult.ok(UserDashboard.fallback(displayName));
     }
@@ -114,7 +146,16 @@ class UserRepository {
     required String id,
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
+    final cacheKey = _merchantDetailCacheKey(type, id, latitude, longitude);
+    final cached = _merchantDetailCache[cacheKey];
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _merchantDetailCacheTtl) {
+      return RepoResult.ok(cached.item);
+    }
+
     final params = {'type': type, 'id': id};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
@@ -131,7 +172,10 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserMerchant.fromJson(data));
+      final merchant = UserMerchant.fromJson(data);
+      _merchantDetailCache[cacheKey] =
+          _MerchantDetailCacheEntry(merchant, DateTime.now());
+      return RepoResult.ok(merchant);
     } catch (_) {
       return RepoResult.ok(_fallbackMerchants(type).first);
     }
@@ -145,6 +189,17 @@ class UserRepository {
     final lat = latitude == null ? 'none' : latitude.toStringAsFixed(3);
     final lng = longitude == null ? 'none' : longitude.toStringAsFixed(3);
     return '$type:$lat:$lng';
+  }
+
+  static String _merchantDetailCacheKey(
+    String type,
+    String id,
+    double? latitude,
+    double? longitude,
+  ) {
+    final lat = latitude == null ? 'none' : latitude.toStringAsFixed(3);
+    final lng = longitude == null ? 'none' : longitude.toStringAsFixed(3);
+    return '$type:$id:$lat:$lng';
   }
 
   static Future<RepoResult<List<BillingRecord>>> getBillings() async {
@@ -569,7 +624,15 @@ class UserRepository {
     required String displayName,
     required String email,
     required String role,
+    bool forceRefresh = false,
   }) async {
+    final cached = _profileCache;
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _profileCacheTtl) {
+      return RepoResult.ok(cached.profile);
+    }
+
     final res = await ApiService.get('api/user_profile');
 
     if (!res.success) {
@@ -583,8 +646,9 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(
-          await _mergeLocalProfile(UserProfile.fromJson(data)));
+      final profile = await _mergeLocalProfile(UserProfile.fromJson(data));
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      return RepoResult.ok(profile);
     } catch (_) {
       return RepoResult.ok(await _mergeLocalProfile(UserProfile(
         id: '',
@@ -615,7 +679,10 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       final profile = UserProfile.fromJson(data);
       await _saveLocalProfile(profile);
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      _dashboardCache = null;
       _merchantListCache.clear();
+      _merchantDetailCache.clear();
       requestProfileRefresh();
       return RepoResult.ok(profile);
     } catch (_) {
@@ -648,6 +715,8 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       final profile = UserProfile.fromJson(data);
       await _saveLocalProfile(profile);
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      _dashboardCache = null;
       requestProfileRefresh();
       return RepoResult.ok(profile);
     } catch (_) {
@@ -672,6 +741,14 @@ class UserRepository {
   }
 
   static Future<Set<String>> getFavoriteMerchantKeys() async {
+    final cachedAt = _favoriteKeysCachedAt;
+    final cached = _favoriteKeysCache;
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _favoriteKeysCacheTtl) {
+      return Set<String>.of(cached);
+    }
+
     final res = await ApiService.get('api/user_favorite_merchants');
     if (res.success) {
       try {
@@ -687,7 +764,11 @@ class UserRepository {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    return (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+    final keys =
+        (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
+    return keys;
   }
 
   static Future<bool> isMerchantFavorite({
@@ -715,6 +796,7 @@ class UserRepository {
             .map((e) => e.toString())
             .toSet();
         await _saveFavoriteMerchantKeys(keys);
+        _merchantDetailCache.clear();
         return favorite;
       } catch (_) {
         // Fall through to local cache.
@@ -732,6 +814,9 @@ class UserRepository {
       keys.remove(key);
     }
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
+    _merchantDetailCache.clear();
     return next;
   }
 
@@ -754,6 +839,8 @@ class UserRepository {
   static Future<void> _saveFavoriteMerchantKeys(Set<String> keys) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
   }
 
   static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
@@ -1210,5 +1297,26 @@ class _MerchantListCacheEntry {
   const _MerchantListCacheEntry(this.items, this.createdAt);
 
   final List<UserMerchant> items;
+  final DateTime createdAt;
+}
+
+class _DashboardCacheEntry {
+  const _DashboardCacheEntry(this.dashboard, this.createdAt);
+
+  final UserDashboard dashboard;
+  final DateTime createdAt;
+}
+
+class _MerchantDetailCacheEntry {
+  const _MerchantDetailCacheEntry(this.item, this.createdAt);
+
+  final UserMerchant item;
+  final DateTime createdAt;
+}
+
+class _ProfileCacheEntry {
+  const _ProfileCacheEntry(this.profile, this.createdAt);
+
+  final UserProfile profile;
   final DateTime createdAt;
 }

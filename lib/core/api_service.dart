@@ -44,7 +44,7 @@ class ApiService {
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
-      return 'http://192.168.18.52:8000';
+      return 'http://192.168.43.2:8000';
     } else if (Platform.isIOS) {
       return 'http://localhost:8000';
     } else {

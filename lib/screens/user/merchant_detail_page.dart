@@ -52,7 +52,6 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   }
 
   Future<void> _load({
-    bool silent = false,
     bool forceRefresh = false,
   }) async {
     final coords = await UserLocationService.current();

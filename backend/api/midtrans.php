@@ -292,6 +292,33 @@ function billingPaymentContext(mysqli $conn, string $billingId, ?string $userId 
     return $row ?: null;
 }
 
+function createOwnerBillingPaymentNotification(mysqli $conn, string $ownerId, string $title, string $message): void {
+    $notificationId = merchantCreateNotification(
+        $conn,
+        $ownerId,
+        $title,
+        $message,
+        'payment',
+        'Lihat Keuangan',
+        'owner:finance',
+        'important',
+        false
+    );
+
+    if ($notificationId > 0) {
+        merchantDispatchNotificationPush(
+            $conn,
+            $notificationId,
+            $ownerId,
+            $title,
+            $message,
+            'payment',
+            'owner:finance',
+            true
+        );
+    }
+}
+
 function notifyBillingPaymentPaid(mysqli $conn, array $context): void {
     try {
         require_once __DIR__ . '/merchant_helpers.php';
@@ -305,16 +332,14 @@ function notifyBillingPaymentPaid(mysqli $conn, array $context): void {
         $amountLabel = 'Rp ' . number_format($amount, 0, ',', '.');
 
         if (!empty($context['owner_id'])) {
-            merchantCreateNotification(
+            createOwnerBillingPaymentNotification(
                 $conn,
                 (string)$context['owner_id'],
                 'Pembayaran sewa masuk',
-                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.',
-                'payment',
-                'Lihat Keuangan',
-                'owner:finance',
-                'important'
+                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.'
             );
+        } else {
+            error_log('Billing payment paid without owner_id for billing: ' . $billingId);
         }
 
         if (!empty($context['user_id'])) {
@@ -556,6 +581,7 @@ if ($action === 'create_order_payment') {
         ],
         'item_details' => $items,
         'enabled_payments' => $enabledPayments,
+        'callbacks' => midtransCallbackUrls(),
     ];
 
     try {
@@ -843,6 +869,7 @@ $transactionParams = [
     ],
     'item_details' => $items,
     'enabled_payments' => $enabledPayments,
+    'callbacks' => midtransCallbackUrls(),
 ];
 
 try {

@@ -107,6 +107,33 @@ function notificationBillingPaymentContext(mysqli $conn, string $billingId): ?ar
     return $row ?: null;
 }
 
+function notificationCreateOwnerBillingPaymentNotification(mysqli $conn, string $ownerId, string $title, string $message): void {
+    $notificationId = merchantCreateNotification(
+        $conn,
+        $ownerId,
+        $title,
+        $message,
+        'payment',
+        'Lihat Keuangan',
+        'owner:finance',
+        'important',
+        false
+    );
+
+    if ($notificationId > 0) {
+        merchantDispatchNotificationPush(
+            $conn,
+            $notificationId,
+            $ownerId,
+            $title,
+            $message,
+            'payment',
+            'owner:finance',
+            true
+        );
+    }
+}
+
 function notificationNotifyBillingPaid(mysqli $conn, array $context): void {
     try {
         merchantEnsureSchema($conn);
@@ -119,16 +146,14 @@ function notificationNotifyBillingPaid(mysqli $conn, array $context): void {
         $amountLabel = 'Rp ' . number_format($amount, 0, ',', '.');
 
         if (!empty($context['owner_id'])) {
-            merchantCreateNotification(
+            notificationCreateOwnerBillingPaymentNotification(
                 $conn,
                 (string)$context['owner_id'],
                 'Pembayaran sewa masuk',
-                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.',
-                'payment',
-                'Lihat Keuangan',
-                'owner:finance',
-                'important'
+                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.'
             );
+        } else {
+            error_log('Midtrans billing paid without owner_id for billing: ' . $billingId);
         }
 
         if (!empty($context['user_id'])) {

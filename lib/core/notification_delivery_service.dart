@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../auth/roles.dart';
 import '../data/repositories/merchant_repository.dart';
+import '../data/repositories/owner_repository.dart';
 import '../data/repositories/user_repository.dart';
 import '../models/notification.dart';
 import '../models/merchant_models.dart';
@@ -150,6 +151,8 @@ class NotificationDeliveryService with WidgetsBindingObserver {
       if (newestFirst.isNotEmpty) {
         if (_role == UserRole.merchant) {
           MerchantRepository.invalidateNotificationCountCache();
+        } else if (_role == UserRole.owner) {
+          OwnerRepository.invalidateNotificationCountCache();
         } else {
           UserRepository.invalidateNotificationCountCache();
         }

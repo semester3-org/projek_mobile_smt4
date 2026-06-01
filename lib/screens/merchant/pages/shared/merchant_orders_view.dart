@@ -1112,8 +1112,9 @@ class _InfoLine extends StatelessWidget {
 Color _statusColor(String group) {
   switch (group) {
     case 'pending':
-    case 'cancelled':
       return MerchantPalette.danger;
+    case 'cancelled':
+      return MerchantPalette.muted;
     case 'done':
       return MerchantPalette.success;
     default:

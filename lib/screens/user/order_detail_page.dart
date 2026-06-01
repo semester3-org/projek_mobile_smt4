@@ -460,6 +460,23 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
   Widget build(BuildContext context) {
     final order = _order;
     final serviceIcon = _serviceIcon(order.service);
+    final paymentStatus = (order.paymentStatus ?? '').toLowerCase();
+    final paymentCancelled =
+        order.status == 'cancelled' || paymentStatus == 'cancelled';
+    final paymentMethodRaw = (order.paymentMethod ?? '').trim();
+    final paymentMethodLabel =
+        order.paymentMethodLabel?.trim().isNotEmpty == true
+            ? order.paymentMethodLabel!.trim()
+            : PaymentMethodHelper.getDisplayName(order.paymentMethod);
+    final hasPaymentMethod = paymentMethodRaw.isNotEmpty &&
+        paymentMethodLabel.toLowerCase() != 'metode pembayaran';
+    final paymentHelperText = paymentCancelled
+        ? ''
+        : _canConfirmManualPayment
+            ? 'Lakukan pembayaran sesuai metode di atas, lalu konfirmasi agar merchant dapat memproses pesanan.'
+            : _canPayViaMidtrans
+                ? 'Lanjutkan ke Midtrans sesuai metode yang dipilih. Status pembayaran akan diperbarui otomatis setelah transaksi berhasil.'
+                : '';
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -560,12 +577,13 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
             icon: Icons.account_balance_wallet_outlined,
             title: 'Pembayaran',
             children: [
-              _SubscriptionLine(
-                label: 'Metode Pembayaran',
-                value: order.paymentMethodLabel ??
-                    PaymentMethodHelper.getDisplayName(order.paymentMethod),
-              ),
-              const SizedBox(height: 10),
+              if (!paymentCancelled || hasPaymentMethod) ...[
+                _SubscriptionLine(
+                  label: 'Metode Pembayaran',
+                  value: hasPaymentMethod ? paymentMethodLabel : '-',
+                ),
+                const SizedBox(height: 10),
+              ],
               _SubscriptionLine(
                 label: 'Status Pembayaran',
                 value: order.paymentStatusLabel?.isNotEmpty == true
@@ -575,15 +593,13 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                         : 'Menunggu pembayaran',
                 strong: true,
               ),
-              const SizedBox(height: 10),
-              Text(
-                _canConfirmManualPayment
-                    ? 'Lakukan pembayaran sesuai metode di atas, lalu konfirmasi agar merchant dapat memproses pesanan.'
-                    : _canPayViaMidtrans
-                        ? 'Lanjutkan ke Midtrans sesuai metode yang dipilih. Status pembayaran akan diperbarui otomatis setelah transaksi berhasil.'
-                        : 'Status pembayaran tercatat di sistem pesanan.',
-                style: const TextStyle(color: UserTheme.muted, height: 1.4),
-              ),
+              if (paymentHelperText.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  paymentHelperText,
+                  style: const TextStyle(color: UserTheme.muted, height: 1.4),
+                ),
+              ],
               if (_canConfirmManualPayment) ...[
                 const SizedBox(height: 16),
                 SizedBox(
@@ -637,9 +653,12 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
           const SizedBox(height: 28),
           if ((order.midtransOrderId ?? '').isNotEmpty &&
               !order.isPaid &&
-              !order.isCashOnDelivery) ...[
+              !order.isCashOnDelivery &&
+              !paymentCancelled) ...[
             const _PaymentAutoRefreshNotice(),
-          ] else if (!_canPayViaMidtrans && !_canConfirmManualPayment)
+          ] else if (!_canPayViaMidtrans &&
+              !_canConfirmManualPayment &&
+              !paymentCancelled)
             _PaymentStatusNotice(order: order),
           const SizedBox(height: 12),
           if (order.canDownloadReceipt)
@@ -661,7 +680,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                   : const Icon(Icons.receipt_long_outlined),
               label: Text(_loadingReceipt ? 'Menyiapkan...' : 'Unduh Struk'),
             )
-          else
+          else if (!paymentCancelled)
             _ReceiptUnavailableNotice(order: order),
           const SizedBox(height: 12),
           if (order.canExtendCateringSubscription) ...[
@@ -704,7 +723,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                 ),
               ),
             )
-          else if (order.isCateringSubscription)
+          else if (order.isCateringSubscription && !paymentCancelled)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -1572,14 +1591,18 @@ class _PaymentStatusNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cancelled = order.status == 'cancelled' ||
+        (order.paymentStatus ?? '').toLowerCase() == 'cancelled';
     final label = order.paymentStatusLabel?.trim().isNotEmpty == true
         ? order.paymentStatusLabel!
         : 'Pembayaran tercatat';
-    final effectiveLabel = order.isCateringSubscription &&
-            (order.merchantStatus ?? '').toLowerCase() != 'accepted' &&
-            !order.isPaid
-        ? 'Menunggu persetujuan merchant. Tombol pembayaran akan muncul setelah pesanan disetujui.'
-        : label;
+    final effectiveLabel = cancelled
+        ? 'Pesanan dibatalkan.'
+        : order.isCateringSubscription &&
+                (order.merchantStatus ?? '').toLowerCase() != 'accepted' &&
+                !order.isPaid
+            ? 'Menunggu persetujuan merchant. Tombol pembayaran akan muncul setelah pesanan disetujui.'
+            : label;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1811,6 +1834,8 @@ String _subscriptionStatusLabel(String status) {
       return 'Selesai';
     case 'pending_payment':
       return 'Menunggu pembayaran';
+    case 'cancelled':
+      return 'Dibatalkan';
     default:
       return status.isEmpty ? '-' : status;
   }

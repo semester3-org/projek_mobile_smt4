@@ -912,17 +912,16 @@ class _ReadonlyMerchantDetail extends StatelessWidget {
           _InfoLine(label: 'Nama Merchant', value: profile.businessName),
           _InfoLine(
             label: 'Deskripsi',
-            value: profile.description.isEmpty
-                ? 'Belum ada deskripsi'
-                : profile.description,
+            value:
+                profile.description.trim().isEmpty ? '-' : profile.description,
           ),
           _InfoLine(
             label: 'Nomor Kontak',
-            value: profile.phone.isEmpty ? 'Belum diisi' : profile.phone,
+            value: profile.phone.trim().isEmpty ? '-' : profile.phone,
           ),
           _InfoLine(
             label: 'Alamat',
-            value: profile.address.isEmpty ? 'Belum diisi' : profile.address,
+            value: profile.address.trim().isEmpty ? '-' : profile.address,
           ),
           _InfoLine(
             label: 'Jam Operasional',

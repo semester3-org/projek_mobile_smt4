@@ -23,6 +23,14 @@ function userMerchantDefaultImage(string $type): string {
     };
 }
 
+function userMerchantFirstNonEmpty(...$values): string {
+    foreach ($values as $value) {
+        $text = trim((string)($value ?? ''));
+        if ($text !== '') return $text;
+    }
+    return '';
+}
+
 function userMerchantIsOpenNow(?string $openTime, ?string $closeTime): bool {
     $open = trim((string)$openTime);
     $close = trim((string)$closeTime);
@@ -152,13 +160,14 @@ function userMerchantMenu(mysqli $conn, string $type, string $merchantId, bool $
             }
         }
         $promoPrice = max(0, $price30 - $promoDiscount);
+        $imageUrl = userMerchantFirstNonEmpty($row['image_url'] ?? '');
         $payload = [
             'id' => (string)$row['id'],
             'name' => $row['nama_produk'],
             'description' => $row['deskripsi'] ?? '',
             'price' => $price30,
             'originalPrice' => $price30,
-            'imageUrl' => $row['image_url'] ?? '',
+            'imageUrl' => $imageUrl,
             'category' => $row['category'] ?? '',
             'unit' => $row['unit'] ?? '',
             'packageDeliveryType' => $row['package_delivery_type'] ?? null,
@@ -285,6 +294,7 @@ function userMerchantResolveUserCoords(mysqli $conn, ?float $userLat, ?float $us
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+
     return [
         userMerchantValidCoord($row['latitude'] ?? null),
         userMerchantValidCoord($row['longitude'] ?? null),
@@ -356,6 +366,11 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     }
     $isInactive = ($row['status'] ?? 'active') === 'inactive';
     $isOpenNow = !$isInactive && userMerchantIsOpenNow($openTime, $closeTime);
+    $imageUrl = userMerchantFirstNonEmpty(
+        $row['photo_url'] ?? '',
+        $row['image_url'] ?? '',
+        userMerchantDefaultImage($type)
+    );
 
     return [
         'id' => $merchantId !== '' ? $merchantId : $placeId,
@@ -368,7 +383,7 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
         'rating' => $rating,
         'reviewCount' => $reviewCount,
         'distanceKm' => $distance,
-        'imageUrl' => $row['photo_url'] ?? $row['image_url'] ?? userMerchantDefaultImage($type),
+        'imageUrl' => $imageUrl,
         'status' => $isOpenNow ? 'Tersedia' : 'Tutup',
         'openTime' => $openTime,
         'closeTime' => $closeTime,

@@ -731,8 +731,10 @@ class _MerchantCard extends StatelessWidget {
                                 ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        _DistanceSummary(merchant: merchant),
+                        if (merchant.hasDistanceEstimate) ...[
+                          const SizedBox(width: 12),
+                          _DistanceSummary(merchant: merchant),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),

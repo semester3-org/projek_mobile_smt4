@@ -179,6 +179,11 @@ function paymentWindowBaseForPeriod(
         ?? dateFromPeriodKey($period, $rentalType, $startDate)->format('Y-m-d');
 }
 
+function nextPeriodKey(string $period, string $rentalType, ?string $startDate): string {
+    $date = dateFromPeriodKey($period, $rentalType, $startDate);
+    return periodKeyFromDate(addRentalPeriods($date, $rentalType, 1), $rentalType);
+}
+
 function getActiveUntil(mysqli $conn, string $userId): ?string {
     if (!tableExists($conn, 'payment_history') ||
         !tableExists($conn, 'room_registrations') ||
@@ -305,7 +310,8 @@ function generatedCurrentBill(mysqli $conn, string $userId): array {
         $stmt = $conn->prepare("
             SELECT
                 SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid_periods,
-                SUM(CASE WHEN payment_status NOT IN ('paid', 'cancelled') THEN 1 ELSE 0 END) AS open_bills
+                SUM(CASE WHEN payment_status NOT IN ('paid', 'cancelled') THEN 1 ELSE 0 END) AS open_bills,
+                MAX(CASE WHEN payment_status = 'paid' THEN period_month ELSE NULL END) AS latest_paid_period
             FROM payment_history
             WHERE registration_id = ?
         ");
@@ -320,14 +326,19 @@ function generatedCurrentBill(mysqli $conn, string $userId): array {
                     return [];
                 }
                 $paidPeriods = (int)($summary['paid_periods'] ?? 0);
-                $lastActiveUntil = activeUntilFromPaidPeriods(
-                    $startDate,
-                    $rentalType,
-                    $paidPeriods
-                );
-                if ($lastActiveUntil !== null) {
-                    $nextStart = new DateTime($lastActiveUntil);
-                    $period = periodKeyFromDate($nextStart, $rentalType);
+                $latestPaidPeriod = trim((string)($summary['latest_paid_period'] ?? ''));
+                if ($latestPaidPeriod !== '') {
+                    $period = nextPeriodKey($latestPaidPeriod, $rentalType, $startDate);
+                } else {
+                    $lastActiveUntil = activeUntilFromPaidPeriods(
+                        $startDate,
+                        $rentalType,
+                        $paidPeriods
+                    );
+                    if ($lastActiveUntil !== null) {
+                        $nextStart = new DateTime($lastActiveUntil);
+                        $period = periodKeyFromDate($nextStart, $rentalType);
+                    }
                 }
             }
         }

@@ -53,7 +53,12 @@ class _MerchantShellState extends State<MerchantShell> {
       ),
       bottomNavigationBar: MerchantBottomNav(
         currentIndex: _index,
-        onChanged: (i) => setState(() => _index = i),
+        onChanged: (i) {
+          if (i == 1) {
+            _MerchantOrderBadgeState.markOrdersOpened();
+          }
+          setState(() => _index = i);
+        },
       ),
     );
   }
@@ -179,19 +184,34 @@ class _MerchantOrderBadge extends StatefulWidget {
 }
 
 class _MerchantOrderBadgeState extends State<_MerchantOrderBadge> {
+  static final _clearController = StreamController<void>.broadcast();
+  static DateTime? _lastOpenedAt;
+
+  static void markOrdersOpened() {
+    _lastOpenedAt = DateTime.now();
+    _clearController.add(null);
+  }
+
   Timer? _timer;
+  StreamSubscription<void>? _clearSubscription;
   int _count = 0;
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    _clearSubscription = _clearController.stream.listen((_) {
+      if (mounted && _count != 0) {
+        setState(() => _count = 0);
+      }
+    });
     _load();
     _timer = Timer.periodic(const Duration(seconds: 18), (_) => _load());
   }
 
   @override
   void dispose() {
+    _clearSubscription?.cancel();
     _timer?.cancel();
     super.dispose();
   }
@@ -202,7 +222,11 @@ class _MerchantOrderBadgeState extends State<_MerchantOrderBadge> {
     try {
       final result = await MerchantRepository.getOrders(status: 'pending');
       if (!mounted) return;
-      final next = result.data?.length ?? 0;
+      final openedAt = _lastOpenedAt;
+      final orders = result.data ?? const [];
+      final next = openedAt == null
+          ? orders.length
+          : orders.where((order) => order.createdAt.isAfter(openedAt)).length;
       if (next != _count) {
         setState(() => _count = next);
       }

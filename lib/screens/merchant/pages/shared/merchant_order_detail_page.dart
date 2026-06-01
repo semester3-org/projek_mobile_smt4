@@ -567,6 +567,8 @@ class _LaundryWeighingCard extends StatelessWidget {
             ? mainItem.subtotal
             : _pricingLineTotal(
                 mainItem.price, mainItem.pricingType, actualWeight);
+    final serviceSubtitle =
+        mainItem == null ? '' : _laundryServiceSubtitle(mainItem, actualWeight);
     final showPromoLine = effectiveDiscount > 0 ||
         previewing ||
         (!_hasFinalTotal && effectiveSubtotal > 0);
@@ -606,8 +608,7 @@ class _LaundryWeighingCard extends StatelessWidget {
             const SizedBox(height: 16),
             _PriceLine(
               title: mainItem.name,
-              subtitle:
-                  '${mainItem.pricingTypeLabel} - ${_itemPriceLabel(mainItem)}',
+              subtitle: serviceSubtitle,
               price: _hasFinalTotal || serviceSubtotal > 0
                   ? formatMerchantCurrency(serviceSubtotal)
                   : '',
@@ -788,6 +789,22 @@ String _itemPriceLabel(MerchantOrderItem item) {
     return formatMerchantCurrency(item.price);
   }
   return '${formatMerchantCurrency(item.price)}$unit';
+}
+
+String _laundryServiceSubtitle(MerchantOrderItem item, double weight) {
+  final tariff = '${item.pricingTypeLabel} - ${_itemPriceLabel(item)}';
+  if (weight <= 0) return tariff;
+  if (item.pricingType == 'per_kg') {
+    return '${_formatDecimal(weight)} kg x ${_itemPriceLabel(item)}';
+  }
+  if (item.pricingType == 'per_item') {
+    final quantity =
+        item.quantityValue > 0 ? item.quantityValue : item.quantity.toDouble();
+    if (quantity > 0) {
+      return '${_formatDecimal(quantity)} item x ${_itemPriceLabel(item)}';
+    }
+  }
+  return tariff;
 }
 
 class _LaundryAction {
@@ -1201,6 +1218,9 @@ Future<void> _openMap(double latitude, double longitude) async {
 
 String _laundryPaymentNotice(MerchantOrder order) {
   final payment = order.paymentStatus.toLowerCase();
+  if (payment == 'cancelled' || order.statusGroup == 'cancelled') {
+    return 'Pesanan dibatalkan. Tidak ada aksi proses yang tersedia.';
+  }
   if (payment == 'awaiting_weighing' || order.totalAmount <= 0) {
     return 'Pembayaran menunggu total akhir dari penimbangan laundry.';
   }
@@ -1501,6 +1521,8 @@ Color _statusColor(String group) {
   switch (group) {
     case 'pending':
       return MerchantPalette.danger;
+    case 'cancelled':
+      return MerchantPalette.muted;
     case 'done':
       return MerchantPalette.success;
     default:

@@ -499,6 +499,20 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
   }
 
+  List<RoomStatus> _editableStatusOptions(KosRoom room) {
+    if (room.status == RoomStatus.occupied) {
+      return const [RoomStatus.occupied];
+    }
+    return const [RoomStatus.available, RoomStatus.maintenance];
+  }
+
+  String _statusHelperText(KosRoom room) {
+    if (room.status == RoomStatus.occupied) {
+      return 'Kamar terisi hanya bisa dikosongkan lewat data penyewa.';
+    }
+    return 'Terisi otomatis saat pengajuan penyewa disetujui.';
+  }
+
   KosListing? get _selectedKos =>
       _kosListings.where((k) => k.id == _selectedKosId).firstOrNull;
 
@@ -579,10 +593,9 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     final priceCtrl = TextEditingController(text: initialPrice);
     final occCtrl = TextEditingController(text: room.maxOccupant.toString());
     final descCtrl = TextEditingController(text: room.description ?? '');
-    RoomStatus selectedStatus =
-        room.status == RoomStatus.occupied && room.activeTenant == null
-            ? RoomStatus.available
-            : room.status;
+    RoomStatus selectedStatus = room.status;
+    final statusOptions = _editableStatusOptions(room);
+    final canEditStatus = statusOptions.length > 1;
     // Ambil rentalType dari room jika ada, default monthly
     RentalType selectedRentalType = room.rentalType;
     final selectedFacilityIds = room.facilities.map((f) => f.id).toSet();
@@ -628,16 +641,25 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   border: OutlineInputBorder(),
-                  helperText:
-                      'Terisi otomatis saat pengajuan penyewa disetujui.',
                 ),
-                items: RoomStatus.values
-                    .where((s) =>
-                        s != RoomStatus.occupied || room.activeTenant != null)
+                items: statusOptions
                     .map(
                         (s) => DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
-                onChanged: (v) => setDialog(() => selectedStatus = v!),
+                onChanged: canEditStatus
+                    ? (v) => setDialog(() => selectedStatus = v!)
+                    : null,
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _statusHelperText(room),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey.shade600),
+                ),
               ),
               const SizedBox(height: 14),
               Align(
@@ -2126,7 +2148,10 @@ class _TenantInfoCard extends StatelessWidget {
         const SizedBox(height: 10),
         if (phone.isNotEmpty) _DetailRow(label: 'No. HP', value: phone),
         _DetailRow(label: 'Mulai Sewa', value: startDate ?? '-'),
-        _DetailRow(label: 'Selesai Sewa', value: endDate ?? 'Masih aktif'),
+        _DetailRow(
+          label: 'Durasi Akhir Penyewa',
+          value: endDate ?? 'Belum ditentukan',
+        ),
       ]),
     );
   }

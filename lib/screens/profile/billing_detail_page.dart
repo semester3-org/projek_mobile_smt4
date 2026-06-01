@@ -63,8 +63,18 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     final result = await UserRepository.getBillings();
     if (!mounted || !result.isSuccess) return null;
 
-    final matches =
+    var matches =
         result.data!.where((billing) => billing.id == _billingLookupId);
+    if (matches.isEmpty) {
+      final currentPeriod = _billingPeriodLabel(_billing);
+      matches = result.data!.where(
+        (billing) =>
+            _billingPeriodLabel(billing) == currentPeriod &&
+            (billing.kosAccessCode ?? '') == (_billing.kosAccessCode ?? '') &&
+            (billing.roomNumber ?? '') == (_billing.roomNumber ?? '') &&
+            billing.amount == _billing.amount,
+      );
+    }
     if (matches.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tagihan sudah tidak aktif.')),
@@ -212,6 +222,13 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     setState(() => _paying = false);
 
     if (!result.isSuccess) {
+      if ((result.error ?? '').toLowerCase().contains('sudah dibayar')) {
+        final updated = await _reloadBilling();
+        if (updated?.isPaid == true) {
+          _finishPaidFlow(updated!);
+          return;
+        }
+      }
       messenger.showSnackBar(
         SnackBar(
             content: Text(result.error ?? 'Gagal membuat pembayaran Midtrans')),
@@ -287,7 +304,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
               ),
             ),
             Text(
-              billing.itemDescription,
+              _billingPeriodLabel(billing),
               style: const TextStyle(color: UserTheme.muted, fontSize: 12),
             ),
           ],
@@ -735,11 +752,20 @@ class _PropertySummary extends StatelessWidget {
             label: 'Tipe Kamar',
             value: billing.roomType ?? '-',
           ),
-          _DetailInfoRow(label: 'Periode', value: billing.itemDescription),
+          _DetailInfoRow(label: 'Periode', value: _billingPeriodLabel(billing)),
         ],
       ),
     );
   }
+}
+
+String _billingPeriodLabel(BillingRecord billing) {
+  final description = billing.itemDescription.trim();
+  final parts = description.split(' - ');
+  if (parts.length > 1 && parts.last.trim().isNotEmpty) {
+    return parts.last.trim();
+  }
+  return description.isEmpty ? '-' : description;
 }
 
 class _DetailInfoRow extends StatelessWidget {

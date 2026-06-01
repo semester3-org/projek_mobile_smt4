@@ -10,6 +10,7 @@ define('MIDTRANS_CLIENT_KEY', getenv('MIDTRANS_CLIENT_KEY') ?: 'Mid-client-wSNPc
 define('MIDTRANS_IS_PRODUCTION', filter_var(getenv('MIDTRANS_IS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_SANITIZED', filter_var(getenv('MIDTRANS_IS_SANITIZED') ?: 'true', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_3DS', filter_var(getenv('MIDTRANS_IS_3DS') ?: 'true', FILTER_VALIDATE_BOOLEAN));
+define('MIDTRANS_FINISH_URL', getenv('MIDTRANS_FINISH_URL') ?: 'https://ngekos-app-project.web.app/payment-finish');
 
 function midtransCaBundlePath(): ?string {
     $path = realpath(__DIR__ . '/../vendor/midtrans/midtrans-php/data/cacert.pem');
@@ -43,5 +44,18 @@ function midtransSandboxInfo(): array {
         'is_production' => MIDTRANS_IS_PRODUCTION,
         'is_sanitized' => MIDTRANS_IS_SANITIZED,
         'is_3ds' => MIDTRANS_IS_3DS,
+    ];
+}
+
+function midtransCallbackUrls(): array {
+    $finishUrl = trim((string)MIDTRANS_FINISH_URL);
+    if ($finishUrl === '') {
+        return [];
+    }
+
+    return [
+        'finish' => $finishUrl,
+        'unfinish' => $finishUrl,
+        'error' => $finishUrl,
     ];
 }

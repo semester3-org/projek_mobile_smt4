@@ -32,6 +32,14 @@ class MerchantOrderItem {
   String get pricingTypeLabel => pricingTypeLabelFor(pricingType);
 
   factory MerchantOrderItem.fromJson(Map<String, dynamic> json) {
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
     return MerchantOrderItem(
       id: json['id'] as String? ?? '',
       productId: json['productId'] as String? ?? '',
@@ -43,7 +51,7 @@ class MerchantOrderItem {
           0,
       price: (json['price'] as num?)?.toDouble() ?? 0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
       pricingType: json['pricingType'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
       isAddon: json['isAddon'] as bool? ?? false,
@@ -435,6 +443,14 @@ class MerchantProduct {
   factory MerchantProduct.fromJson(Map<String, dynamic> json) {
     final rawAddons = json['addons'] as List<dynamic>? ?? const [];
     final pricingType = json['pricingType'] as String? ?? 'per_kg';
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
     return MerchantProduct(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
@@ -455,7 +471,7 @@ class MerchantProduct {
           .toList(),
       hasActivePromo: json['hasActivePromo'] as bool? ?? false,
       activePromoName: json['activePromoName'] as String? ?? '',
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
       isActive: json['isActive'] as bool? ?? true,
       serviceType: json['serviceType'] as String? ?? '',
       packageDeliveryType: json['packageDeliveryType'] as String?,

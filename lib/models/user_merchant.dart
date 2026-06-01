@@ -137,12 +137,20 @@ class MerchantMenuItem {
         (json['price'] as num?)?.toDouble() ??
         0;
     final addonsRaw = json['addons'] as List<dynamic>? ?? const [];
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
     return MerchantMenuItem(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       price: price30,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
       merchantId: json['merchantId'] as String? ?? '',
       merchantName: json['merchantName'] as String? ?? '',
       merchantType: json['merchantType'] as String? ?? '',
@@ -379,6 +387,15 @@ class UserMerchant {
     final menuRaw = json['menuItems'] as List<dynamic>? ?? const [];
     final reviewsRaw = json['reviews'] as List<dynamic>? ?? const [];
 
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+
     return UserMerchant(
       id: json['id'] as String? ?? '',
       placeId: json['placeId'] as String? ?? '',
@@ -390,7 +407,7 @@ class UserMerchant {
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
       status: json['status'] as String? ?? 'Tersedia',
       tags: tagsRaw.map((e) => e.toString()).toList(),
       minPrice: (json['minPrice'] as num?)?.toDouble() ?? 0,

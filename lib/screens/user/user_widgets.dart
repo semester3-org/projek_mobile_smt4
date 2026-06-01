@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/user_repository.dart';
@@ -194,22 +196,45 @@ class UserImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ImageProvider? memoryProvider;
+    final value = url.trim();
+    if (value.startsWith('data:image')) {
+      final comma = value.indexOf(',');
+      if (comma > -1) {
+        try {
+          memoryProvider =
+              MemoryImage(base64Decode(value.substring(comma + 1)));
+        } catch (_) {
+          memoryProvider = null;
+        }
+      }
+    }
+
     final fallback = SizedBox(
       width: width,
       height: height,
       child: _ImageFallback(icon: icon),
     );
-    final image = Image.network(
-      url,
-      width: width,
-      height: height,
-      fit: fit,
-      errorBuilder: (_, __, ___) => fallback,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return fallback;
-      },
-    );
+    final image = memoryProvider != null
+        ? Image(
+            image: memoryProvider,
+            width: width,
+            height: height,
+            fit: fit,
+          )
+        : value.isEmpty
+            ? fallback
+            : Image.network(
+                value,
+                width: width,
+                height: height,
+                fit: fit,
+                errorBuilder: (_, __, ___) => fallback,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return fallback;
+                },
+              );
 
     if (borderRadius == null) return image;
     return ClipRRect(borderRadius: borderRadius!, child: image);

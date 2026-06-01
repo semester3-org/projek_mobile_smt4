@@ -253,7 +253,7 @@ class _ProductCard extends StatelessWidget {
                     ? Icons.local_laundry_service_outlined
                     : Icons.restaurant_rounded,
                 width: double.infinity,
-                height: 178,
+                height: 156,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(12),
                 ),

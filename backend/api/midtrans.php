@@ -556,6 +556,7 @@ if ($action === 'create_order_payment') {
         ],
         'item_details' => $items,
         'enabled_payments' => $enabledPayments,
+        'callbacks' => midtransCallbackUrls(),
     ];
 
     try {
@@ -843,6 +844,7 @@ $transactionParams = [
     ],
     'item_details' => $items,
     'enabled_payments' => $enabledPayments,
+    'callbacks' => midtransCallbackUrls(),
 ];
 
 try {

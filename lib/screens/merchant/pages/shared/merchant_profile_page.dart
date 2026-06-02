@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -9,11 +10,19 @@ import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../../../widgets/location_picker_page.dart';
+import '../../../../widgets/logout_confirm_dialog.dart';
 import '../../merchant_ui.dart';
 import 'merchant_product_reviews_page.dart';
 
 class MerchantProfilePage extends StatefulWidget {
-  const MerchantProfilePage({super.key});
+  const MerchantProfilePage({
+    super.key,
+    this.initialEditing = false,
+    this.standaloneEdit = false,
+  });
+
+  final bool initialEditing;
+  final bool standaloneEdit;
 
   @override
   State<MerchantProfilePage> createState() => _MerchantProfilePageState();
@@ -87,7 +96,7 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       _latitude = profile.latitude;
       _longitude = profile.longitude;
       _originalFingerprint = _profileFingerprint();
-      _editing = false;
+      _editing = widget.initialEditing;
       _dirty = false;
     }
     setState(() {
@@ -160,18 +169,22 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     final auth = AuthScope.of(context);
     if (!_editing || !_dirty || _saving) return;
 
-    if (_nameCtrl.text.trim().isEmpty) {
+    final validationMessage = _validateMerchantProfile();
+    if (validationMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama merchant wajib diisi')),
+        SnackBar(content: Text(validationMessage)),
       );
       return;
     }
 
+    final businessName = _normalizeMerchantName(_nameCtrl.text);
+    final phone = _normalizeMerchantPhone(_phoneCtrl.text);
+
     setState(() => _saving = true);
     final result = await MerchantRepository.updateProfile(
-      businessName: _nameCtrl.text.trim(),
+      businessName: businessName,
       description: _descriptionCtrl.text.trim(),
-      phone: _phoneCtrl.text.trim(),
+      phone: phone,
       address: _addressCtrl.text.trim(),
       latitude: _latitude,
       longitude: _longitude,
@@ -201,6 +214,10 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         _longitude = result.data!.longitude;
         _originalFingerprint = _profileFingerprint();
       });
+      if (widget.standaloneEdit) {
+        Navigator.of(context).pop(true);
+        return;
+      }
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
           0,
@@ -297,7 +314,27 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
     }
   }
 
-  void _startEditing() {
+  Future<void> _startEditing() async {
+    if (!widget.standaloneEdit) {
+      final updated = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => const MerchantProfilePage(
+            initialEditing: true,
+            standaloneEdit: true,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (updated == true) {
+        await _load();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profil merchant berhasil disimpan')),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _editing = true;
       _dirty = _profileFingerprint() != _originalFingerprint;
@@ -350,6 +387,19 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
 
   Future<void> _handleEditBack() async {
     if (_saving) return;
+    if (widget.standaloneEdit) {
+      if (!_dirty) {
+        Navigator.of(context).pop(false);
+        return;
+      }
+      final canLeave = await _confirmDiscardChanges();
+      if (!mounted) return;
+      if (canLeave && !_dirty) {
+        Navigator.of(context).pop(false);
+      }
+      return;
+    }
+
     if (!_dirty) {
       _restoreProfileDraft();
     } else {
@@ -361,6 +411,36 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOut,
     );
+  }
+
+  String _normalizeMerchantName(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _normalizeMerchantPhone(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return '';
+    return raw.replaceAll(RegExp(r'\D'), '');
+  }
+
+  String? _validateMerchantProfile() {
+    final name = _normalizeMerchantName(_nameCtrl.text);
+    if (name.isEmpty) return 'Nama merchant wajib diisi';
+    if (name.length < 3) return 'Nama merchant minimal 3 karakter';
+    if (!RegExp(r'[A-Za-z]').hasMatch(name)) {
+      return 'Nama merchant harus memuat huruf';
+    }
+
+    final rawPhone = _phoneCtrl.text.trim();
+    if (rawPhone.isEmpty) return null;
+    if (!RegExp(r'^[0-9+\s().-]+$').hasMatch(rawPhone)) {
+      return 'Nomor kontak hanya boleh berisi angka dan tanda +';
+    }
+    final digits = _normalizeMerchantPhone(rawPhone);
+    if (digits.length < 10 || digits.length > 15) {
+      return 'Nomor kontak harus 10-15 digit';
+    }
+    return null;
   }
 
   TimeOfDay _timeOfDayFromText(String value) {
@@ -391,26 +471,16 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
         ? profile!.email
         : auth.session?.email ?? '-';
 
-    return PopScope(
-      canPop: !_editing && !_dirty,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        if (_editing) {
-          await _handleEditBack();
-          return;
-        }
-        if (await _confirmDiscardChanges() && context.mounted) {
-          Navigator.of(context).maybePop();
-        }
-      },
-      child: MerchantPage(
+    final page = MerchantPage(
         scrollController: _scrollCtrl,
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
         topBar: MerchantTopBar(
           title: _editing ? 'Edit Profil' : 'Profil',
-          showBack: _editing,
+          showBack: widget.standaloneEdit || _editing,
           showAvatar: false,
-          onBack: _handleEditBack,
+          onBack: () {
+            _handleEditBack();
+          },
           actionLabel: _editing ? (_saving ? 'Menyimpan...' : 'Simpan') : null,
           onAction: _editing && _dirty && !_saving && !_loading ? _save : null,
         ),
@@ -423,90 +493,129 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
           else if (_error != null)
             _ErrorCard(error: _error!, onRetry: _load)
           else if (profile != null) ...[
-            _MerchantProfileHeader(
-              profile: profile,
-              photoUrl: _photoUrl,
-              displayName: _nameCtrl.text.trim().isEmpty
-                  ? profile.businessName
-                  : _nameCtrl.text.trim(),
-              onEdit: _startEditing,
-            ),
-            const SizedBox(height: 14),
-            _PerformanceSection(
-              profile: profile,
-              onReviewsTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const MerchantProductReviewsPage(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 18),
-            _InfoTile(
-              icon: Icons.email_outlined,
-              label: 'Email',
-              value: email,
-            ),
-            _InfoTile(
-              icon: profile.merchantType == 'laundry'
-                  ? Icons.local_laundry_service_outlined
-                  : Icons.restaurant_outlined,
-              label: 'Jenis Merchant',
-              value: profile.merchantType == 'laundry' ? 'Laundry' : 'Catering',
-            ),
-            _InfoTile(
-              icon: Icons.badge_outlined,
-              label: 'ID Merchant',
-              value: profile.merchantCode.isEmpty
-                  ? profile.id
-                  : profile.merchantCode,
-            ),
-            _InfoTile(
-              icon: Icons.schedule_rounded,
-              label: 'Jam Operasional',
-              value: '${_openCtrl.text.trim()} - ${_closeCtrl.text.trim()}',
-            ),
-            const SizedBox(height: 18),
             if (_editing)
-              _ProfileFormCard(
-                nameController: _nameCtrl,
-                descriptionController: _descriptionCtrl,
-                phoneController: _phoneCtrl,
-                addressController: _addressCtrl,
-                openController: _openCtrl,
-                closeController: _closeCtrl,
-                latitude: _latitude,
-                longitude: _longitude,
+              ...[
+                _ProfileFormCard(
+                  nameController: _nameCtrl,
+                  descriptionController: _descriptionCtrl,
+                  phoneController: _phoneCtrl,
+                  addressController: _addressCtrl,
+                  openController: _openCtrl,
+                  closeController: _closeCtrl,
+                  latitude: _latitude,
+                  longitude: _longitude,
+                  photoUrl: _photoUrl,
+                  merchantType: profile.merchantType,
+                  onPickPhoto: () {
+                    _pickPhoto();
+                  },
+                  onUseCurrentLocation: () {
+                    _useCurrentLocation();
+                  },
+                  onPickLocation: () {
+                    _pickLocation();
+                  },
+                  onPickOpenTime: () {
+                    _pickOperationalTime(_openCtrl);
+                  },
+                  onPickCloseTime: () {
+                    _pickOperationalTime(_closeCtrl);
+                  },
+                ),
+                const SizedBox(height: 18),
+                _ActionTile(
+                  icon: Icons.lock_reset_rounded,
+                  label: 'Ubah Kata Sandi',
+                  onTap: () {
+                    _openChangePassword();
+                  },
+                ),
+              ]
+            else ...[
+              _MerchantProfileHeader(
+                profile: profile,
                 photoUrl: _photoUrl,
-                merchantType: profile.merchantType,
-                onPickPhoto: _pickPhoto,
-                onUseCurrentLocation: _useCurrentLocation,
-                onPickLocation: _pickLocation,
-                onPickOpenTime: () => _pickOperationalTime(_openCtrl),
-                onPickCloseTime: () => _pickOperationalTime(_closeCtrl),
-              )
-            else
+                displayName: _nameCtrl.text.trim().isEmpty
+                    ? profile.businessName
+                    : _nameCtrl.text.trim(),
+                onEdit: () {
+                  _startEditing();
+                },
+              ),
+              const SizedBox(height: 14),
+              _PerformanceSection(
+                profile: profile,
+                onReviewsTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MerchantProductReviewsPage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 18),
+              _InfoTile(
+                icon: Icons.email_outlined,
+                label: 'Email',
+                value: email,
+              ),
+              _InfoTile(
+                icon: profile.merchantType == 'laundry'
+                    ? Icons.local_laundry_service_outlined
+                    : Icons.restaurant_outlined,
+                label: 'Jenis Merchant',
+                value:
+                    profile.merchantType == 'laundry' ? 'Laundry' : 'Catering',
+              ),
+              _InfoTile(
+                icon: Icons.badge_outlined,
+                label: 'ID Merchant',
+                value: profile.merchantCode.isEmpty
+                    ? profile.id
+                    : profile.merchantCode,
+              ),
+              _InfoTile(
+                icon: Icons.schedule_rounded,
+                label: 'Jam Operasional',
+                value: '${_openCtrl.text.trim()} - ${_closeCtrl.text.trim()}',
+              ),
+              const SizedBox(height: 18),
               _ReadonlyMerchantDetail(profile: profile),
-            const SizedBox(height: 18),
-            _ActionTile(
-              icon: Icons.lock_reset_rounded,
-              label: 'Ubah Kata Sandi',
-              onTap: _editing ? _openChangePassword : null,
-            ),
-            _ActionTile(
-              icon: Icons.logout_rounded,
-              label: 'Keluar',
-              danger: true,
-              onTap: () {
-                auth.logout();
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
-            ),
+              const SizedBox(height: 18),
+              _ActionTile(
+                icon: Icons.logout_rounded,
+                label: 'Keluar',
+                danger: true,
+                onTap: () async {
+                  if (!await confirmLogout(context)) return;
+                  await auth.logout();
+                  if (!context.mounted) return;
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+              ),
+            ],
             const MerchantBottomSpacer(),
           ],
         ],
-      ),
+      );
+
+    if (!widget.standaloneEdit && !_editing && !_dirty) {
+      return page;
+    }
+
+    return PopScope(
+      canPop: !_editing && !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_editing) {
+          await _handleEditBack();
+          return;
+        }
+        if (await _confirmDiscardChanges() && context.mounted) {
+          Navigator.of(context).maybePop();
+        }
+      },
+      child: page,
     );
   }
 }
@@ -522,7 +631,7 @@ class _MerchantProfileHeader extends StatelessWidget {
   final MerchantProfile profile;
   final String photoUrl;
   final String displayName;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -574,14 +683,15 @@ class _MerchantProfileHeader extends StatelessWidget {
                 ],
               ),
             ),
-            IconButton(
-              tooltip: 'Edit profil merchant',
-              onPressed: onEdit,
-              icon: const Icon(
-                Icons.edit_rounded,
-                color: MerchantPalette.primary,
+            if (onEdit != null)
+              IconButton(
+                tooltip: 'Edit profil merchant',
+                onPressed: onEdit,
+                icon: const Icon(
+                  Icons.edit_rounded,
+                  color: MerchantPalette.primary,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -787,6 +897,10 @@ class _ProfileFormCard extends StatelessWidget {
             icon: Icons.phone_outlined,
             label: 'Nomor Kontak',
             controller: phoneController,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s().-]')),
+            ],
           ),
           const SizedBox(height: 12),
           _ProfileInput(
@@ -1161,6 +1275,8 @@ class _ProfileInput extends StatelessWidget {
     this.maxLines = 1,
     this.suffix,
     this.onSuffixTap,
+    this.keyboardType,
+    this.inputFormatters,
   });
 
   final IconData icon;
@@ -1169,12 +1285,16 @@ class _ProfileInput extends StatelessWidget {
   final int maxLines;
   final IconData? suffix;
   final VoidCallback? onSuffixTap;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),

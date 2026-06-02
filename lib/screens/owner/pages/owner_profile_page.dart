@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -11,6 +13,7 @@ import '../../../data/repositories/user_repository.dart';
 import '../../../models/kos_listing.dart';
 import '../../../models/user_profile.dart';
 import '../../../widgets/location_picker_page.dart';
+import '../../../widgets/logout_confirm_dialog.dart';
 import 'owner_help_page.dart';
 import 'owner_notifications_page.dart';
 import 'owner_security_page.dart';
@@ -23,6 +26,8 @@ class OwnerProfilePage extends StatefulWidget {
 }
 
 class _OwnerProfilePageState extends State<OwnerProfilePage> {
+  static const String _ktpWatermark = 'HANYA UNTUK VERIFIKASI APLIKASI KOS';
+
   bool _loading = true;
   bool _savingProfile = false;
   String? _error;
@@ -124,6 +129,84 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
     }
   }
 
+  Future<String?> _captureKtpPhoto() async {
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 88,
+        maxWidth: 1200,
+      );
+      if (file == null) return null;
+
+      final bytes = await file.readAsBytes();
+      final watermarkedBytes = await _applyKtpWatermark(bytes);
+      return 'data:image/png;base64,${base64Encode(watermarkedBytes)}';
+    } catch (_) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal mengambil foto KTP')),
+      );
+      return null;
+    }
+  }
+
+  Future<Uint8List> _applyKtpWatermark(Uint8List bytes) async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final width = image.width.toDouble();
+    final height = image.height.toDouble();
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    canvas.drawImage(image, Offset.zero, Paint());
+
+    final fontSize = (width * 0.045).clamp(22.0, 48.0);
+    final painter = TextPainter(
+      text: TextSpan(
+        text: _ktpWatermark,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.92),
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      maxLines: 2,
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: width * 0.82);
+
+    final center = Offset(width / 2, height / 2);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-0.35);
+
+    final boxPadding = fontSize * 0.45;
+    final boxRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: painter.width + (boxPadding * 2),
+      height: painter.height + (boxPadding * 1.6),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(boxRect, Radius.circular(fontSize * 0.35)),
+      Paint()..color = Colors.black.withValues(alpha: 0.34),
+    );
+    painter.paint(
+      canvas,
+      Offset(-painter.width / 2, -painter.height / 2),
+    );
+    canvas.restore();
+
+    final picture = recorder.endRecording();
+    final watermarkedImage = await picture.toImage(image.width, image.height);
+    final data = await watermarkedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    return data?.buffer.asUint8List() ?? bytes;
+  }
+
   Future<void> _openEditProfile() async {
     final auth = AuthScope.of(context);
     final session = auth.session;
@@ -139,6 +222,7 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
       text: _profile?.longitude == null ? '' : '${_profile!.longitude}',
     );
     var photoValue = _profile?.photoUrl ?? '';
+    var ktpPhotoValue = _profile?.ktpPhoto ?? '';
     var locating = false;
 
     final shouldSave = await showDialog<bool>(
@@ -191,6 +275,19 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                         label: const Text('Hapus Foto'),
                       ),
                   ],
+                ),
+                const SizedBox(height: 18),
+                _KtpUploadPreview(
+                  image: _profileImage(ktpPhotoValue),
+                  hasImage: ktpPhotoValue.trim().isNotEmpty,
+                  onCapture: () async {
+                    final captured = await _captureKtpPhoto();
+                    if (captured == null || !dialogContext.mounted) return;
+                    setDialogState(() => ktpPhotoValue = captured);
+                  },
+                  onRemove: ktpPhotoValue.trim().isEmpty
+                      ? null
+                      : () => setDialogState(() => ktpPhotoValue = ''),
                 ),
                 const SizedBox(height: 18),
                 TextField(
@@ -338,6 +435,7 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
       latitude: latitudeCtrl.text.trim(),
       longitude: longitudeCtrl.text.trim(),
       photoUrl: photoValue.trim(),
+      ktpPhoto: ktpPhotoValue.trim(),
     );
   }
 
@@ -385,6 +483,7 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
     required String latitude,
     required String longitude,
     required String photoUrl,
+    required String ktpPhoto,
   }) async {
     if (displayName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -421,6 +520,7 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
       latitude: parsedLatitude,
       longitude: parsedLongitude,
       photoUrl: photoUrl,
+      ktpPhoto: ktpPhoto,
     );
 
     if (!mounted) return;
@@ -554,6 +654,13 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                     value: _ownerContact,
                   ),
                   _OwnerInfoTile(
+                    icon: Icons.badge_outlined,
+                    label: 'Foto KTP',
+                    value: (_profile?.ktpPhoto ?? '').trim().isEmpty
+                        ? 'Belum diupload'
+                        : 'Sudah diupload',
+                  ),
+                  _OwnerInfoTile(
                     icon: Icons.location_on_outlined,
                     label: 'Alamat',
                     value: (_profile?.address ?? '').trim().isEmpty
@@ -602,8 +709,10 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                     icon: Icons.logout_rounded,
                     label: 'Keluar',
                     danger: true,
-                    onTap: () {
-                      auth.logout();
+                    onTap: () async {
+                      if (!await confirmLogout(context)) return;
+                      await auth.logout();
+                      if (!context.mounted) return;
                       Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                   ),
@@ -847,6 +956,113 @@ class _ProfileNotice extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KtpUploadPreview extends StatelessWidget {
+  const _KtpUploadPreview({
+    required this.image,
+    required this.hasImage,
+    required this.onCapture,
+    required this.onRemove,
+  });
+
+  final ImageProvider? image;
+  final bool hasImage;
+  final VoidCallback onCapture;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _OwnerProfileColors.softBlue,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _OwnerProfileColors.primary.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.badge_outlined,
+                color: _OwnerProfileColors.primary,
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Foto KTP',
+                  style: TextStyle(
+                    color: _OwnerProfileColors.text,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              IconButton.filledTonal(
+                tooltip: 'Ambil foto KTP',
+                onPressed: onCapture,
+                icon: const Icon(Icons.camera_alt_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                image: image == null
+                    ? null
+                    : DecorationImage(
+                        image: image!,
+                        fit: BoxFit.cover,
+                      ),
+              ),
+              child: image == null
+                  ? const Center(
+                      child: Text(
+                        'Belum ada foto KTP',
+                        style: TextStyle(
+                          color: _OwnerProfileColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hasImage
+                      ? 'Watermark aplikasi sudah ditambahkan otomatis.'
+                      : 'Tekan ikon kamera untuk mengambil foto KTP.',
+                  style: const TextStyle(
+                    color: _OwnerProfileColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (onRemove != null)
+                TextButton.icon(
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Hapus'),
+                ),
+            ],
           ),
         ],
       ),

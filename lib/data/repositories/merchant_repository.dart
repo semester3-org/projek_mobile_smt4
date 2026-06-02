@@ -18,13 +18,23 @@ class MerchantRepository {
   static DateTime? _unreadNotificationCountCachedAt;
   static final StreamController<void> _notificationCountController =
       StreamController<void>.broadcast();
+  static final StreamController<void> _catalogController =
+      StreamController<void>.broadcast();
 
   static Stream<void> get notificationCountChanges =>
       _notificationCountController.stream;
 
+  static Stream<void> get catalogChanges => _catalogController.stream;
+
   static void _notifyNotificationCountChanged() {
     if (!_notificationCountController.isClosed) {
       _notificationCountController.add(null);
+    }
+  }
+
+  static void _notifyCatalogChanged() {
+    if (!_catalogController.isClosed) {
+      _catalogController.add(null);
     }
   }
 
@@ -260,6 +270,7 @@ class MerchantRepository {
     }
     try {
       _dashboardCache = null;
+      _notifyCatalogChanged();
       return RepoResult.ok(
         MerchantProduct.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -277,6 +288,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menghapus produk');
     }
     _dashboardCache = null;
+    _notifyCatalogChanged();
     return const RepoResult.ok(true);
   }
 
@@ -355,13 +367,22 @@ class MerchantRepository {
       if (usageLimit != null) 'usageLimit': usageLimit,
     };
     final res = id == null || id.isEmpty
-        ? await ApiService.post('api/merchant_promos', payload)
-        : await ApiService.put('api/merchant_promos', payload);
+        ? await ApiService.post(
+            'api/merchant_promos',
+            payload,
+            timeout: const Duration(seconds: 30),
+          )
+        : await ApiService.put(
+            'api/merchant_promos',
+            payload,
+            timeout: const Duration(seconds: 30),
+          );
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menyimpan promo');
     }
     try {
       _dashboardCache = null;
+      _notifyCatalogChanged();
       return RepoResult.ok(
         MerchantPromo.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -379,6 +400,7 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menonaktifkan promo');
     }
     _dashboardCache = null;
+    _notifyCatalogChanged();
     return const RepoResult.ok(true);
   }
 

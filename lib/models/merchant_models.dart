@@ -592,6 +592,32 @@ class MerchantPromo {
     return productName;
   }
 
+  MerchantPromo copyWith({
+    bool? isActive,
+    String? status,
+    int? usedCount,
+  }) {
+    return MerchantPromo(
+      id: id,
+      productId: productId,
+      productIds: productIds,
+      productName: productName,
+      name: name,
+      description: description,
+      discountType: discountType,
+      discountValue: discountValue,
+      minOrderAmount: minOrderAmount,
+      maxDiscountAmount: maxDiscountAmount,
+      startAt: startAt,
+      endAt: endAt,
+      isActive: isActive ?? this.isActive,
+      status: status ?? this.status,
+      usageLimit: usageLimit,
+      perUserUsageLimit: perUserUsageLimit,
+      usedCount: usedCount ?? this.usedCount,
+    );
+  }
+
   factory MerchantPromo.fromJson(Map<String, dynamic> json) {
     final rawIds = json['productIds'];
     final ids = rawIds is List

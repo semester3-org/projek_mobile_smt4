@@ -7,6 +7,7 @@ import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
+import '../../widgets/logout_confirm_dialog.dart';
 import '../user/user_theme.dart';
 import '../user/user_widgets.dart';
 import 'billing_list_page.dart';
@@ -302,8 +303,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.logout_rounded,
                     label: 'Keluar',
                     danger: true,
-                    onTap: () {
-                      auth.logout();
+                    onTap: () async {
+                      if (!await confirmLogout(context)) return;
+                      await auth.logout();
+                      if (!context.mounted) return;
                       Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                   ),

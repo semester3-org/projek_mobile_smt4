@@ -9,6 +9,7 @@ class UserProfile {
   final double? longitude;
   final String role;
   final String? photoUrl;
+  final String? ktpPhoto;
   final String? kosName;
   final String? kosAccessCode;
   final String? roomNumber;
@@ -26,6 +27,7 @@ class UserProfile {
     this.longitude,
     required this.role,
     this.photoUrl,
+    this.ktpPhoto,
     this.kosName,
     this.kosAccessCode,
     this.roomNumber,
@@ -45,6 +47,7 @@ class UserProfile {
       longitude: _toDouble(json['longitude']),
       role: json['role'] as String? ?? 'user',
       photoUrl: json['photoUrl'] as String?,
+      ktpPhoto: json['ktpPhoto'] as String?,
       kosName: json['kosName'] as String?,
       kosAccessCode: json['kosAccessCode'] as String?,
       roomNumber: json['roomNumber'] as String?,
@@ -68,6 +71,7 @@ class UserProfile {
       'longitude': longitude,
       'role': role,
       'photoUrl': photoUrl,
+      'ktpPhoto': ktpPhoto,
       'kosName': kosName,
       'kosAccessCode': kosAccessCode,
       'roomNumber': roomNumber,
@@ -87,6 +91,7 @@ class UserProfile {
     double? longitude,
     String? role,
     String? photoUrl,
+    String? ktpPhoto,
     String? kosName,
     String? kosAccessCode,
     String? roomNumber,
@@ -104,6 +109,7 @@ class UserProfile {
       longitude: longitude ?? this.longitude,
       role: role ?? this.role,
       photoUrl: photoUrl ?? this.photoUrl,
+      ktpPhoto: ktpPhoto ?? this.ktpPhoto,
       kosName: kosName ?? this.kosName,
       kosAccessCode: kosAccessCode ?? this.kosAccessCode,
       roomNumber: roomNumber ?? this.roomNumber,

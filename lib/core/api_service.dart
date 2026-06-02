@@ -431,8 +431,9 @@ class ApiService {
 
   static Future<ApiResponse<Map<String, dynamic>>> post(
     String endpoint,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
     try {
       final response = await _client
           .post(
@@ -440,11 +441,16 @@ class ApiService {
             headers: await _authHeaders(),
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(timeout);
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -455,6 +461,7 @@ class ApiService {
     String endpoint,
     Map<String, dynamic> body, {
     Map<String, String>? queryParams,
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       var uri = Uri.parse('$baseUrl/$endpoint');
@@ -463,11 +470,16 @@ class ApiService {
       }
       final response = await _client
           .put(uri, headers: await _authHeaders(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 15));
+          .timeout(timeout);
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');

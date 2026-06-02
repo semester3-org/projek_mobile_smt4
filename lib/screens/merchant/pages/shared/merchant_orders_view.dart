@@ -321,7 +321,7 @@ class _MerchantOrdersViewState extends State<MerchantOrdersView> {
       topBar: MerchantTopBar(
         title: 'Daftar Pesanan',
         showBack: widget.showBack,
-        showAvatar: !widget.showBack,
+        showAvatar: false,
         onAction: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),

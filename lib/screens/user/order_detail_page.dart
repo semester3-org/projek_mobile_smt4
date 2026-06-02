@@ -166,7 +166,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     final methods = PaymentMethodHelper.checkoutOptionKeys(isLaundry: false);
     var selected = (_order.paymentMethod ?? '').toLowerCase();
     if (!methods.contains(selected)) {
-      selected = methods.isEmpty ? '' : methods.first;
+      selected = '';
     }
     return showModalBottomSheet<String>(
       context: context,
@@ -216,7 +216,9 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => Navigator.of(context).pop(selected),
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => Navigator.of(context).pop(selected),
                         icon: const Icon(Icons.open_in_new_rounded),
                         label: const Text('Lanjut ke Pembayaran'),
                       ),

@@ -563,6 +563,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final unitSuffix = _isCatering ? '' : _laundryUnitSuffix(widget.item);
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
@@ -666,7 +667,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             ],
             const SizedBox(height: 14),
             Text(
-              '${formatUserCurrency(_displayPrice)}${_isCatering ? '' : widget.item.unit}',
+              '${formatUserCurrency(_displayPrice)}$unitSuffix',
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontSize: 20,
@@ -675,7 +676,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             ),
             if (_showPromo) ...[
               Text(
-                '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+                '${formatUserCurrency(_price)}$unitSuffix',
                 style: const TextStyle(
                   color: UserTheme.muted,
                   decoration: TextDecoration.lineThrough,
@@ -1494,7 +1495,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   }
 
   Widget lockedItemSummary(MerchantMenuItem item) {
-    final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+    final unitLabel = _laundryUnitSuffix(item);
     final hasLaundryPromo =
         _isLaundry && item.hasPromo && (item.promoPrice ?? 0) > 0;
     final selectedAddons = _isLaundry ? _addonsFor(item) : const [];
@@ -1667,7 +1668,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         ...((mainServiceItems.isNotEmpty ? mainServiceItems : _items)
             .map((item) {
           final selected = _selectedLaundryIds.contains(item.id);
-          final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+          final unitLabel = _laundryUnitSuffix(item);
           final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
           return InkWell(
             onTap: () {
@@ -1763,11 +1764,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           const SizedBox(height: 8),
           ...addonItems.map((item) {
             final selected = _selectedLaundryIds.contains(item.id);
-            final unitLabel = item.unit.isNotEmpty
-                ? item.unit
-                : item.category.isNotEmpty
-                    ? item.category
-                    : '/item';
+            final unitLabel = _laundryUnitSuffix(item, fallback: '/item');
             final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
             return InkWell(
               onTap: () {
@@ -2088,7 +2085,31 @@ String _laundryAddonPriceLabel(MerchantMenuAddon addon) {
   if (addon.pricingType == 'flat' || unit == 'fixed' || unit.isEmpty) {
     return formatUserCurrency(addon.price);
   }
-  return '${formatUserCurrency(addon.price)}$unit';
+  return '${formatUserCurrency(addon.price)}${_normalizeUnitSuffix(unit)}';
+}
+
+String _laundryUnitSuffix(
+  MerchantMenuItem item, {
+  String fallback = '/kg',
+}) {
+  final pricingType = item.pricingType.trim().toLowerCase();
+  final rawUnit = item.unit.trim();
+  final normalizedUnit = rawUnit.toLowerCase();
+  if (pricingType == 'flat' || normalizedUnit == 'fixed') return '';
+  if (rawUnit.isNotEmpty) return _normalizeUnitSuffix(rawUnit);
+  if (pricingType == 'per_item') return '/item';
+  if (pricingType == 'per_kg') return '/kg';
+  return fallback;
+}
+
+String _normalizeUnitSuffix(String unit) {
+  final value = unit.trim();
+  final lower = value.toLowerCase();
+  if (value.isEmpty || lower == 'fixed') return '';
+  if (lower == 'kg' || lower == '/kg') return '/kg';
+  if (lower == 'item' || lower == '/item') return '/item';
+  if (value.startsWith('/')) return value;
+  return '/$value';
 }
 
 InputDecoration _checkoutDecoration({
@@ -2315,6 +2336,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   Widget buildLaundryCard() {
     final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
     final percentBadge = _percentagePromoBadge(widget.item);
+    final unitSuffix = _laundryUnitSuffix(widget.item);
     return GestureDetector(
       onTap: widget.onOrder,
       child: Stack(
@@ -2360,7 +2382,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                       const SizedBox(height: 8),
                       if (hasPromo) ...[
                         Text(
-                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}${widget.item.unit}',
+                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}$unitSuffix',
                           style: const TextStyle(
                             color: UserTheme.muted,
                             decoration: TextDecoration.lineThrough,
@@ -2368,7 +2390,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                           ),
                         ),
                         Text(
-                          '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}${widget.item.unit}',
+                          '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}$unitSuffix',
                           style: const TextStyle(
                             color: UserTheme.primaryDark,
                             fontWeight: FontWeight.w900,
@@ -2385,7 +2407,7 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                         ),
                       ] else
                         Text(
-                          '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
+                          '${formatUserCurrency(widget.item.price)}$unitSuffix',
                           style: const TextStyle(
                             color: UserTheme.primaryDark,
                             fontWeight: FontWeight.w900,

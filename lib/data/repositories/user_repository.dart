@@ -704,6 +704,7 @@ class UserRepository {
     double? latitude,
     double? longitude,
     String? photoUrl,
+    String? ktpPhoto,
   }) async {
     final res = await ApiService.put('api/user_profile', {
       'displayName': displayName.trim(),
@@ -712,6 +713,7 @@ class UserRepository {
       'latitude': latitude,
       'longitude': longitude,
       'photoUrl': photoUrl?.trim() ?? '',
+      'ktpPhoto': ktpPhoto?.trim() ?? '',
     });
 
     if (!res.success) {
@@ -865,6 +867,7 @@ class UserRepository {
         latitude: local.latitude,
         longitude: local.longitude,
         photoUrl: local.photoUrl,
+        ktpPhoto: local.ktpPhoto,
         activeRentHistory: profile.activeRentHistory,
       );
     } catch (_) {

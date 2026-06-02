@@ -35,16 +35,23 @@ function userFavoriteRows(mysqli $conn, string $userId): array {
 function userFavoritePayload(mysqli $conn, string $userId): array {
     $rows = userFavoriteRows($conn, $userId);
     $keys = array_map(
-        fn($row) => userFavoriteKey((string)$row['merchant_type'], (string)$row['merchant_id']),
+        function ($row) {
+            return userFavoriteKey((string)$row['merchant_type'], (string)$row['merchant_id']);
+        },
         $rows
     );
     return [
         'keys' => $keys,
-        'items' => array_map(fn($row) => [
-            'type' => (string)$row['merchant_type'],
-            'merchantId' => (string)$row['merchant_id'],
-            'key' => userFavoriteKey((string)$row['merchant_type'], (string)$row['merchant_id']),
-        ], $rows),
+        'items' => array_map(
+            function ($row) {
+                return [
+                    'type' => (string)$row['merchant_type'],
+                    'merchantId' => (string)$row['merchant_id'],
+                    'key' => userFavoriteKey((string)$row['merchant_type'], (string)$row['merchant_id']),
+                ];
+            },
+            $rows
+        ),
     ];
 }
 
@@ -54,6 +61,37 @@ function userFavoriteInput(): array {
     $type = strtolower(trim((string)($body['type'] ?? $_GET['type'] ?? '')));
     $action = strtolower(trim((string)($body['action'] ?? 'toggle')));
     return [$merchantInput, $type, $action];
+}
+
+function userFavoriteNeedsExplicitId(mysqli $conn): bool {
+    $stmt = $conn->prepare("
+        SELECT EXTRA, IS_NULLABLE, COLUMN_DEFAULT
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'user_favorite_merchants'
+          AND COLUMN_NAME = 'id'
+        LIMIT 1
+    ");
+    if (!$stmt) return false;
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row) return false;
+
+    $extra = strtolower((string)($row['EXTRA'] ?? ''));
+    $nullable = strtoupper((string)($row['IS_NULLABLE'] ?? 'YES'));
+    $default = $row['COLUMN_DEFAULT'] ?? null;
+    return strpos($extra, 'auto_increment') === false &&
+        $nullable === 'NO' &&
+        $default === null;
+}
+
+function userFavoriteGeneratedId(): string {
+    try {
+        return (string)random_int(100000000, 999999999);
+    } catch (Throwable $e) {
+        return (string)time();
+    }
 }
 
 try {
@@ -101,23 +139,37 @@ try {
 
     $shouldFavorite = $_SERVER['REQUEST_METHOD'] !== 'DELETE';
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $shouldFavorite = match ($action) {
-            'add', 'favorite', 'save' => true,
-            'remove', 'delete', 'unfavorite' => false,
-            default => !$exists,
-        };
+        if (in_array($action, ['add', 'favorite', 'save'], true)) {
+            $shouldFavorite = true;
+        } elseif (in_array($action, ['remove', 'delete', 'unfavorite'], true)) {
+            $shouldFavorite = false;
+        } else {
+            $shouldFavorite = !$exists;
+        }
     }
 
     if ($shouldFavorite && !$exists) {
-        $stmt = $conn->prepare("
-            INSERT INTO user_favorite_merchants
-                (user_id, merchant_id, merchant_type, created_at, updated_at)
-            VALUES (?, ?, ?, NOW(), NOW())
-        ");
+        $needsExplicitId = userFavoriteNeedsExplicitId($conn);
+        $stmt = $needsExplicitId
+            ? $conn->prepare("
+                INSERT INTO user_favorite_merchants
+                    (id, user_id, merchant_id, merchant_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NOW(), NOW())
+            ")
+            : $conn->prepare("
+                INSERT INTO user_favorite_merchants
+                    (user_id, merchant_id, merchant_type, created_at, updated_at)
+                VALUES (?, ?, ?, NOW(), NOW())
+            ");
         if (!$stmt) {
             merchantSendJson(false, null, 'Database error', 500);
         }
-        $stmt->bind_param('sss', $userId, $merchantId, $type);
+        if ($needsExplicitId) {
+            $id = userFavoriteGeneratedId();
+            $stmt->bind_param('ssss', $id, $userId, $merchantId, $type);
+        } else {
+            $stmt->bind_param('sss', $userId, $merchantId, $type);
+        }
         $stmt->execute();
         $stmt->close();
     } elseif (!$shouldFavorite && $exists) {

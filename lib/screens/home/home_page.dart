@@ -133,7 +133,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
       appBar: AppBar(
-        title: const Text('KosFinder'),
+        title: const Text('NgeKos'),
         actions: [
           IconButton(
             tooltip: 'Notifikasi',

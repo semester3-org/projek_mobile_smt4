@@ -81,9 +81,13 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   }
 
   Future<void> _toggleFavorite() async {
+    final optimistic = !_isFavorite;
+    setState(() => _isFavorite = optimistic);
     final favorite = await UserRepository.toggleMerchantFavorite(_merchant);
     if (!mounted) return;
-    setState(() => _isFavorite = favorite);
+    if (favorite != _isFavorite) {
+      setState(() => _isFavorite = favorite);
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -422,10 +426,6 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     : Icons.favorite_border_rounded,
                 color: _isFavorite ? Colors.redAccent : null,
               ),
-            ),
-            IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.share_outlined),
             ),
           ],
         ),
@@ -2162,6 +2162,23 @@ class _HeaderCard extends StatelessWidget {
               width: double.infinity,
               borderRadius: BorderRadius.circular(24),
             ),
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.08),
+                        Colors.black.withValues(alpha: 0.58),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Positioned(
               top: 16,
               right: 16,
@@ -2182,18 +2199,14 @@ class _HeaderCard extends StatelessWidget {
                   Text(
                     merchant.name,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: merchant.type == 'catering'
-                              ? Colors.white
-                              : UserTheme.text,
+                          color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          shadows: merchant.type == 'catering'
-                              ? [
-                                  Shadow(
-                                    color: Colors.black.withValues(alpha: 0.45),
-                                    blurRadius: 10,
-                                  ),
-                                ]
-                              : null,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              blurRadius: 12,
+                            ),
+                          ],
                         ),
                   ),
                 ],
@@ -2928,9 +2941,11 @@ class _ReviewSection extends StatelessWidget {
                         },
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Belum ada ulasan aktif untuk produk ini.',
-                  style: TextStyle(
+                Text(
+                  activeReview == null
+                      ? 'Belum ada ulasan aktif untuk produk ini.'
+                      : 'Ulasan Anda untuk produk ini sudah tersimpan.',
+                  style: const TextStyle(
                     color: UserTheme.muted,
                     fontSize: 12,
                     height: 1.35,

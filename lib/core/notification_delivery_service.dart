@@ -58,7 +58,7 @@ class NotificationDeliveryService with WidgetsBindingObserver {
     _sendPresence(true);
     _pollNotifications();
     _pollTimer = Timer.periodic(
-      const Duration(seconds: 18),
+      const Duration(seconds: 3),
       (_) => _pollNotifications(),
     );
     _presenceTimer = Timer.periodic(
@@ -343,14 +343,15 @@ class NotificationDeliveryService with WidgetsBindingObserver {
 
   Future<void> _openNotification(AppNotification notification) async {
     if (_role == UserRole.merchant) {
-      await MerchantRepository.markNotificationRead(notification.id);
+      unawaited(MerchantRepository.markNotificationRead(notification.id));
     } else if (_role == UserRole.owner) {
-      await ApiService.put('api/owner_notifications', {
+      unawaited(ApiService.put('api/owner_notifications', {
         'id': notification.id,
         'action': 'mark_read',
-      });
+      }));
+      OwnerRepository.invalidateNotificationCountCache();
     } else {
-      await UserRepository.markNotificationRead(notification.id);
+      unawaited(UserRepository.markNotificationRead(notification.id));
     }
 
     final actionUrl = notification.actionUrl ?? '';

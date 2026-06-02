@@ -221,6 +221,7 @@ class UserImage extends StatelessWidget {
             width: width,
             height: height,
             fit: fit,
+            gaplessPlayback: true,
           )
         : value.isEmpty
             ? fallback
@@ -229,6 +230,7 @@ class UserImage extends StatelessWidget {
                 width: width,
                 height: height,
                 fit: fit,
+                gaplessPlayback: true,
                 errorBuilder: (_, __, ___) => fallback,
                 loadingBuilder: (context, child, progress) {
                   if (progress == null) return child;

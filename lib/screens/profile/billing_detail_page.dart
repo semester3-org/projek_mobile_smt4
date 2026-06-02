@@ -59,8 +59,10 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     }
   }
 
-  Future<BillingRecord?> _reloadBilling() async {
-    final result = await UserRepository.getBillings();
+  Future<BillingRecord?> _reloadBilling({bool forceRefresh = false}) async {
+    final result = await UserRepository.getBillings(
+      forceRefresh: forceRefresh,
+    );
     if (!mounted || !result.isSuccess) return null;
 
     var matches =
@@ -105,7 +107,9 @@ class _BillingDetailPageState extends State<BillingDetailPage>
         midtransOrderId: midtransOrderId,
       );
     }
-    final updated = await _reloadBilling();
+    final updated = await _reloadBilling(
+      forceRefresh: midtransOrderId != null && midtransOrderId.isNotEmpty,
+    );
     if (midtransOrderId != null && updated?.isPaid == true) {
       _finishPaidFlow(updated!);
     }
@@ -119,7 +123,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
       await UserRepository.syncMidtransPaymentStatus(
         midtransOrderId: midtransOrderId,
       );
-      final updated = await _reloadBilling();
+      final updated = await _reloadBilling(forceRefresh: true);
       if (updated == null || updated.isCancelled) return;
       if (updated.isPaid) {
         _finishPaidFlow(updated);
@@ -229,7 +233,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
 
     if (!result.isSuccess) {
       if ((result.error ?? '').toLowerCase().contains('sudah dibayar')) {
-        final updated = await _reloadBilling();
+        final updated = await _reloadBilling(forceRefresh: true);
         if (updated?.isPaid == true) {
           _finishPaidFlow(updated!);
           return;
@@ -264,7 +268,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
       if (midtransOrderId != null && midtransOrderId.isNotEmpty) {
         await _pollPaymentStatus(midtransOrderId);
       } else {
-        await _reloadBilling();
+        await _reloadBilling(forceRefresh: true);
       }
       return;
     }
@@ -303,21 +307,12 @@ class _BillingDetailPageState extends State<BillingDetailPage>
       backgroundColor: UserTheme.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Detail Tagihan',
-              style: TextStyle(
-                color: UserTheme.primaryDark,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Text(
-              _billingPeriodLabel(billing),
-              style: const TextStyle(color: UserTheme.muted, fontSize: 12),
-            ),
-          ],
+        title: const Text(
+          'Detail Tagihan',
+          style: TextStyle(
+            color: UserTheme.primaryDark,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       body: ListView(

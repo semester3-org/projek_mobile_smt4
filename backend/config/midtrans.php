@@ -10,7 +10,7 @@ define('MIDTRANS_CLIENT_KEY', getenv('MIDTRANS_CLIENT_KEY') ?: 'Mid-client-wSNPc
 define('MIDTRANS_IS_PRODUCTION', filter_var(getenv('MIDTRANS_IS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_SANITIZED', filter_var(getenv('MIDTRANS_IS_SANITIZED') ?: 'true', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_3DS', filter_var(getenv('MIDTRANS_IS_3DS') ?: 'true', FILTER_VALIDATE_BOOLEAN));
-define('MIDTRANS_FINISH_URL', getenv('MIDTRANS_FINISH_URL') ?: 'https://ngekos-app-project.web.app/payment-finish');
+define('MIDTRANS_FINISH_URL', getenv('MIDTRANS_FINISH_URL') ?: '');
 
 function midtransCaBundlePath(): ?string {
     $path = realpath(__DIR__ . '/../vendor/midtrans/midtrans-php/data/cacert.pem');
@@ -50,6 +50,9 @@ function midtransSandboxInfo(): array {
 function midtransCallbackUrls(): array {
     $finishUrl = trim((string)MIDTRANS_FINISH_URL);
     if ($finishUrl === '') {
+        $finishUrl = midtransDefaultReturnUrl();
+    }
+    if ($finishUrl === '') {
         return [];
     }
 
@@ -58,4 +61,28 @@ function midtransCallbackUrls(): array {
         'unfinish' => $finishUrl,
         'error' => $finishUrl,
     ];
+}
+
+function midtransDefaultReturnUrl(): string {
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') {
+        return '';
+    }
+
+    $https = strtolower((string)($_SERVER['HTTPS'] ?? ''));
+    $scheme = ($https !== '' && $https !== 'off') ? 'https' : 'http';
+    $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (substr($scriptName, -strlen('/api/midtrans.php')) === '/api/midtrans.php') {
+        $basePath = rtrim(str_replace('\\', '/', dirname(dirname($scriptName))), '/');
+    } else {
+        $basePath = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+    }
+    if ($basePath === '.' || $basePath === '/') {
+        $basePath = '';
+    }
+    if (substr($basePath, -4) === '/api') {
+        $basePath = substr($basePath, 0, -4);
+    }
+
+    return $scheme . '://' . $host . $basePath . '/api/midtrans_return';
 }

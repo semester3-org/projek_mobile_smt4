@@ -22,6 +22,7 @@ error_log("DEBUG: URI=$uri | Path=$path | Method=" . $_SERVER['REQUEST_METHOD'])
 
 // ── Auth endpoints (tidak perlu login) ────────────────────────────────────────
 if ($path === 'api/login')           { require_once __DIR__ . '/api/login.php';          exit; }
+if ($path === 'api/login-google')    { require_once __DIR__ . '/api/login_google.php';   exit; }
 if ($path === 'api/session')         { require_once __DIR__ . '/api/session.php';        exit; }
 if ($path === 'api/register')        { require_once __DIR__ . '/api/register.php';       exit; }
 if ($path === 'api/forgot-password') { require_once __DIR__ . '/api/forgot-password.php'; exit; }
@@ -39,6 +40,7 @@ if ($path === 'api/user_billings')        { require_once __DIR__ . '/api/user_bi
 if ($path === 'api/user_billings/pay')    { require_once __DIR__ . '/api/user_billings_pay.php';   exit; }
 if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_orders.php';         exit; }
 if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
+if ($path === 'api/user_notification_presence') { require_once __DIR__ . '/api/user_notification_presence.php'; exit; }
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
 if ($path === 'api/change-password')      { require_once __DIR__ . '/api/change-password.php';     exit; }
 if ($path === 'api/user_ratings')         { require_once __DIR__ . '/api/user_ratings.php';        exit; }
@@ -54,6 +56,7 @@ if ($path === 'api/laundry_service_estimates') { require_once __DIR__ . '/api/la
 if ($path === 'api/merchant_dashboard')     { require_once __DIR__ . '/api/merchant_dashboard.php';     exit; }
 if ($path === 'api/merchant_orders')        { require_once __DIR__ . '/api/merchant_orders.php';        exit; }
 if ($path === 'api/merchant_products')      { require_once __DIR__ . '/api/merchant_products.php';      exit; }
+if ($path === 'api/merchant_product_reviews') { require_once __DIR__ . '/api/merchant_product_reviews.php'; exit; }
 if ($path === 'api/merchant_promos')        { require_once __DIR__ . '/api/merchant_promos.php';        exit; }
 if ($path === 'api/merchant_profile')       { require_once __DIR__ . '/api/merchant_profile.php';       exit; }
 if ($path === 'api/merchant_notifications') { require_once __DIR__ . '/api/merchant_notifications.php'; exit; }
@@ -63,6 +66,9 @@ if ($path === 'api/kos_listings')        { require_once __DIR__ . '/api/kos_list
 if ($path === 'api/kos_rooms')           { require_once __DIR__ . '/api/kos_rooms.php';           exit; }
 if ($path === 'api/facilities')          { require_once __DIR__ . '/api/facilities.php';          exit; }
 if ($path === 'api/owner_tenants')       { require_once __DIR__ . '/api/owner_tenants.php';       exit; }
+if ($path === 'api/owner_dashboard')     { require_once __DIR__ . '/api/owner_dashboard.php';     exit; }
+if ($path === 'api/owner_finance')       { require_once __DIR__ . '/api/owner_finance.php';       exit; }
+if ($path === 'api/owner_notifications') { require_once __DIR__ . '/api/owner_notifications.php'; exit; }
 
 // ── Debug / test ──────────────────────────────────────────────────────────────
 if ($path === 'db-test') { require_once __DIR__ . '/db-test.php'; exit; }
@@ -94,6 +100,7 @@ if (empty($path)) {
             'POST /api/user_billings/pay',
             'GET  /api/user_orders',
             'GET  /api/user_notifications',
+            'POST|PUT|DELETE /api/user_notification_presence',
             'GET|POST|PUT /api/user_profile',
             'POST /api/change-password',
             'GET|POST|PUT|DELETE /api/user_ratings',
@@ -103,6 +110,7 @@ if (empty($path)) {
             'GET /api/merchant_dashboard',
             'GET|PUT /api/merchant_orders',
             'GET|POST|PUT|DELETE /api/merchant_products',
+            'GET /api/merchant_product_reviews',
             'GET|POST|PUT|DELETE /api/merchant_promos',
             'GET|PUT /api/merchant_profile',
             'GET /api/merchant_notifications',

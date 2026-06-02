@@ -23,21 +23,29 @@ class ApiResponse<T> {
 }
 
 class ApiService {
-  // ── Base URL ───────────────────────────────────────────────────────────────
-  // Server:
-  // - Laptop saja: php -S localhost:8000 router.php
-  // - HP fisik satu Wi-Fi: php -S 0.0.0.0:8000 router.php
+  static final http.Client _client = http.Client();
+  static final Map<String, Future<ApiResponse<Map<String, dynamic>>>>
+      _inFlightGets = {};
+  static const String _configuredBaseUrl =
+      String.fromEnvironment('API_BASE_URL');
+
+  // Base URL can be overridden per machine:
+  // flutter run --dart-define=API_BASE_URL=http://<host>:8000
   //
-  // Web / iOS Simulator / Desktop  → localhost:8000
-  // Android Emulator               → 10.0.2.2:8000
-  // Device fisik                   → IP laptop:8000  (cek via: ipconfig)
-  // ──────────────────────────────────────────────────────────────────────────
+  // Defaults:
+  // - Web / desktop / iOS simulator: localhost:8000
+  // - Android emulator: 10.0.2.2:8000
+  // - Physical phone: use --dart-define with your laptop IP.
   static String get baseUrl {
+    final configured = _configuredBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.replaceFirst(RegExp(r'/$'), '');
+    }
     if (kIsWeb) {
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Emulator Android → 10.0.2.2 mengarah ke localhost laptop
-      return 'http://192.168.0.118:8000';
+      return 'http://192.168.0.194:8000';
       // Device fisik → uncomment baris bawah, ganti IP dengan hasil ipconfig
       // return 'http://192.168.1.10:8000';
     } else if (Platform.isIOS) {
@@ -67,6 +75,7 @@ class ApiService {
     required String email,
     required String password,
     required String displayName,
+    required String phone,
     required String role,
     String? merchantType,
   }) async {
@@ -75,14 +84,15 @@ class ApiService {
         'email': email.trim().toLowerCase(),
         'password': password,
         'displayName': displayName.trim(),
+        'phone': phone.trim(),
         'role': role.toLowerCase(),
       };
-      
+
       if (merchantType != null) {
         body['merchantType'] = merchantType.toLowerCase();
       }
-      
-      final response = await http
+
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/register'),
             headers: _publicHeaders,
@@ -91,7 +101,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -99,12 +112,15 @@ class ApiService {
         'success': data['success'] == true,
         'data': data['data'],
         'message': data['message'] ??
-            (data['success'] == true ? 'Registrasi berhasil' : 'Registrasi gagal'),
+            (data['success'] == true
+                ? 'Registrasi berhasil'
+                : 'Registrasi gagal'),
       };
     } on SocketException {
       return {
         'success': false,
-        'message': 'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -118,7 +134,7 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/login'),
             headers: _publicHeaders,
@@ -130,7 +146,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -160,7 +179,71 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': 'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+        'message':
+            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'Request timeout. Coba lagi.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> loginWithGoogle({
+    required String email,
+    required String displayName,
+    String? photoUrl,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse('$baseUrl/api/login-google'),
+            headers: _publicHeaders,
+            body: jsonEncode({
+              'email': email.trim().toLowerCase(),
+              'displayName': displayName.trim(),
+              'photoUrl': photoUrl,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.body.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (data['success'] == true && data['data'] != null) {
+        final userData = data['data'] as Map<String, dynamic>;
+        final token = userData['token'] as String? ?? '';
+        if (token.isNotEmpty) {
+          await AuthStorage.saveAuth(
+            token: token,
+            sessionId: userData['sessionId'] as String?,
+            userId: userData['id'] as String? ?? '',
+            email: userData['email'] as String? ?? email.trim().toLowerCase(),
+            displayName: userData['displayName'] as String? ?? '',
+            role: userData['role'] as String? ?? 'user',
+            merchantType: userData['merchantType'] as String?,
+          );
+        }
+      }
+
+      return {
+        'success': data['success'] == true,
+        'data': data['data'],
+        'message': data['message'] ??
+            (data['success'] == true
+                ? 'Login Google berhasil'
+                : 'Login Google gagal'),
+      };
+    } on SocketException {
+      return {
+        'success': false,
+        'message': 'Koneksi gagal. Pastikan server PHP berjalan.',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -176,7 +259,7 @@ class ApiService {
         return {'success': false, 'message': 'Token tidak ditemukan'};
       }
 
-      final response = await http
+      final response = await _client
           .get(
             Uri.parse('$baseUrl/api/session'),
             headers: await _authHeaders(),
@@ -184,7 +267,10 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
 
       final data = jsonDecode(response.body);
@@ -205,7 +291,9 @@ class ApiService {
         'success': data['success'] == true,
         'data': data['data'],
         'message': data['message'] ??
-            (data['success'] == true ? 'Session masih aktif' : 'Session tidak valid'),
+            (data['success'] == true
+                ? 'Session masih aktif'
+                : 'Session tidak valid'),
       };
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
@@ -217,7 +305,7 @@ class ApiService {
       final token = await AuthStorage.getToken();
       if (token == null || token.isEmpty) return;
 
-      await http
+      await _client
           .delete(
             Uri.parse('$baseUrl/api/session'),
             headers: await _authHeaders(),
@@ -232,7 +320,7 @@ class ApiService {
     required String email,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/forgot-password'),
             headers: _publicHeaders,
@@ -241,7 +329,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
       final data = jsonDecode(response.body);
       return {
@@ -260,7 +351,7 @@ class ApiService {
     required String newPassword,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/api/reset-password'),
             headers: _publicHeaders,
@@ -273,7 +364,10 @@ class ApiService {
           .timeout(const Duration(seconds: 30));
 
       if (response.body.isEmpty) {
-        return {'success': false, 'message': 'Server mengembalikan response kosong'};
+        return {
+          'success': false,
+          'message': 'Server mengembalikan response kosong'
+        };
       }
       final data = jsonDecode(response.body);
       return {
@@ -294,18 +388,41 @@ class ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    var uri = Uri.parse('$baseUrl/$endpoint');
+    if (queryParams != null) {
+      uri = uri.replace(queryParameters: queryParams);
+    }
+
+    final headers = await _authHeaders();
+    final authKey = headers['Authorization'] ?? '';
+    final cacheKey = '$uri|$authKey';
+    final existing = _inFlightGets[cacheKey];
+    if (existing != null) return existing;
+
+    final request = _get(uri, headers).whenComplete(() {
+      _inFlightGets.remove(cacheKey);
+    });
+    _inFlightGets[cacheKey] = request;
+    return request;
+  }
+
+  static Future<ApiResponse<Map<String, dynamic>>> _get(
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
     try {
-      var uri = Uri.parse('$baseUrl/$endpoint');
-      if (queryParams != null) {
-        uri = uri.replace(queryParameters: queryParams);
-      }
-      final response = await http
-          .get(uri, headers: await _authHeaders())
+      final response = await _client
+          .get(uri, headers: headers)
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -314,20 +431,26 @@ class ApiService {
 
   static Future<ApiResponse<Map<String, dynamic>>> post(
     String endpoint,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse('$baseUrl/$endpoint'),
             headers: await _authHeaders(),
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(timeout);
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -338,19 +461,25 @@ class ApiService {
     String endpoint,
     Map<String, dynamic> body, {
     Map<String, String>? queryParams,
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       var uri = Uri.parse('$baseUrl/$endpoint');
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await http
+      final response = await _client
           .put(uri, headers: await _authHeaders(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 15));
+          .timeout(timeout);
       return _parseResponse(response);
     } on SocketException {
       return const ApiResponse(
           success: false, statusCode: 0, message: 'Tidak ada koneksi internet');
+    } on TimeoutException {
+      return const ApiResponse(
+          success: false,
+          statusCode: 0,
+          message: 'Request timeout. Coba lagi.');
     } catch (e) {
       return ApiResponse(
           success: false, statusCode: 0, message: 'Terjadi kesalahan: $e');
@@ -366,7 +495,7 @@ class ApiService {
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await http
+      final response = await _client
           .delete(uri, headers: await _authHeaders())
           .timeout(const Duration(seconds: 15));
       return _parseResponse(response);
@@ -379,7 +508,8 @@ class ApiService {
     }
   }
 
-  static ApiResponse<Map<String, dynamic>> _parseResponse(http.Response response) {
+  static ApiResponse<Map<String, dynamic>> _parseResponse(
+      http.Response response) {
     try {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       return ApiResponse(

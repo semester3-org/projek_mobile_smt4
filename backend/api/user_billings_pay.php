@@ -34,6 +34,103 @@ function tableExists(mysqli $conn, string $table): bool {
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function uuid(): string {
+    $data = random_bytes(16);
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
+function paymentHistoryIdColumn(mysqli $conn): ?array {
+    $stmt = $conn->prepare("
+        SELECT DATA_TYPE AS data_type, EXTRA AS extra
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'payment_history'
+          AND column_name = 'id'
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function paymentHistoryUsesAutoIncrementId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+    $extra = strtolower((string)($column['extra'] ?? ''));
+    return strpos($extra, 'auto_increment') !== false;
+}
+
+function paymentHistoryUsesStringId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+    $dataType = strtolower((string)($column['data_type'] ?? ''));
+    return in_array($dataType, ['char', 'varchar', 'text'], true);
+}
+
+function nextPaymentHistoryNumericId(mysqli $conn): int {
+    $result = $conn->query("SELECT COALESCE(MAX(CAST(id AS UNSIGNED)), 0) + 1 AS next_id FROM payment_history");
+    if (!$result) {
+        sendJson(false, null, 'Database error: ' . $conn->error, 500);
+    }
+    $row = $result->fetch_assoc();
+    return max(1, (int)($row['next_id'] ?? 1));
+}
+
+function createPaymentHistory(
+    mysqli $conn,
+    string $registrationId,
+    int $amount,
+    string $period,
+    string $paymentMethod
+): string {
+    if (!paymentHistoryUsesAutoIncrementId($conn)) {
+        $usesStringId = paymentHistoryUsesStringId($conn);
+        $newId = $usesStringId ? uuid() : nextPaymentHistoryNumericId($conn);
+        $insert = $conn->prepare("
+            INSERT INTO payment_history
+                (id, registration_id, amount, period_month, payment_status, payment_method, paid_at, created_at)
+            VALUES (?, ?, ?, 'unpaid', ?, NULL, NOW())
+        ");
+        if (!$insert) {
+            sendJson(false, null, 'Database error: ' . $conn->error, 500);
+        }
+        if ($usesStringId) {
+            $insert->bind_param('ssis', $newId, $registrationId, $amount, $paymentMethod);
+        } else {
+            $insert->bind_param('isis', $newId, $registrationId, $amount, $paymentMethod);
+        }
+        if (!$insert->execute()) {
+            $error = $insert->error;
+            $insert->close();
+            sendJson(false, null, 'Gagal membuat tagihan pembayaran: ' . $error, 500);
+        }
+        $insert->close();
+        return (string)$newId;
+    }
+
+    $insert = $conn->prepare("
+        INSERT INTO payment_history
+            (registration_id, amount, period_month, payment_status, payment_method, paid_at, created_at)
+        VALUES (?, ?, ?, 'unpaid', ?, NULL, NOW())
+    ");
+    if (!$insert) {
+        sendJson(false, null, 'Database error: ' . $conn->error, 500);
+    }
+    $insert->bind_param('siss', $registrationId, $amount, $period, $paymentMethod);
+    if (!$insert->execute()) {
+        $error = $insert->error;
+        $insert->close();
+        sendJson(false, null, 'Gagal membuat tagihan pembayaran: ' . $error, 500);
+    }
+    $newId = (string)$conn->insert_id;
+    $insert->close();
+    return $newId;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJson(false, null, 'Only POST method allowed', 405);
 }
@@ -89,18 +186,7 @@ if (str_starts_with($billingId, 'generated-')) {
     }
 
     $amount = (int)$room['price_per_month'];
-    $insert = $conn->prepare("
-        INSERT INTO payment_history
-            (registration_id, amount, period_month, payment_status, payment_method, paid_at, created_at)
-        VALUES (?, ?, ?, 'unpaid', ?, NULL, NOW())
-    ");
-    if (!$insert) {
-        sendJson(false, null, 'Database error: ' . $conn->error, 500);
-    }
-    $insert->bind_param('siss', $registrationId, $amount, $period, $paymentMethod);
-    $insert->execute();
-    $newId = $conn->insert_id;
-    $insert->close();
+    $newId = createPaymentHistory($conn, $registrationId, $amount, $period, $paymentMethod);
 
     sendJson(true, [
         'id' => (string)$newId,

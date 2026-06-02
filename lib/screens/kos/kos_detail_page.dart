@@ -131,7 +131,7 @@ class _KosDetailPageState extends State<KosDetailPage> {
                           decoration: BoxDecoration(
                             color: active
                                 ? Colors.white
-                                : Colors.white.withOpacity(0.45),
+                                : Colors.white.withValues(alpha: 0.45),
                             borderRadius: BorderRadius.circular(8),
                           ),
                         );

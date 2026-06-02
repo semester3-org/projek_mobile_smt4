@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../auth/auth_scope.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
 import 'merchant_detail_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
-/// Rekomendasi merchant laundry & catering (bukan tab catering saja).
 class UserRecommendationsPage extends StatefulWidget {
   const UserRecommendationsPage({super.key});
 
@@ -16,47 +16,54 @@ class UserRecommendationsPage extends StatefulWidget {
 }
 
 class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
-  List<UserMerchant> _laundry = [];
-  List<UserMerchant> _catering = [];
+  List<MerchantMenuItem> _items = [];
   bool _loading = true;
+  String? _openingMerchantId;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(forceRefresh: true);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
     setState(() => _loading = true);
-    final laundry = await UserRepository.getMerchants('laundry');
-    final catering = await UserRepository.getMerchants('catering');
+    final displayName = AuthScope.of(context).session?.displayName ?? 'User';
+    final result = await UserRepository.getDashboard(
+      displayName: displayName,
+      forceRefresh: forceRefresh,
+    );
     if (!mounted) return;
-
-    final laundryList = List<UserMerchant>.from(laundry.data ?? [])
-      ..sort(_compareMerchants);
-    final cateringList = List<UserMerchant>.from(catering.data ?? [])
-      ..sort(_compareMerchants);
-
     setState(() {
-      _laundry = laundryList.take(6).toList();
-      _catering = cateringList.take(6).toList();
+      _items = result.data?.recommendations ?? const [];
       _loading = false;
     });
   }
 
-  int _compareMerchants(UserMerchant a, UserMerchant b) {
-    final rating = b.rating.compareTo(a.rating);
-    if (rating != 0) return rating;
-    if (a.hasDistanceEstimate != b.hasDistanceEstimate) {
-      return a.hasDistanceEstimate ? -1 : 1;
+  Future<void> _openMerchant(MerchantMenuItem item) async {
+    if (item.merchantId.isEmpty || item.merchantType.isEmpty) return;
+    if (_openingMerchantId != null) return;
+    setState(() => _openingMerchantId = item.merchantId);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await UserRepository.getMerchantDetail(
+      type: item.merchantType,
+      id: item.merchantId,
+    );
+    if (!mounted) return;
+    setState(() => _openingMerchantId = null);
+    if (!result.isSuccess || result.data == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? 'Gagal membuka detail merchant'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
     }
-    return a.distanceKm.compareTo(b.distanceKm);
-  }
-
-  void _open(UserMerchant merchant) {
-    Navigator.of(context).push(
+    navigator.push(
       MaterialPageRoute<void>(
-        builder: (_) => MerchantDetailPage(merchant: merchant),
+        builder: (_) => MerchantDetailPage(merchant: result.data!),
       ),
     );
   }
@@ -68,7 +75,7 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         title: const Text(
-          'Rekomendasi Merchant',
+          'Rekomendasi Menu',
           style: TextStyle(
             color: UserTheme.text,
             fontWeight: FontWeight.w800,
@@ -76,7 +83,7 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         color: UserTheme.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -84,33 +91,21 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
                 children: [
                   const Text(
-                    'Merchant terbaik berdasarkan rating dan jarak dari kos Anda.',
+                    'Produk dan layanan yang tersedia dari merchant aktif.',
                     style: TextStyle(color: UserTheme.muted, height: 1.4),
                   ),
-                  const SizedBox(height: 24),
-                  const UserSectionHeader(title: 'Rekomendasi Laundry'),
-                  const SizedBox(height: 12),
-                  if (_laundry.isEmpty)
-                    const _EmptyHint(text: 'Belum ada merchant laundry.')
+                  const SizedBox(height: 18),
+                  if (_items.isEmpty)
+                    const _EmptyHint()
                   else
-                    ..._laundry.map(
-                      (m) => Padding(
+                    ..._items.map(
+                      (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child:
-                            _MerchantTile(merchant: m, onTap: () => _open(m)),
-                      ),
-                    ),
-                  const SizedBox(height: 28),
-                  const UserSectionHeader(title: 'Rekomendasi Catering'),
-                  const SizedBox(height: 12),
-                  if (_catering.isEmpty)
-                    const _EmptyHint(text: 'Belum ada merchant catering.')
-                  else
-                    ..._catering.map(
-                      (m) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child:
-                            _MerchantTile(merchant: m, onTap: () => _open(m)),
+                        child: _MenuTile(
+                          item: item,
+                          loading: _openingMerchantId == item.merchantId,
+                          onTap: () => _openMerchant(item),
+                        ),
                       ),
                     ),
                 ],
@@ -121,9 +116,7 @@ class _UserRecommendationsPageState extends State<UserRecommendationsPage> {
 }
 
 class _EmptyHint extends StatelessWidget {
-  const _EmptyHint({required this.text});
-
-  final String text;
+  const _EmptyHint();
 
   @override
   Widget build(BuildContext context) {
@@ -134,39 +127,54 @@ class _EmptyHint extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Text(text, style: const TextStyle(color: UserTheme.muted)),
+      child: const Text(
+        'Belum ada produk atau layanan aktif untuk direkomendasikan.',
+        style: TextStyle(color: UserTheme.muted),
+      ),
     );
   }
 }
 
-class _MerchantTile extends StatelessWidget {
-  const _MerchantTile({required this.merchant, required this.onTap});
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({
+    required this.item,
+    required this.loading,
+    required this.onTap,
+  });
 
-  final UserMerchant merchant;
+  final MerchantMenuItem item;
+  final bool loading;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final closed = !merchant.isAvailable;
+    final type = item.merchantType.toLowerCase();
+    final isLaundry = type == 'laundry';
+    final icon =
+        isLaundry ? Icons.local_laundry_service_rounded : Icons.restaurant;
+    final unit = _unitSuffix(item.unit);
+    final price = item.hasPromo && (item.promoPrice ?? 0) > 0
+        ? item.promoPrice!
+        : item.price;
+    final priceLabel = '${formatUserCurrency(price)}$unit';
+    final subtitle = [
+      if (item.merchantName.trim().isNotEmpty) item.merchantName.trim(),
+      if (item.category.trim().isNotEmpty) item.category.trim(),
+    ].join(' - ');
+
     return Material(
-      color: closed ? const Color(0xFFF1F3F5) : Colors.white,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        onTap: onTap,
+        onTap: item.merchantId.isEmpty ? null : onTap,
         borderRadius: BorderRadius.circular(18),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: closed ? Border.all(color: const Color(0xFFD5DAE1)) : null,
-          ),
+        child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
               UserImage(
-                url: merchant.imageUrl,
-                icon: merchant.type == 'laundry'
-                    ? Icons.local_laundry_service_rounded
-                    : Icons.restaurant_rounded,
+                url: item.imageUrl,
+                icon: icon,
                 width: 72,
                 height: 72,
                 borderRadius: BorderRadius.circular(14),
@@ -177,77 +185,54 @@ class _MerchantTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      merchant.name,
+                      item.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
+                        color: UserTheme.text,
                         fontWeight: FontWeight.w800,
-                        color:
-                            closed ? const Color(0xFF4B5563) : UserTheme.text,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(Icons.star_rounded,
-                            size: 16, color: Color(0xFFFFB300)),
-                        const SizedBox(width: 4),
-                        Text(
-                          merchant.rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: UserTheme.muted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (merchant.hasDistanceEstimate) ...[
-                          const SizedBox(width: 10),
-                          Text(
-                            '${merchant.distanceKm.toStringAsFixed(1)} km',
-                            style: const TextStyle(color: UserTheme.muted),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (closed && merchant.openHours.isNotEmpty) ...[
+                    if (subtitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Jam operasional ${merchant.openHours}',
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFF6D7375),
+                          color: UserTheme.muted,
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ] else if (merchant.eta.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      priceLabel,
+                      style: const TextStyle(
+                        color: UserTheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (item.hasPromo && item.originalPrice != null) ...[
+                      const SizedBox(height: 3),
                       Text(
-                        'Estimasi ${merchant.eta}',
+                        '${formatUserCurrency(item.originalPrice!)}$unit',
                         style: const TextStyle(
-                          color: UserTheme.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          color: UserTheme.muted,
+                          fontSize: 11,
+                          decoration: TextDecoration.lineThrough,
                         ),
                       ),
                     ],
                   ],
                 ),
               ),
-              if (closed)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFE8E8),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'TUTUP',
-                    style: TextStyle(
-                      color: Color(0xFFC62828),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 11,
-                    ),
-                  ),
+              const SizedBox(width: 10),
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
                 const Icon(Icons.chevron_right_rounded, color: UserTheme.muted),
@@ -256,5 +241,11 @@ class _MerchantTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _unitSuffix(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty || value == 'fixed') return '';
+    return value.startsWith('/') ? value : '/$value';
   }
 }

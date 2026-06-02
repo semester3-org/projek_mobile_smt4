@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
+import '../../auth/auth_scope.dart';
 import '../../core/api_service.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -13,13 +14,16 @@ class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _confirmPassCtrl = TextEditingController();
   String _selectedRole = 'user';
   bool _obscure = true;
+  bool _obscureConfirm = true;
   bool _isLoading = false;
   String? _errorText;
 
-  final List<Map<String, dynamic>> _roles = [
+  final List<Map<String, String>> _roles = [
     {'value': 'user', 'label': 'User'},
     {'value': 'owner', 'label': 'Owner'},
   ];
@@ -28,13 +32,20 @@ class _RegisterPageState extends State<RegisterPage> {
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     _passCtrl.dispose();
+    _confirmPassCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    
+
+    final auth = AuthScope.of(context);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    var dialogOpen = false;
+
     setState(() {
       _isLoading = true;
       _errorText = null;
@@ -61,52 +72,54 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ),
       );
+      dialogOpen = true;
 
       final result = await ApiService.register(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text,
         displayName: _nameCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
         role: _selectedRole,
       );
 
       // Close loading dialog
-      if (mounted) Navigator.of(context).pop();
+      if (mounted && dialogOpen) {
+        navigator.pop();
+        dialogOpen = false;
+      }
 
       if (!mounted) return;
 
       if (result['success'] == true) {
-        // Show success dialog
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 32),
-                SizedBox(width: 12),
-                Text('Berhasil!'),
-              ],
-            ),
-            content: Text(result['message'] ?? 'Registrasi berhasil! Silakan login.'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                  Navigator.of(context).pop(); // Back to login
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+        final loggedIn = await auth.loginWithCredentials(
+          email: _emailCtrl.text.trim(),
+          password: _passCtrl.text,
         );
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        if (loggedIn) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Akun berhasil dibuat. Selamat datang!'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          navigator.popUntil((route) => route.isFirst);
+        } else {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Akun dibuat. Silakan masuk untuk melanjutkan.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          navigator.pop();
+        }
       } else {
         setState(() {
           _errorText = result['message'];
           _isLoading = false;
         });
-        
+
         // Show error dialog
         await showDialog(
           context: context,
@@ -121,7 +134,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 Text('Gagal!'),
               ],
             ),
-            content: Text(result['message'] ?? 'Registrasi gagal. Cek kembali data Anda.'),
+            content: Text(result['message'] ??
+                'Registrasi gagal. Cek kembali data Anda.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -132,14 +146,16 @@ class _RegisterPageState extends State<RegisterPage> {
         );
       }
     } catch (e) {
-      if (mounted) Navigator.of(context).pop(); // Close loading dialog
+      if (mounted && dialogOpen) {
+        navigator.pop(); // Close loading dialog
+      }
       if (!mounted) return;
-      
+
       setState(() {
         _errorText = 'Terjadi kesalahan: ${e.toString()}';
         _isLoading = false;
       });
-      
+
       // Show error dialog
       await showDialog(
         context: context,
@@ -196,7 +212,8 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
             const SizedBox(height: 24),
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
               elevation: 4,
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -242,6 +259,27 @@ class _RegisterPageState extends State<RegisterPage> {
                         },
                       ),
                       const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Nomor HP',
+                          prefixIcon: Icon(Icons.phone_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                          ),
+                        ),
+                        validator: (v) {
+                          final s = (v ?? '').trim();
+                          final digits = s.replaceAll(RegExp(r'[^0-9]'), '');
+                          if (s.isEmpty) return 'Nomor HP wajib diisi';
+                          if (digits.length < 10 || digits.length > 15) {
+                            return 'Format nomor HP tidak valid';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         'Pilih Peran',
                         style: Theme.of(context).textTheme.labelLarge,
@@ -251,14 +289,16 @@ class _RegisterPageState extends State<RegisterPage> {
                         spacing: 10,
                         runSpacing: 10,
                         children: _roles.map((role) {
-                          final isSelected = _selectedRole == role['value'];
+                          final roleValue = role['value']!;
+                          final roleLabel = role['label']!;
+                          final isSelected = _selectedRole == roleValue;
                           return ChoiceChip(
-                            label: Text(role['label']),
+                            label: Text(roleLabel),
                             selected: isSelected,
                             onSelected: (selected) {
                               if (selected) {
                                 setState(() {
-                                  _selectedRole = role['value'];
+                                  _selectedRole = roleValue;
                                 });
                               }
                             },
@@ -278,9 +318,12 @@ class _RegisterPageState extends State<RegisterPage> {
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
                           suffixIcon: IconButton(
-                            onPressed: () => setState(() => _obscure = !_obscure),
+                            onPressed: () =>
+                                setState(() => _obscure = !_obscure),
                             icon: Icon(
-                              _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              _obscure
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
                             ),
                           ),
                           border: const OutlineInputBorder(
@@ -291,6 +334,38 @@ class _RegisterPageState extends State<RegisterPage> {
                           final s = (v ?? '');
                           if (s.isEmpty) return 'Password wajib diisi';
                           if (s.length < 4) return 'Minimal 4 karakter';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _confirmPassCtrl,
+                        obscureText: _obscureConfirm,
+                        decoration: InputDecoration(
+                          labelText: 'Konfirmasi Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            onPressed: () => setState(
+                              () => _obscureConfirm = !_obscureConfirm,
+                            ),
+                            icon: Icon(
+                              _obscureConfirm
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
+                          ),
+                          border: const OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                          ),
+                        ),
+                        validator: (v) {
+                          final s = v ?? '';
+                          if (s.isEmpty) {
+                            return 'Konfirmasi password wajib diisi';
+                          }
+                          if (s != _passCtrl.text) {
+                            return 'Konfirmasi password tidak sama';
+                          }
                           return null;
                         },
                         onFieldSubmitted: (_) => _submit(),
@@ -310,7 +385,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                 width: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                                  valueColor:
+                                      AlwaysStoppedAnimation(Colors.white),
                                 ),
                               )
                             : const Text('Daftar'),

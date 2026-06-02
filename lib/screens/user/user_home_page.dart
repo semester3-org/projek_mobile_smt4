@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -7,11 +8,11 @@ import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/catering_subscriber.dart';
 import '../../models/user_dashboard.dart';
-import '../../widgets/catering_subscription_card.dart';
+import '../../models/user_profile.dart';
 import '../profile/billing_list_page.dart';
 import '../profile/notification_list_page.dart';
+import 'order_detail_page.dart';
 import 'user_catering_subscriptions_page.dart';
-import 'user_recommendations_page.dart';
 import 'user_theme.dart';
 import 'user_widgets.dart';
 
@@ -29,29 +30,32 @@ class UserHomePage extends StatefulWidget {
 
 class _UserHomePageState extends State<UserHomePage> {
   UserDashboard? _dashboard;
+  UserProfile? _profile;
   bool _loading = true;
   bool _didLoad = false;
+  bool _loadingDashboard = false;
   StreamSubscription<void>? _dashboardRefreshSub;
-  Timer? _homePollTimer;
+  void _orderStatusHandler() => _load(silent: true, forceRefresh: true);
 
   @override
   void initState() {
     super.initState();
     _dashboardRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
-      if (mounted) _load();
+      if (mounted) _load(forceRefresh: true);
     });
     RealtimeService().startUserOrderPolling();
-    RealtimeService().addEventListener('order_status_updated', _load);
-    _homePollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) _load(silent: true);
-    });
+    RealtimeService().addEventListener(
+      'order_status_updated',
+      _orderStatusHandler,
+    );
   }
 
   @override
   void dispose() {
     _dashboardRefreshSub?.cancel();
-    _homePollTimer?.cancel();
-    RealtimeService().removeEventListener('order_status_updated', _load);
+    RealtimeService()
+        .removeEventListener('order_status_updated', _orderStatusHandler);
+    RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
 
@@ -63,28 +67,54 @@ class _UserHomePageState extends State<UserHomePage> {
     _load();
   }
 
-  Future<void> _load({bool silent = false}) async {
+  Future<void> _load({
+    bool silent = false,
+    bool forceRefresh = false,
+  }) async {
+    if (_loadingDashboard) return;
+    _loadingDashboard = true;
     final session = AuthScope.of(context).session;
     final displayName = session?.displayName ?? 'User';
-    if (!silent) {
-      setState(() {
-        _dashboard ??= UserDashboard.fallback(displayName);
-        _loading = _dashboard == null;
-      });
-    }
-    final result = await UserRepository.getDashboard(displayName: displayName);
-    if (!mounted) return;
+    final email = session?.email ?? '';
+    final role = session?.role.name ?? 'user';
+    try {
+      if (!silent) {
+        setState(() {
+          _dashboard ??= UserDashboard.fallback(displayName);
+          _loading = _dashboard == null;
+        });
+      }
+      final dashboardFuture = UserRepository.getDashboard(
+        displayName: displayName,
+        forceRefresh: forceRefresh,
+      );
+      final profileFuture = UserRepository.getProfile(
+        displayName: displayName,
+        email: email,
+        role: role,
+        forceRefresh: forceRefresh,
+      );
+      final result = await dashboardFuture;
+      if (!mounted) return;
 
-    setState(() {
-      _dashboard = result.data ?? UserDashboard.fallback(displayName);
-      _loading = false;
-    });
+      setState(() {
+        _dashboard = result.data ?? UserDashboard.fallback(displayName);
+        _loading = false;
+      });
+      _loadingDashboard = false;
+      final profileResult = await profileFuture;
+      if (!mounted || profileResult.data == null) return;
+      setState(() => _profile = profileResult.data);
+    } finally {
+      _loadingDashboard = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final session = AuthScope.of(context).session;
     final displayName = _firstName(session?.displayName ?? 'User');
+    final avatarImage = _profileImage(_profile?.photoUrl);
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -96,7 +126,7 @@ class _UserHomePageState extends State<UserHomePage> {
             Icon(Icons.home_work_rounded, color: UserTheme.primary, size: 22),
             SizedBox(width: 10),
             Text(
-              'Sentra Ruang',
+              'NgeKos',
               style: TextStyle(
                 color: UserTheme.primaryDark,
                 fontWeight: FontWeight.w800,
@@ -114,27 +144,11 @@ class _UserHomePageState extends State<UserHomePage> {
               );
             },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => widget.onSelectTab(3),
-              child: CircleAvatar(
-                backgroundColor: UserTheme.softBlue,
-                child: Text(
-                  displayName.isEmpty ? 'U' : displayName[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: UserTheme.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         color: UserTheme.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -142,46 +156,61 @@ class _UserHomePageState extends State<UserHomePage> {
                 padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
                 children: [
                   Text(
-                    'Selamat pagi,',
+                    '${_getGreeting()},',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: UserTheme.muted,
                         ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    'Halo, $displayName',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: UserTheme.text,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Halo, $displayName',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: UserTheme.text,
+                              ),
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => widget.onSelectTab(3),
+                        child: CircleAvatar(
+                          backgroundColor: UserTheme.softBlue,
+                          backgroundImage: avatarImage,
+                          child: avatarImage == null
+                              ? Text(
+                                  displayName.isEmpty
+                                      ? 'U'
+                                      : displayName[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 22),
                   _BillingHero(dashboard: _dashboard!),
+                  const SizedBox(height: 14),
+                  const _HomeCateringSubscriptions(),
                   const SizedBox(height: 28),
                   const UserSectionHeader(title: 'Layanan Utama'),
                   const SizedBox(height: 14),
                   _ServiceGrid(onSelectTab: widget.onSelectTab),
                   const SizedBox(height: 22),
-                  if (_dashboard!.announcementTitle.trim().isNotEmpty)
-                    ...[
-                      _AnnouncementCard(dashboard: _dashboard!),
-                      const SizedBox(height: 28),
-                    ],
-                  const _HomeCateringSubscriptions(),
-                  const SizedBox(height: 28),
-                  UserSectionHeader(
-                    title: 'Rekomendasi Menu',
-                    actionLabel: 'Lihat Semua',
-                    onAction: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const UserRecommendationsPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _RecommendationList(dashboard: _dashboard!),
+                  if (_dashboard!.announcementTitle.trim().isNotEmpty) ...[
+                    _AnnouncementCard(dashboard: _dashboard!),
+                    const SizedBox(height: 28),
+                  ],
                   const UserBottomSpacer(),
                 ],
               ),
@@ -189,10 +218,41 @@ class _UserHomePageState extends State<UserHomePage> {
     );
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 11) {
+      return 'Selamat pagi';
+    } else if (hour >= 11 && hour < 15) {
+      return 'Selamat siang';
+    } else if (hour >= 15 && hour < 18) {
+      return 'Selamat sore';
+    } else {
+      return 'Selamat malam';
+    }
+  }
+
   String _firstName(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return 'User';
     return trimmed.split(RegExp(r'\s+')).first;
+  }
+
+  ImageProvider? _profileImage(String? rawUrl) {
+    final value = rawUrl?.trim() ?? '';
+    if (value.isEmpty) return null;
+    if (value.startsWith('data:image')) {
+      final commaIndex = value.indexOf(',');
+      if (commaIndex == -1 || commaIndex + 1 >= value.length) return null;
+      try {
+        return MemoryImage(base64Decode(value.substring(commaIndex + 1)));
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return NetworkImage(value);
+    }
+    return null;
   }
 }
 
@@ -223,7 +283,7 @@ class _BillingHero extends StatelessWidget {
                 child: Text(
                   'TAGIHAN AKTIF',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.76),
+                    color: Colors.white.withValues(alpha: 0.76),
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.7,
                   ),
@@ -231,7 +291,7 @@ class _BillingHero extends StatelessWidget {
               ),
               Icon(
                 Icons.account_balance_wallet_outlined,
-                color: Colors.white.withOpacity(0.68),
+                color: Colors.white.withValues(alpha: 0.68),
               ),
             ],
           ),
@@ -264,7 +324,7 @@ class _BillingHero extends StatelessWidget {
             child: LinearProgressIndicator(
               value: dashboard.billProgress.clamp(0, 1).toDouble(),
               minHeight: 4,
-              backgroundColor: Colors.white.withOpacity(0.22),
+              backgroundColor: Colors.white.withValues(alpha: 0.22),
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
             ),
           ),
@@ -275,10 +335,10 @@ class _BillingHero extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context)
                     .push<bool>(
-                      MaterialPageRoute<bool>(
-                        builder: (_) => const BillingListPage(),
-                      ),
-                    )
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const BillingListPage(),
+                  ),
+                )
                     .then((changed) {
                   if (changed == true) {
                     UserRepository.requestProfileRefresh();
@@ -329,10 +389,10 @@ class _ServiceGrid extends StatelessWidget {
           onTap: () {
             Navigator.of(context)
                 .push<bool>(
-                  MaterialPageRoute<bool>(
-                    builder: (_) => const BillingListPage(),
-                  ),
-                )
+              MaterialPageRoute<bool>(
+                builder: (_) => const BillingListPage(),
+              ),
+            )
                 .then((changed) {
               if (changed == true) {
                 UserRepository.requestProfileRefresh();
@@ -477,74 +537,6 @@ class _AnnouncementCard extends StatelessWidget {
   }
 }
 
-class _RecommendationList extends StatelessWidget {
-  const _RecommendationList({required this.dashboard});
-
-  final UserDashboard dashboard;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 208,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: dashboard.recommendations.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
-        itemBuilder: (context, index) {
-          final item = dashboard.recommendations[index];
-          return SizedBox(
-            width: 238,
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  UserImage(
-                    url: item.imageUrl,
-                    icon: Icons.restaurant_rounded,
-                    height: 126,
-                    width: double.infinity,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: UserTheme.text,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          formatUserCurrency(item.price),
-                          style: const TextStyle(
-                            color: UserTheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _HomeCateringSubscriptions extends StatefulWidget {
   const _HomeCateringSubscriptions();
 
@@ -553,18 +545,29 @@ class _HomeCateringSubscriptions extends StatefulWidget {
       _HomeCateringSubscriptionsState();
 }
 
-class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> {
+class _HomeCateringSubscriptionsState
+    extends State<_HomeCateringSubscriptions> {
   List<CateringSubscriber> _active = [];
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _load(silent: true),
+    );
   }
 
-  Future<void> _load() async {
-    final result =
-        await UserRepository.getCateringSubscriptions(status: 'all');
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
     if (!mounted) return;
     final items = (result.data ?? [])
         .where((s) =>
@@ -581,25 +584,224 @@ class _HomeCateringSubscriptionsState extends State<_HomeCateringSubscriptions> 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        UserSectionHeader(
-          title: 'Paket Catering Aktif',
-          actionLabel: 'Lihat Semua',
-          onAction: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const UserCateringSubscriptionsPage(),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
         ..._active.map(
           (s) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: CateringSubscriptionCard(subscription: s, compact: true),
+            child: _CateringActiveHero(subscription: s),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CateringActiveHero extends StatelessWidget {
+  const _CateringActiveHero({required this.subscription});
+
+  final CateringSubscriber subscription;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = subscription.productName.isNotEmpty
+        ? subscription.productName
+        : subscription.packageLabel;
+    final hasPeriod = (subscription.startDate ?? '').trim().isNotEmpty &&
+        (subscription.endDate ?? '').trim().isNotEmpty;
+    final status = subscription.subscriptionStatus.toLowerCase();
+    final statusLabel = switch (status) {
+      'active' => 'AKTIF',
+      'pending' => 'MENUNGGU PERSETUJUAN',
+      'pending_payment' => 'MENUNGGU BAYAR',
+      'cancel_requested' => 'AKTIF - BATAL BULAN DEPAN',
+      _ => status.toUpperCase(),
+    };
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: subscription.orderId.isEmpty
+            ? null
+            : () async {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
+                final result =
+                    await UserRepository.getOrderDetail(subscription.orderId);
+                if (!context.mounted) return;
+                if (!result.isSuccess || result.data == null) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result.error ?? 'Gagal memuat detail langganan',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                navigator.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => UserOrderDetailPage(order: result.data!),
+                  ),
+                );
+              },
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBF6),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFFFD8B8)),
+            boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'PAKET CATERING AKTIF',
+                      style: TextStyle(
+                        color: Color(0xFFB85F00),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const UserCateringSubscriptionsPage(),
+                        ),
+                      );
+                    },
+                    child: const Text('Lihat Semua'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: UserTheme.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subscription.merchantName,
+                style: const TextStyle(color: UserTheme.muted),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _CateringHeroPill(
+                    icon: Icons.restaurant_rounded,
+                    text: subscription.packageLabel,
+                  ),
+                  const SizedBox(width: 8),
+                  _CateringHeroPill(
+                    icon: Icons.verified_rounded,
+                    text: statusLabel,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (hasPeriod)
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.date_range_outlined,
+                      size: 17,
+                      color: Color(0xFFB85F00),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${_fmt(subscription.startDate)} - ${_fmt(subscription.endDate)}',
+                        style: const TextStyle(
+                          color: UserTheme.text,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      formatUserCurrency(subscription.totalAmount),
+                      style: const TextStyle(
+                        color: Color(0xFFB85F00),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    formatUserCurrency(subscription.totalAmount),
+                    style: const TextStyle(
+                      color: Color(0xFFB85F00),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmt(String? raw) {
+    if (raw == null || raw.isEmpty) return '-';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return raw;
+    return formatShortDate(date);
+  }
+}
+
+class _CateringHeroPill extends StatelessWidget {
+  const _CateringHeroPill({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFFFE3C7)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: const Color(0xFFB85F00)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF8A4A00),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../core/api_service.dart';
+import '../../../data/repositories/owner_repository.dart';
 
 class OwnerNotificationsPage extends StatefulWidget {
   const OwnerNotificationsPage({super.key});
@@ -10,81 +12,111 @@ class OwnerNotificationsPage extends StatefulWidget {
 }
 
 class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
-  int _tab = 0;
+  int _tab = 0; // 0 = Semua, 1 = Belum Dibaca, 2 = Pembayaran
+  bool _isLoading = true;
+  String? _error;
+  List<dynamic> _allNotifications = [];
 
-  // Sample notification data
-  final List<_NotificationData> _allNotifications = [
-    const _NotificationData(
-      title: 'Pembayaran Baru',
-      subtitle: 'Andi Saputra telah mengirimkan bukti transfer untuk Kamar A-12 sebesar Rp 1.500.000.',
-      time: 'Baru saja',
-      icon: Icons.payments_rounded,
-      badge: 'BARU',
-      category: 'pembayaran',
-      isRead: false,
-    ),
-    const _NotificationData(
-      title: 'Penghuni Baru',
-      subtitle: 'Verifikasi identitas Rizky Pratama telah disetujui. Siap untuk check-in ke Kamar C-01.',
-      time: '2 jam lalu',
-      icon: Icons.person_add_alt_1_rounded,
-      category: 'penghuni',
-      isRead: false,
-    ),
-    const _NotificationData(
-      title: 'Pembayaran Berhasil',
-      subtitle: 'Pembayaran bulanan dari Budi Santoso untuk Kamar A-01 sebesar Rp 1.500.000 telah dikonfirmasi.',
-      time: '1 jam lalu',
-      icon: Icons.check_circle_outline_rounded,
-      category: 'pembayaran',
-      isRead: true,
-    ),
-    const _NotificationData(
-      title: 'Laporan Selesai',
-      subtitle: 'Perbaikan keran air di Kamar D-04 telah diselesaikan oleh teknisi.',
-      time: 'Kemarin 22:15',
-      icon: Icons.check_circle_rounded,
-      badge: 'SELESAI',
-      category: 'laporan',
-      isRead: true,
-    ),
-    const _NotificationData(
-      title: 'Pembayaran Tertunda',
-      subtitle: 'Pembayaran dari Siti Aminah untuk Kamar B-05 belum dikonfirmasi.',
-      time: 'Kemarin 18:30',
-      icon: Icons.warning_amber_rounded,
-      category: 'pembayaran',
-      isRead: true,
-    ),
-    const _NotificationData(
-      title: 'Permintaan Check-out',
-      subtitle: 'Dian Sastro mengajukan check-out untuk Kamar A-12.',
-      time: 'Kemarin 14:00',
-      icon: Icons.exit_to_app_rounded,
-      category: 'penghuni',
-      isRead: true,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
 
-  List<_NotificationData> get _filteredNotifications {
+  Future<void> _loadNotifications() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final res = await ApiService.get('api/owner_notifications');
+    if (!mounted) return;
+
+    if (!res.success) {
+      setState(() {
+        _isLoading = false;
+        _error = res.message ?? 'Gagal memuat notifikasi';
+      });
+      return;
+    }
+
+    try {
+      final list = res.data!['data'] as List<dynamic>;
+      setState(() {
+        _allNotifications = list;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Format data notifikasi tidak valid';
+      });
+    }
+  }
+
+  Future<void> _markAsRead(int? notifId) async {
+    final res = await ApiService.put('api/owner_notifications', {
+      'id': notifId ?? 0,
+    });
+
+    if (!mounted) return;
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.message ?? 'Gagal menandai dibaca'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _allNotifications = _allNotifications.map((notification) {
+        if (notifId == null || notification['id'] == notifId) {
+          return {
+            ...Map<String, dynamic>.from(notification as Map),
+            'isRead': true,
+          };
+        }
+        return notification;
+      }).toList();
+    });
+    if (notifId == null) {
+      OwnerRepository.setUnreadNotificationCount(0);
+    } else {
+      OwnerRepository.invalidateNotificationCountCache();
+    }
+
+    await _loadNotifications();
+  }
+
+  List<dynamic> get _filteredNotifications {
     switch (_tab) {
       case 1: // Belum Dibaca
-        return _allNotifications.where((n) => !n.isRead).toList();
+        return _allNotifications.where((n) => n['isRead'] == false).toList();
       case 2: // Pembayaran
-        return _allNotifications.where((n) => n.category == 'pembayaran').toList();
+        return _allNotifications
+            .where((n) => n['category'] == 'pembayaran')
+            .toList();
       default: // Semua
         return _allNotifications;
     }
   }
 
-  void _showNotificationDetail(_NotificationData notification) {
+  void _showNotificationDetail(Map<String, dynamic> notification) {
+    // Tandai sudah dibaca saat diklik
+    if (notification['isRead'] == false) {
+      _markAsRead(notification['id'] as int);
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) => SingleChildScrollView(
           controller: scrollController,
@@ -109,10 +141,11 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryGreen.withOpacity(0.1),
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(notification.icon, color: AppTheme.primaryGreen, size: 28),
+                      child: const Icon(Icons.notifications_active_rounded,
+                          color: AppTheme.primaryGreen, size: 28),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -120,57 +153,40 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            notification.title,
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                            notification['title'] as String,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 16),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            notification.time,
-                            style: TextStyle(color: Colors.grey.shade600),
+                            notification['time'] as String,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 12),
                           ),
                         ],
                       ),
                     ),
-                    if (notification.badge != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryGreen,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          notification.badge!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 20),
                 const Text(
                   'Detail Pesan',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  notification.subtitle,
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.5),
+                  notification['subtitle'] as String,
+                  style: TextStyle(
+                      color: Colors.grey.shade700, height: 1.5, fontSize: 13),
                 ),
                 const SizedBox(height: 24),
-                if (!notification.isRead)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () {
-                        setState(() {});
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Tandai Sudah Dibaca'),
-                    ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Tutup'),
                   ),
+                ),
               ],
             ),
           ),
@@ -181,120 +197,154 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _filteredNotifications;
+
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
-      appBar: AppBar(title: const Text('Pusat Notifikasi')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
-        children: [
-          Text(
-            'Kelola pembaruan aktivitas kos Anda hari ini.',
-            style: TextStyle(color: Colors.grey.shade700),
+      appBar: AppBar(
+        title: const Text('Pusat Notifikasi'),
+        actions: [
+          IconButton(
+            tooltip: 'Tandai Semua Dibaca',
+            icon: const Icon(Icons.done_all_rounded),
+            onPressed: () => _markAsRead(null),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: () => setState(() => _tab = 0),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _tab == 0
-                            ? AppTheme.primaryGreen.withOpacity(0.14)
-                            : Colors.transparent,
-                        foregroundColor:
-                            _tab == 0 ? AppTheme.primaryGreen : Colors.grey.shade700,
-                      ),
-                      child: const Text('Semua'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: () => setState(() => _tab = 1),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _tab == 1
-                            ? AppTheme.primaryGreen.withOpacity(0.14)
-                            : Colors.transparent,
-                        foregroundColor:
-                            _tab == 1 ? AppTheme.primaryGreen : Colors.grey.shade700,
-                      ),
-                      child: const Text('Belum Dibaca'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: () => setState(() => _tab = 2),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _tab == 2
-                            ? AppTheme.primaryGreen.withOpacity(0.14)
-                            : Colors.transparent,
-                        foregroundColor:
-                            _tab == 2 ? AppTheme.primaryGreen : Colors.grey.shade700,
-                      ),
-                      child: const Text('Pembayaran'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadNotifications,
+            icon: const Icon(Icons.refresh),
           ),
-          const SizedBox(height: 12),
-          if (_filteredNotifications.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(40),
-                child: Column(
-                  children: [
-                    Icon(Icons.notifications_none_rounded, size: 64, color: Colors.grey.shade400),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Tidak ada notifikasi',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ..._filteredNotifications.map(
-              (notif) => _NotifCard(
-                title: notif.title,
-                subtitle: notif.subtitle,
-                time: notif.time,
-                icon: notif.icon,
-                badge: notif.badge,
-                isRead: notif.isRead,
-                onTap: () => _showNotificationDetail(notif),
-              ),
-            ),
         ],
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline,
+                            size: 48, color: Colors.red.shade400),
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _loadNotifications,
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadNotifications,
+                  color: AppTheme.primaryGreen,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                    children: [
+                      Text(
+                        'Kelola pembaruan aktivitas kos Anda hari ini.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.tonal(
+                                  onPressed: () => setState(() => _tab = 0),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _tab == 0
+                                        ? AppTheme.primaryGreen
+                                            .withValues(alpha: 0.14)
+                                        : Colors.transparent,
+                                    foregroundColor: _tab == 0
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
+                                  ),
+                                  child: const Text('Semua'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton.tonal(
+                                  onPressed: () => setState(() => _tab = 1),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _tab == 1
+                                        ? AppTheme.primaryGreen
+                                            .withValues(alpha: 0.14)
+                                        : Colors.transparent,
+                                    foregroundColor: _tab == 1
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
+                                  ),
+                                  child: const Text('Unread'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton.tonal(
+                                  onPressed: () => setState(() => _tab = 2),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _tab == 2
+                                        ? AppTheme.primaryGreen
+                                            .withValues(alpha: 0.14)
+                                        : Colors.transparent,
+                                    foregroundColor: _tab == 2
+                                        ? AppTheme.primaryGreen
+                                        : Colors.grey.shade700,
+                                  ),
+                                  child: const Text('Bayar'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (filtered.isEmpty)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(40),
+                            child: Column(
+                              children: [
+                                Icon(Icons.notifications_none_rounded,
+                                    size: 64, color: Colors.grey.shade400),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Tidak ada notifikasi',
+                                  style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 15),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        ...filtered.map(
+                          (notif) => _NotifCard(
+                            title: notif['title'] as String,
+                            subtitle: notif['subtitle'] as String,
+                            time: notif['time'] as String,
+                            isRead: notif['isRead'] as bool,
+                            onTap: () => _showNotificationDetail(
+                                notif as Map<String, dynamic>),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
     );
   }
-}
-
-class _NotificationData {
-  final String title;
-  final String subtitle;
-  final String time;
-  final IconData icon;
-  final String? badge;
-  final String category;
-  final bool isRead;
-
-  const _NotificationData({
-    required this.title,
-    required this.subtitle,
-    required this.time,
-    required this.icon,
-    this.badge,
-    required this.category,
-    required this.isRead,
-  });
 }
 
 class _NotifCard extends StatelessWidget {
@@ -302,22 +352,27 @@ class _NotifCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.time,
-    required this.icon,
-    this.badge,
-    this.isRead = false,
+    required this.isRead,
     this.onTap,
   });
 
   final String title;
   final String subtitle;
   final String time;
-  final IconData icon;
-  final String? badge;
   final bool isRead;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    IconData getIcon() {
+      final t = title.toLowerCase();
+      if (t.contains('bayar')) return Icons.payments_rounded;
+      if (t.contains('huni') || t.contains('kamar')) {
+        return Icons.person_add_rounded;
+      }
+      return Icons.info_outline_rounded;
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -336,7 +391,7 @@ class _NotifCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  icon,
+                  getIcon(),
                   color: isRead ? Colors.grey : AppTheme.primaryGreen,
                 ),
               ),
@@ -350,41 +405,50 @@ class _NotifCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color:
+                                  isRead ? Colors.grey.shade700 : Colors.black,
+                            ),
                           ),
                         ),
-                        if (badge != null)
+                        if (!isRead)
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              badge!,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.primaryGreen,
-                              ),
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.primaryGreen,
+                              shape: BoxShape.circle,
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(subtitle, style: TextStyle(color: Colors.grey.shade700)),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: isRead
+                            ? Colors.grey.shade600
+                            : Colors.grey.shade800,
+                        fontSize: 13,
+                        height: 1.3,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        Text(time, style: TextStyle(color: Colors.grey.shade600)),
+                        Text(time,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 11)),
                         const Spacer(),
                         if (onTap != null)
-                          TextButton(
-                            onPressed: onTap,
-                            child: const Text('Lihat Detail →'),
+                          const Text(
+                            'Lihat Detail →',
+                            style: TextStyle(
+                                color: AppTheme.primaryGreen,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
                           ),
                       ],
                     ),

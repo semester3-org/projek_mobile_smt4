@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../data/repositories/merchant_repository.dart';
+import '../../widgets/exit_guard.dart';
 import 'pages/laundry/laundry_dashboard_page.dart';
 import 'pages/laundry/laundry_orders_page.dart';
 import 'pages/laundry/laundry_services_page.dart';
@@ -26,6 +31,8 @@ class _MerchantShellState extends State<MerchantShell> {
   Widget build(BuildContext context) {
     final auth = AuthScope.of(context);
     final merchantType = auth.session?.merchantType ?? MerchantType.laundry;
+    final orderBadgeKey =
+        'merchant_order_last_opened_${auth.session?.email ?? merchantType.name}';
 
     final List<Widget> pages = merchantType == MerchantType.laundry
         ? [
@@ -43,14 +50,24 @@ class _MerchantShellState extends State<MerchantShell> {
             const MerchantProfilePage(),
           ];
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: pages,
-      ),
-      bottomNavigationBar: MerchantBottomNav(
-        currentIndex: _index,
-        onChanged: (i) => setState(() => _index = i),
+    return ExitGuard(
+      child: Scaffold(
+        body: IndexedStack(
+          index: _index,
+          children: pages,
+        ),
+        bottomNavigationBar: MerchantBottomNav(
+          currentIndex: _index,
+          orderBadgeKey: orderBadgeKey,
+          onChanged: (i) {
+            if (i == 1) {
+              unawaited(_MerchantOrderBadgeState.markOrdersOpened(
+                orderBadgeKey,
+              ));
+            }
+            setState(() => _index = i);
+          },
+        ),
       ),
     );
   }
@@ -60,10 +77,12 @@ class MerchantBottomNav extends StatelessWidget {
   const MerchantBottomNav({
     super.key,
     required this.currentIndex,
+    required this.orderBadgeKey,
     required this.onChanged,
   });
 
   final int currentIndex;
+  final String orderBadgeKey;
   final ValueChanged<int> onChanged;
 
   static const _items = [
@@ -96,6 +115,8 @@ class MerchantBottomNav extends StatelessWidget {
                   activeIcon: _items[i].$2,
                   label: _items[i].$3,
                   selected: i == currentIndex,
+                  showBadge: i == 1,
+                  badgeStorageKey: orderBadgeKey,
                   onTap: () => onChanged(i),
                 ),
               ),
@@ -112,6 +133,8 @@ class _MerchantBottomNavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.selected,
+    this.showBadge = false,
+    required this.badgeStorageKey,
     required this.onTap,
   });
 
@@ -119,6 +142,8 @@ class _MerchantBottomNavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final bool selected;
+  final bool showBadge;
+  final String badgeStorageKey;
   final VoidCallback onTap;
 
   @override
@@ -138,7 +163,14 @@ class _MerchantBottomNavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(selected ? activeIcon : icon, size: 22, color: color),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(selected ? activeIcon : icon, size: 22, color: color),
+                if (showBadge)
+                  _MerchantOrderBadge(storageKey: badgeStorageKey),
+              ],
+            ),
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -153,6 +185,117 @@ class _MerchantBottomNavItem extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MerchantOrderBadge extends StatefulWidget {
+  const _MerchantOrderBadge({required this.storageKey});
+
+  final String storageKey;
+
+  @override
+  State<_MerchantOrderBadge> createState() => _MerchantOrderBadgeState();
+}
+
+class _MerchantOrderBadgeState extends State<_MerchantOrderBadge> {
+  static final _clearController = StreamController<String>.broadcast();
+  static final Map<String, DateTime> _lastOpenedAtByKey = {};
+
+  static Future<void> markOrdersOpened(String storageKey) async {
+    final openedAt = DateTime.now();
+    _lastOpenedAtByKey[storageKey] = openedAt;
+    _clearController.add(storageKey);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(storageKey, openedAt.toIso8601String());
+  }
+
+  Timer? _timer;
+  StreamSubscription<String>? _clearSubscription;
+  int _count = 0;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _clearSubscription = _clearController.stream.listen((storageKey) {
+      if (storageKey == widget.storageKey && mounted && _count != 0) {
+        setState(() => _count = 0);
+      }
+    });
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 18), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _clearSubscription?.cancel();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    try {
+      final result = await MerchantRepository.getOrders(status: 'pending');
+      if (!mounted) return;
+      final openedAt = await _lastOpenedAt();
+      if (!mounted) return;
+      final orders = result.data ?? const [];
+      final next = orders
+          .where((order) =>
+              order.status == 'pending' &&
+              (openedAt == null || order.createdAt.isAfter(openedAt)))
+          .length;
+      if (next != _count) {
+        setState(() => _count = next);
+      }
+    } finally {
+      _loading = false;
+    }
+  }
+
+  Future<DateTime?> _lastOpenedAt() async {
+    final cached = _lastOpenedAtByKey[widget.storageKey];
+    if (cached != null) return cached;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(widget.storageKey);
+    if (raw == null || raw.isEmpty) return null;
+
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) {
+      _lastOpenedAtByKey[widget.storageKey] = parsed;
+    }
+    return parsed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_count <= 0) return const SizedBox.shrink();
+    return Positioned(
+      right: -10,
+      top: -9,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: MerchantPalette.danger,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white, width: 1.4),
+        ),
+        child: Text(
+          _count > 99 ? '99+' : _count.toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
       ),
     );

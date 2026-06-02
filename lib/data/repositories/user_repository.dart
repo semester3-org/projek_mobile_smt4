@@ -19,6 +19,22 @@ class UserRepository {
   static const String _profileKey = 'user_profile';
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
+  static const Duration _dashboardCacheTtl = Duration(seconds: 12);
+  static const Duration _merchantListCacheTtl = Duration(seconds: 10);
+  static const Duration _merchantDetailCacheTtl = Duration(seconds: 12);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
+  static const Duration _profileCacheTtl = Duration(seconds: 15);
+  static const Duration _favoriteKeysCacheTtl = Duration(seconds: 15);
+  static _DashboardCacheEntry? _dashboardCache;
+  static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
+  static final Map<String, _MerchantDetailCacheEntry> _merchantDetailCache = {};
+  static _ProfileCacheEntry? _profileCache;
+  static Set<String>? _favoriteKeysCache;
+  static DateTime? _favoriteKeysCachedAt;
+  static int? _unreadNotificationCountCache;
+  static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();
@@ -26,15 +42,44 @@ class UserRepository {
   static Stream<void> get profileRefreshRequests =>
       _profileRefreshController.stream;
 
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
+
   static void requestProfileRefresh() {
     if (!_profileRefreshController.isClosed) {
       _profileRefreshController.add(null);
     }
   }
 
+  static void clearSessionCache() {
+    _dashboardCache = null;
+    _merchantListCache.clear();
+    _merchantDetailCache.clear();
+    _profileCache = null;
+    _favoriteKeysCache = null;
+    _favoriteKeysCachedAt = null;
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
   static Future<RepoResult<UserDashboard>> getDashboard({
     required String displayName,
+    bool forceRefresh = false,
   }) async {
+    final cached = _dashboardCache;
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _dashboardCacheTtl) {
+      return RepoResult.ok(cached.dashboard);
+    }
+
     final res = await ApiService.get('api/user_dashboard');
 
     if (!res.success) {
@@ -43,7 +88,9 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserDashboard.fromJson(data));
+      final dashboard = UserDashboard.fromJson(data);
+      _dashboardCache = _DashboardCacheEntry(dashboard, DateTime.now());
+      return RepoResult.ok(dashboard);
     } catch (_) {
       return RepoResult.ok(UserDashboard.fallback(displayName));
     }
@@ -53,8 +100,17 @@ class UserRepository {
     String type, {
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
-    final params = {'type': type};
+    final cacheKey = _merchantListCacheKey(type, latitude, longitude);
+    final cached = _merchantListCache[cacheKey];
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _merchantListCacheTtl) {
+      return RepoResult.ok(List<UserMerchant>.of(cached.items));
+    }
+
+    final params = {'type': type, 'summary': '1'};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
       params['lng'] = longitude.toString();
@@ -65,7 +121,10 @@ class UserRepository {
     );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackMerchants(type));
+      if (cached != null) {
+        return RepoResult.ok(List<UserMerchant>.of(cached.items));
+      }
+      return RepoResult.fail(res.message ?? 'Gagal memuat merchant');
     }
 
     try {
@@ -73,9 +132,17 @@ class UserRepository {
           .map((e) => UserMerchant.fromJson(e as Map<String, dynamic>))
           .toList();
       final unique = _dedupeMerchants(list);
-      return RepoResult.ok(unique.isEmpty ? _fallbackMerchants(type) : unique);
+      final items = unique;
+      _merchantListCache[cacheKey] = _MerchantListCacheEntry(
+        List<UserMerchant>.of(items),
+        DateTime.now(),
+      );
+      return RepoResult.ok(items);
     } catch (_) {
-      return RepoResult.ok(_fallbackMerchants(type));
+      if (cached != null) {
+        return RepoResult.ok(List<UserMerchant>.of(cached.items));
+      }
+      return const RepoResult.fail('Gagal membaca data merchant');
     }
   }
 
@@ -84,7 +151,16 @@ class UserRepository {
     required String id,
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
+    final cacheKey = _merchantDetailCacheKey(type, id, latitude, longitude);
+    final cached = _merchantDetailCache[cacheKey];
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _merchantDetailCacheTtl) {
+      return RepoResult.ok(cached.item);
+    }
+
     final params = {'type': type, 'id': id};
     if (latitude != null && longitude != null) {
       params['lat'] = latitude.toString();
@@ -96,15 +172,41 @@ class UserRepository {
     );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackMerchants(type).first);
+      if (cached != null) return RepoResult.ok(cached.item);
+      return RepoResult.fail(res.message ?? 'Gagal memuat detail merchant');
     }
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(UserMerchant.fromJson(data));
+      final merchant = UserMerchant.fromJson(data);
+      _merchantDetailCache[cacheKey] =
+          _MerchantDetailCacheEntry(merchant, DateTime.now());
+      return RepoResult.ok(merchant);
     } catch (_) {
-      return RepoResult.ok(_fallbackMerchants(type).first);
+      if (cached != null) return RepoResult.ok(cached.item);
+      return const RepoResult.fail('Gagal membaca detail merchant');
     }
+  }
+
+  static String _merchantListCacheKey(
+    String type,
+    double? latitude,
+    double? longitude,
+  ) {
+    final lat = latitude == null ? 'none' : latitude.toStringAsFixed(3);
+    final lng = longitude == null ? 'none' : longitude.toStringAsFixed(3);
+    return '$type:$lat:$lng';
+  }
+
+  static String _merchantDetailCacheKey(
+    String type,
+    String id,
+    double? latitude,
+    double? longitude,
+  ) {
+    final lat = latitude == null ? 'none' : latitude.toStringAsFixed(3);
+    final lng = longitude == null ? 'none' : longitude.toStringAsFixed(3);
+    return '$type:$id:$lat:$lng';
   }
 
   static Future<RepoResult<List<BillingRecord>>> getBillings() async {
@@ -237,16 +339,16 @@ class UserRepository {
     final res = await ApiService.get('api/user_orders');
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackOrders());
+      return RepoResult.fail(res.message ?? 'Gagal memuat pesanan');
     }
 
     try {
       final list = (res.data!['data'] as List)
           .map((e) => Order.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list.isEmpty ? _fallbackOrders() : list);
-    } catch (_) {
-      return RepoResult.ok(_fallbackOrders());
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan: $e');
     }
   }
 
@@ -260,6 +362,7 @@ class UserRepository {
     required String paymentMethod,
     int? subscriptionDays,
     Map<String, int>? quantities,
+    List<String> addonIds = const [],
     String? customerName,
     String? customerPhone,
     String? notes,
@@ -277,6 +380,8 @@ class UserRepository {
       'customerName': customerName ?? '',
       'customerPhone': customerPhone ?? '',
       'notes': notes ?? '',
+      if (merchant.type == 'laundry' && addonIds.isNotEmpty)
+        'addonIds': addonIds,
       'items': items
           .map((item) => {
                 'productId': item.id,
@@ -418,20 +523,31 @@ class UserRepository {
     }
   }
 
-  static Future<RepoResult<List<AppNotification>>> getNotifications() async {
-    final res = await ApiService.get('api/user_notifications');
+  static Future<RepoResult<List<AppNotification>>> getNotifications({
+    bool allowFallback = true,
+    int limit = 30,
+  }) async {
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
 
     if (!res.success) {
-      return RepoResult.ok(_fallbackNotifications());
+      return allowFallback
+          ? RepoResult.ok(_fallbackNotifications())
+          : RepoResult.fail(res.message ?? 'Gagal memuat notifikasi');
     }
 
     try {
       final list = (res.data!['data'] as List)
           .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(list.isEmpty ? _fallbackNotifications() : list);
+      return RepoResult.ok(
+          list.isEmpty && allowFallback ? _fallbackNotifications() : list);
     } catch (_) {
-      return RepoResult.ok(_fallbackNotifications());
+      return allowFallback
+          ? RepoResult.ok(_fallbackNotifications())
+          : const RepoResult.fail('Gagal membaca notifikasi');
     }
   }
 
@@ -443,6 +559,8 @@ class UserRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
+    _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -453,20 +571,75 @@ class UserRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal membaca semua notifikasi');
     }
+    _unreadNotificationCountCache = 0;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
-    final result = await getNotifications();
-    return (result.data ?? const <AppNotification>[])
-        .any((notification) => notification.isUnread);
+    return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
+  static Future<int> unreadNotificationCount() async {
+    final cachedAt = _unreadNotificationCountCachedAt;
+    final cached = _unreadNotificationCountCache;
+    if (cachedAt != null &&
+        cached != null &&
+        DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
+      return cached;
+    }
+    final res = await ApiService.get(
+      'api/user_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
+    _unreadNotificationCountCache = count;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    return count;
+  }
+
+  static Future<RepoResult<bool>> updateNotificationPresence({
+    required bool isActive,
+    String? fcmToken,
+    String platform = 'flutter',
+  }) async {
+    final payload = <String, dynamic>{
+      'isActive': isActive,
+      'platform': platform,
+      if (fcmToken != null && fcmToken.trim().isNotEmpty)
+        'fcmToken': fcmToken.trim(),
+    };
+    final res =
+        await ApiService.post('api/user_notification_presence', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperbarui notifikasi');
+    }
+    return const RepoResult.ok(true);
   }
 
   static Future<RepoResult<UserProfile>> getProfile({
     required String displayName,
     required String email,
     required String role,
+    bool forceRefresh = false,
   }) async {
+    final cached = _profileCache;
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) < _profileCacheTtl) {
+      return RepoResult.ok(cached.profile);
+    }
+
     final res = await ApiService.get('api/user_profile');
 
     if (!res.success) {
@@ -480,8 +653,9 @@ class UserRepository {
 
     try {
       final data = res.data!['data'] as Map<String, dynamic>;
-      return RepoResult.ok(
-          await _mergeLocalProfile(UserProfile.fromJson(data)));
+      final profile = await _mergeLocalProfile(UserProfile.fromJson(data));
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      return RepoResult.ok(profile);
     } catch (_) {
       return RepoResult.ok(await _mergeLocalProfile(UserProfile(
         id: '',
@@ -512,6 +686,10 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       final profile = UserProfile.fromJson(data);
       await _saveLocalProfile(profile);
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      _dashboardCache = null;
+      _merchantListCache.clear();
+      _merchantDetailCache.clear();
       requestProfileRefresh();
       return RepoResult.ok(profile);
     } catch (_) {
@@ -526,6 +704,7 @@ class UserRepository {
     double? latitude,
     double? longitude,
     String? photoUrl,
+    String? ktpPhoto,
   }) async {
     final res = await ApiService.put('api/user_profile', {
       'displayName': displayName.trim(),
@@ -534,6 +713,7 @@ class UserRepository {
       'latitude': latitude,
       'longitude': longitude,
       'photoUrl': photoUrl?.trim() ?? '',
+      'ktpPhoto': ktpPhoto?.trim() ?? '',
     });
 
     if (!res.success) {
@@ -544,6 +724,8 @@ class UserRepository {
       final data = res.data!['data'] as Map<String, dynamic>;
       final profile = UserProfile.fromJson(data);
       await _saveLocalProfile(profile);
+      _profileCache = _ProfileCacheEntry(profile, DateTime.now());
+      _dashboardCache = null;
       requestProfileRefresh();
       return RepoResult.ok(profile);
     } catch (_) {
@@ -568,6 +750,14 @@ class UserRepository {
   }
 
   static Future<Set<String>> getFavoriteMerchantKeys() async {
+    final cachedAt = _favoriteKeysCachedAt;
+    final cached = _favoriteKeysCache;
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _favoriteKeysCacheTtl) {
+      return Set<String>.of(cached);
+    }
+
     final res = await ApiService.get('api/user_favorite_merchants');
     if (res.success) {
       try {
@@ -583,7 +773,11 @@ class UserRepository {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    return (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+    final keys =
+        (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
+    return keys;
   }
 
   static Future<bool> isMerchantFavorite({
@@ -611,6 +805,7 @@ class UserRepository {
             .map((e) => e.toString())
             .toSet();
         await _saveFavoriteMerchantKeys(keys);
+        _merchantDetailCache.clear();
         return favorite;
       } catch (_) {
         // Fall through to local cache.
@@ -628,6 +823,9 @@ class UserRepository {
       keys.remove(key);
     }
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
+    _merchantDetailCache.clear();
     return next;
   }
 
@@ -650,6 +848,8 @@ class UserRepository {
   static Future<void> _saveFavoriteMerchantKeys(Set<String> keys) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
+    _favoriteKeysCache = Set<String>.of(keys);
+    _favoriteKeysCachedAt = DateTime.now();
   }
 
   static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
@@ -667,6 +867,7 @@ class UserRepository {
         latitude: local.latitude,
         longitude: local.longitude,
         photoUrl: local.photoUrl,
+        ktpPhoto: local.ktpPhoto,
         activeRentHistory: profile.activeRentHistory,
       );
     } catch (_) {
@@ -749,6 +950,29 @@ class UserRepository {
     }
   }
 
+  static Future<RepoResult<Order>> extendCateringSubscription(
+    String orderId, {
+    required int days,
+  }) async {
+    final res = await ApiService.put('api/user_orders', {
+      'id': orderId,
+      'action': 'extend_subscription',
+      'days': days,
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memperpanjang langganan');
+    }
+
+    try {
+      return RepoResult.ok(
+        Order.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return const RepoResult.fail('Gagal membaca status langganan terbaru');
+    }
+  }
+
   static Future<RepoResult<UserMerchantReviewState>> submitMerchantRating({
     required String type,
     required String merchantId,
@@ -812,229 +1036,6 @@ class UserRepository {
     }
   }
 
-  static List<UserMerchant> _fallbackMerchants(String type) {
-    switch (type) {
-      case 'laundry':
-        return const [
-          UserMerchant(
-            id: 'l1',
-            type: 'laundry',
-            name: 'Clean & Fresh Laundry',
-            subtitle: 'Antar jemput dan express 6 jam',
-            address: 'Jl. Sudirman No. 45, Jakarta Pusat',
-            rating: 4.8,
-            reviewCount: 120,
-            distanceKm: 0.8,
-            imageUrl:
-                'https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=900',
-            status: 'Tersedia',
-            tags: ['ANTAR JEMPUT', 'EXPRESS 6 JAM'],
-            minPrice: 8000,
-            priceUnit: '/kg',
-            eta: '25-30 mnt',
-            openHours: '08:00 - 21:00',
-            description:
-                'Laundry cepat dengan layanan cuci lipat, setrika, satuan, dan antar jemput area Sentra Ruang.',
-            phone: '+62 812-3456-7890',
-            email: 'halo@cleanfresh.id',
-            menuItems: [
-              MerchantMenuItem(
-                id: 'l1-s1',
-                name: 'Cuci Lipat (Kg)',
-                description: 'Regular',
-                price: 8000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=400',
-              ),
-              MerchantMenuItem(
-                id: 'l1-s2',
-                name: 'Cuci Setrika (Kg)',
-                description: 'Rapi dan wangi',
-                price: 12000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1521656693074-0ef32e80a5d5?w=400',
-              ),
-            ],
-            reviews: [
-              MerchantReview(
-                reviewer: 'Siska Amelia',
-                rating: 5,
-                comment:
-                    'Hasil cucian sangat bersih dan wangi. Pengirimannya juga cepat, kurirnya ramah.',
-                timeLabel: '2 hari yang lalu',
-              ),
-              MerchantReview(
-                reviewer: 'Budi Santoso',
-                rating: 4,
-                comment:
-                    'Layanan oke, lipatan rapi sekali. Secara keseluruhan puas dengan hasilnya.',
-                timeLabel: '1 minggu yang lalu',
-              ),
-            ],
-          ),
-          UserMerchant(
-            id: 'l2',
-            type: 'laundry',
-            name: 'Kiloan Express',
-            subtitle: 'Cuci sepatu dan kiloan cepat',
-            address: 'Jl. Melati No. 18, Jakarta Selatan',
-            rating: 4.5,
-            reviewCount: 80,
-            distanceKm: 1.2,
-            imageUrl:
-                'https://images.unsplash.com/photo-1626806819282-2c1dc01a5e0c?w=900',
-            status: 'Tersedia',
-            tags: ['CUCI SEPATU', 'KILOAN'],
-            minPrice: 7500,
-            priceUnit: '/kg',
-            eta: '35-45 mnt',
-            openHours: '07:00 - 22:00',
-            description:
-                'Pilihan praktis untuk cuci kiloan, sepatu, dan perawatan pakaian harian.',
-            phone: '+62 812-1111-2244',
-            email: 'cs@kiloanexpress.id',
-            menuItems: [],
-            reviews: [],
-          ),
-        ];
-      case 'catering':
-        return const [
-          UserMerchant(
-            id: 'cat1',
-            type: 'catering',
-            name: 'Green Garden Catering',
-            subtitle: 'Masakan sehat dan diet kalori',
-            address: 'Jl. Kemang Raya No. 9, Jakarta Selatan',
-            rating: 4.8,
-            reviewCount: 124,
-            distanceKm: 1.2,
-            imageUrl:
-                'https://images.unsplash.com/photo-1543353071-873f17a7a088?w=900',
-            status: 'Tersedia',
-            tags: ['DIET SEHAT', 'HARIAN'],
-            minPrice: 25000,
-            priceUnit: '',
-            eta: '25-30 mnt',
-            openHours: '08:00 - 20:00',
-            description:
-                'Menu harian bergizi untuk penghuni kos, cocok untuk makan siang dan makan malam.',
-            phone: '+62 812-4455-7788',
-            email: 'order@greengarden.id',
-            menuItems: [
-              MerchantMenuItem(
-                id: 'cat1-m1',
-                name: 'Paket Nasi Kotak Premium',
-                description: 'Lengkap dengan 5 lauk pauk',
-                price: 45000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400',
-              ),
-              MerchantMenuItem(
-                id: 'cat1-m2',
-                name: 'Catering Diet Sehat',
-                description: 'Rendah kalori, tinggi protein',
-                price: 55000,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400',
-              ),
-            ],
-            reviews: [
-              MerchantReview(
-                reviewer: 'Anita Wijaya',
-                rating: 5,
-                comment:
-                    'Makanannya enak dan porsinya pas. Kemasan juga sangat rapi.',
-                timeLabel: '2 jam yang lalu',
-              ),
-              MerchantReview(
-                reviewer: 'Budi Santoso',
-                rating: 4.5,
-                comment:
-                    'Pengirimannya tepat waktu. Menu catering dietnya membantu pola makan.',
-                timeLabel: 'Kemarin',
-              ),
-            ],
-          ),
-          UserMerchant(
-            id: 'cat2',
-            type: 'catering',
-            name: 'Dapur Nusantara',
-            subtitle: 'Masakan tradisional Indonesia',
-            address: 'Jl. Panglima Polim No. 11',
-            rating: 4.9,
-            reviewCount: 210,
-            distanceKm: 2.5,
-            imageUrl:
-                'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=900',
-            status: 'Tersedia',
-            tags: ['NASI BOX', 'PRASMANAN'],
-            minPrice: 35000,
-            priceUnit: '',
-            eta: '35-45 mnt',
-            openHours: '07:00 - 21:00',
-            description: 'Menu nusantara untuk kebutuhan harian dan acara kos.',
-            phone: '+62 812-9988-1010',
-            email: 'dapur@nusantara.id',
-            menuItems: [],
-            reviews: [],
-          ),
-        ];
-      default:
-        return const [];
-    }
-  }
-
-  static List<Order> _fallbackOrders() {
-    return [
-      Order(
-        id: 'SR-CATER-88219',
-        merchantName: 'Dapur Nusantara',
-        service: 'catering',
-        orderDate: DateTime(2023, 10, 24, 14, 20),
-        totalAmount: 90000,
-        status: 'pending',
-        paymentMethod: 'GOPAY',
-        items: [
-          OrderItem(
-            name: 'Nasi Goreng Spesial Nusantara',
-            quantity: 2,
-            price: 35000,
-            subtotal: 70000,
-          ),
-          OrderItem(
-            name: 'Es Jeruk Peras Murni',
-            quantity: 1,
-            price: 15000,
-            subtotal: 15000,
-          ),
-        ],
-      ),
-      Order(
-        id: 'SR-LAUNDRY-001',
-        merchantName: 'Clean & Fresh Laundry Express',
-        service: 'laundry',
-        orderDate: DateTime(2023, 10, 24, 14, 20),
-        totalAmount: 70000,
-        status: 'pending',
-        paymentMethod: 'GOPAY',
-        items: [
-          OrderItem(
-            name: 'Cuci Lipat (Regular)',
-            quantity: 5,
-            price: 8000,
-            subtotal: 40000,
-          ),
-          OrderItem(
-            name: 'Cuci Satuan - Jaket',
-            quantity: 1,
-            price: 25000,
-            subtotal: 25000,
-          ),
-        ],
-      ),
-    ];
-  }
-
   static List<AppNotification> _fallbackNotifications() {
     return [
       AppNotification(
@@ -1077,4 +1078,32 @@ class UserRepository {
       ),
     ];
   }
+}
+
+class _MerchantListCacheEntry {
+  const _MerchantListCacheEntry(this.items, this.createdAt);
+
+  final List<UserMerchant> items;
+  final DateTime createdAt;
+}
+
+class _DashboardCacheEntry {
+  const _DashboardCacheEntry(this.dashboard, this.createdAt);
+
+  final UserDashboard dashboard;
+  final DateTime createdAt;
+}
+
+class _MerchantDetailCacheEntry {
+  const _MerchantDetailCacheEntry(this.item, this.createdAt);
+
+  final UserMerchant item;
+  final DateTime createdAt;
+}
+
+class _ProfileCacheEntry {
+  const _ProfileCacheEntry(this.profile, this.createdAt);
+
+  final UserProfile profile;
+  final DateTime createdAt;
 }

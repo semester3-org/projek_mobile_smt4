@@ -10,6 +10,16 @@ define('MIDTRANS_CLIENT_KEY', getenv('MIDTRANS_CLIENT_KEY') ?: 'Mid-client-wSNPc
 define('MIDTRANS_IS_PRODUCTION', filter_var(getenv('MIDTRANS_IS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_SANITIZED', filter_var(getenv('MIDTRANS_IS_SANITIZED') ?: 'true', FILTER_VALIDATE_BOOLEAN));
 define('MIDTRANS_IS_3DS', filter_var(getenv('MIDTRANS_IS_3DS') ?: 'true', FILTER_VALIDATE_BOOLEAN));
+define('MIDTRANS_FINISH_URL', getenv('MIDTRANS_FINISH_URL') ?: 'https://ngekos-app-project.web.app/payment-finish');
+
+function midtransCaBundlePath(): ?string {
+    $path = realpath(__DIR__ . '/../vendor/midtrans/midtrans-php/data/cacert.pem');
+    if ($path !== false && is_readable($path)) {
+        return $path;
+    }
+
+    return null;
+}
 
 function midtransConfig(): void {
     \Midtrans\Config::$isProduction = MIDTRANS_IS_PRODUCTION;
@@ -17,6 +27,15 @@ function midtransConfig(): void {
     \Midtrans\Config::$clientKey = MIDTRANS_CLIENT_KEY;
     \Midtrans\Config::$isSanitized = MIDTRANS_IS_SANITIZED;
     \Midtrans\Config::$is3ds = MIDTRANS_IS_3DS;
+
+    $caBundle = midtransCaBundlePath();
+    if ($caBundle !== null) {
+        @ini_set('curl.cainfo', $caBundle);
+        @ini_set('openssl.cafile', $caBundle);
+        \Midtrans\Config::$curlOptions[\CURLOPT_CAINFO] = $caBundle;
+        \Midtrans\Config::$curlOptions[\CURLOPT_SSL_VERIFYPEER] = true;
+        \Midtrans\Config::$curlOptions[\CURLOPT_SSL_VERIFYHOST] = 2;
+    }
 }
 
 function midtransSandboxInfo(): array {
@@ -25,5 +44,18 @@ function midtransSandboxInfo(): array {
         'is_production' => MIDTRANS_IS_PRODUCTION,
         'is_sanitized' => MIDTRANS_IS_SANITIZED,
         'is_3ds' => MIDTRANS_IS_3DS,
+    ];
+}
+
+function midtransCallbackUrls(): array {
+    $finishUrl = trim((string)MIDTRANS_FINISH_URL);
+    if ($finishUrl === '') {
+        return [];
+    }
+
+    return [
+        'finish' => $finishUrl,
+        'unfinish' => $finishUrl,
+        'error' => $finishUrl,
     ];
 }

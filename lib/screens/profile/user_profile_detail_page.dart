@@ -1,11 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
@@ -22,9 +18,11 @@ class UserProfileDetailPage extends StatefulWidget {
 
 class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
   final _scrollCtrl = ScrollController();
+  final _picker = ImagePicker();
   UserProfile? _profile;
   bool _loading = true;
   bool _didLoad = false;
+  bool _savingPhoto = false;
 
   @override
   void dispose() {
@@ -78,6 +76,51 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
     }
   }
 
+  Future<void> _pickProfilePhoto(UserProfile profile) async {
+    if (_savingPhoto) return;
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 78,
+        maxWidth: 900,
+      );
+      if (file == null) return;
+
+      final bytes = await file.readAsBytes();
+      final ext = file.name.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+      if (!mounted) return;
+      setState(() => _savingPhoto = true);
+      final result = await UserRepository.updateProfile(
+        displayName: profile.displayName,
+        phone: profile.phone ?? '',
+        address: profile.address ?? '',
+        latitude: profile.latitude,
+        longitude: profile.longitude,
+        photoUrl: 'data:image/$ext;base64,${base64Encode(bytes)}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _savingPhoto = false;
+        if (result.data != null) _profile = result.data;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.isSuccess
+                ? 'Foto profil berhasil diperbarui'
+                : result.error ?? 'Gagal memperbarui foto profil',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _savingPhoto = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal memilih foto')),
+      );
+    }
+  }
+
   Future<void> _openChangePassword() async {
     final changed = await showDialog<bool>(
       context: context,
@@ -96,7 +139,7 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
       if ((profile?.roomType ?? '').isNotEmpty) profile!.roomType!,
     ];
     final label = rooms.join(' - ');
-    return label.isEmpty ? 'Belum diisi' : label;
+    return label.isEmpty ? '-' : label;
   }
 
   String _initial(String name) {
@@ -122,7 +165,7 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
 
   String _optionalValue(String? value) {
     final trimmed = value?.trim() ?? '';
-    return trimmed.isEmpty ? 'Belum diisi' : trimmed;
+    return trimmed.isEmpty ? '-' : trimmed;
   }
 
   Widget _buildBody() {
@@ -147,20 +190,48 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
             ),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 50,
-                  backgroundColor: UserTheme.softBlue,
-                  backgroundImage: _profileImage(profile.photoUrl),
-                  child: _profileImage(profile.photoUrl) == null
-                      ? Text(
-                          _initial(profile.displayName),
-                          style: const TextStyle(
+                GestureDetector(
+                  onTap: () => _pickProfilePhoto(profile),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: UserTheme.softBlue,
+                        backgroundImage: _profileImage(profile.photoUrl),
+                        child: _savingPhoto
+                            ? const CircularProgressIndicator(strokeWidth: 2)
+                            : _profileImage(profile.photoUrl) == null
+                                ? Text(
+                                    _initial(profile.displayName),
+                                    style: const TextStyle(
+                                      color: UserTheme.primary,
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  )
+                                : null,
+                      ),
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
                             color: UserTheme.primary,
-                            fontSize: 36,
-                            fontWeight: FontWeight.w900,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
                           ),
-                        )
-                      : null,
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -179,20 +250,10 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: UserTheme.softBlue,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    profile.role,
-                    style: const TextStyle(
-                      color: UserTheme.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                TextButton.icon(
+                  onPressed: () => _openEditProfile(profile),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit profil'),
                 ),
               ],
             ),
@@ -230,21 +291,9 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
             label: 'Alamat',
             value: _optionalValue(profile.address),
           ),
-          _InfoTile(
-            icon: Icons.map_outlined,
-            label: 'Koordinat',
-            value: profile.latitude == null || profile.longitude == null
-                ? 'Belum dipilih'
-                : '${profile.latitude!.toStringAsFixed(6)}, ${profile.longitude!.toStringAsFixed(6)}',
-          ),
           const SizedBox(height: 18),
           const _SectionTitle('Pengaturan'),
           const SizedBox(height: 12),
-          _ActionTile(
-            icon: Icons.edit_outlined,
-            label: 'Edit Profil',
-            onTap: () => _openEditProfile(profile),
-          ),
           _ActionTile(
             icon: Icons.lock_outline,
             label: 'Ubah Kata Sandi',
@@ -289,11 +338,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _addressCtrl;
-  String _photoValue = '';
-  double? _latitude;
-  double? _longitude;
   bool _saving = false;
+  bool _dirty = false;
+  late String _originalFingerprint;
 
   @override
   void initState() {
@@ -301,78 +348,20 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     final profile = widget.profile;
     _nameCtrl = TextEditingController(text: profile.displayName);
     _phoneCtrl = TextEditingController(text: profile.phone ?? '');
-    _addressCtrl = TextEditingController(text: profile.address ?? '');
-    _photoValue = profile.photoUrl ?? '';
-    _latitude = profile.latitude;
-    _longitude = profile.longitude;
+    _originalFingerprint = _fingerprint();
+    _nameCtrl.addListener(_refreshDirty);
+    _phoneCtrl.addListener(_refreshDirty);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
-    _addressCtrl.dispose();
     super.dispose();
   }
 
-  ImageProvider? _selectedImage() {
-    final value = _photoValue.trim();
-    if (value.isEmpty) return null;
-    if (value.startsWith('data:image')) {
-      final commaIndex = value.indexOf(',');
-      if (commaIndex == -1) return null;
-      try {
-        return MemoryImage(base64Decode(value.substring(commaIndex + 1)));
-      } catch (_) {
-        return null;
-      }
-    }
-    return NetworkImage(value);
-  }
-
-  Future<void> _pickPhoto() async {
-    try {
-      final picker = ImagePicker();
-      final file = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 78,
-        maxWidth: 800,
-      );
-      if (file == null) return;
-
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      setState(() {
-        _photoValue = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-      });
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal memilih foto')),
-      );
-    }
-  }
-
-  Future<void> _pickLocation() async {
-    final result = await Navigator.of(context).push<_PickedLocation>(
-      MaterialPageRoute<_PickedLocation>(
-        builder: (_) => _LocationPickerPage(
-          initialAddress: _addressCtrl.text,
-          initialLatitude: _latitude,
-          initialLongitude: _longitude,
-        ),
-      ),
-    );
-
-    if (result == null || !mounted) return;
-    setState(() {
-      _addressCtrl.text = result.address;
-      _latitude = result.latitude;
-      _longitude = result.longitude;
-    });
-  }
-
   Future<void> _submit() async {
+    if (!_dirty || _saving) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final auth = AuthScope.of(context);
@@ -380,10 +369,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     final result = await UserRepository.updateProfile(
       displayName: _nameCtrl.text,
       phone: _phoneCtrl.text,
-      address: _addressCtrl.text,
-      latitude: _latitude,
-      longitude: _longitude,
-      photoUrl: _photoValue,
+      address: widget.profile.address ?? '',
+      latitude: widget.profile.latitude,
+      longitude: widget.profile.longitude,
+      photoUrl: widget.profile.photoUrl ?? '',
     );
 
     if (!mounted) return;
@@ -395,6 +384,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profil berhasil diperbarui')),
       );
+      setState(() {
+        _dirty = false;
+        _originalFingerprint = _fingerprint();
+      });
       Navigator.of(context).pop(result.data);
       return;
     }
@@ -404,145 +397,142 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     );
   }
 
+  String _fingerprint() {
+    String norm(String value) => value.trim();
+    return [
+      norm(_nameCtrl.text),
+      norm(_phoneCtrl.text),
+    ].join('|');
+  }
+
+  void _refreshDirty() {
+    if (!mounted) return;
+    final next = _fingerprint() != _originalFingerprint;
+    if (next != _dirty) setState(() => _dirty = next);
+  }
+
+  Future<bool> _confirmClose() async {
+    if (!_dirty) return true;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Perubahan belum disimpan'),
+        content: const Text('Simpan perubahan profil sebelum menutup form?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: const Text('Buang'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: const Text('Lanjut Edit'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (choice == 'save') {
+      await _submit();
+      return false;
+    }
+    return choice == 'discard';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(22),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Edit Profil',
-                style: TextStyle(
-                  color: UserTheme.text,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmClose() && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(22),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Edit Profil',
+                  style: TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Center(
-                child: Column(
+                const SizedBox(height: 18),
+                _ProfileTextField(
+                  controller: _nameCtrl,
+                  label: 'Nama Lengkap',
+                  icon: Icons.person_outline_rounded,
+                  validator: (value) {
+                    final text = (value ?? '').trim();
+                    if (text.isEmpty) {
+                      return 'Nama wajib diisi';
+                    }
+                    if (RegExp(r'\d').hasMatch(text)) {
+                      return 'Nama tidak boleh berisi angka';
+                    }
+                    if (text.length < 3) {
+                      return 'Nama minimal 3 karakter';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _ProfileTextField(
+                  controller: _phoneCtrl,
+                  label: 'Nomor Telepon',
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    final text = (value ?? '').trim();
+                    if (text.isEmpty) return 'Nomor telepon wajib diisi';
+                    if (!RegExp(r'^[0-9+ ]{10,16}$').hasMatch(text)) {
+                      return 'Nomor telepon tidak valid';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 22),
+                Row(
                   children: [
-                    CircleAvatar(
-                      radius: 42,
-                      backgroundColor: UserTheme.softBlue,
-                      backgroundImage: _selectedImage(),
-                      child: _selectedImage() == null
-                          ? Text(
-                              _nameCtrl.text.trim().isEmpty
-                                  ? 'U'
-                                  : _nameCtrl.text.trim()[0].toUpperCase(),
-                              style: const TextStyle(
-                                color: UserTheme.primary,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            )
-                          : null,
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _saving
+                            ? null
+                            : () async {
+                                if (await _confirmClose() && context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                        child: const Text('Batal'),
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _saving ? null : _pickPhoto,
-                          icon: const Icon(Icons.photo_library_outlined),
-                          label: const Text('Pilih Foto'),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _saving || !_dirty ? null : _submit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: UserTheme.primary,
                         ),
-                        if (_photoValue.trim().isNotEmpty)
-                          TextButton.icon(
-                            onPressed: _saving
-                                ? null
-                                : () => setState(() => _photoValue = ''),
-                            icon: const Icon(Icons.delete_outline),
-                            label: const Text('Hapus'),
-                          ),
-                      ],
+                        child: Text(_saving ? 'Menyimpan...' : 'Simpan'),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
-              _ProfileTextField(
-                controller: _nameCtrl,
-                label: 'Nama Lengkap',
-                icon: Icons.person_outline_rounded,
-                validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
-                    return 'Nama wajib diisi';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              _ProfileTextField(
-                controller: _phoneCtrl,
-                label: 'Nomor Telepon',
-                icon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 12),
-              _ProfileTextField(
-                controller: _addressCtrl,
-                label: 'Alamat',
-                icon: Icons.location_on_outlined,
-                maxLines: 3,
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _saving ? null : _pickLocation,
-                  icon: const Icon(Icons.map_outlined),
-                  label: Text(
-                    _latitude == null || _longitude == null
-                        ? 'Pilih Lokasi dari Peta'
-                        : 'Ubah Lokasi dari Peta',
-                  ),
-                ),
-              ),
-              if (_latitude != null && _longitude != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}',
-                  style: const TextStyle(
-                    color: UserTheme.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
               ],
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          _saving ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Batal'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _saving ? null : _submit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: UserTheme.primary,
-                      ),
-                      child: Text(_saving ? 'Menyimpan...' : 'Simpan'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -723,7 +713,6 @@ class _ProfileTextField extends StatelessWidget {
     required this.label,
     required this.icon,
     this.keyboardType,
-    this.maxLines = 1,
     this.obscureText = false,
     this.suffixIcon,
     this.validator,
@@ -733,7 +722,6 @@ class _ProfileTextField extends StatelessWidget {
   final String label;
   final IconData icon;
   final TextInputType? keyboardType;
-  final int maxLines;
   final bool obscureText;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
@@ -743,7 +731,7 @@ class _ProfileTextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
-      maxLines: obscureText ? 1 : maxLines,
+      maxLines: 1,
       obscureText: obscureText,
       validator: validator,
       decoration: InputDecoration(
@@ -756,284 +744,6 @@ class _ProfileTextField extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
-      ),
-    );
-  }
-}
-
-class _PickedLocation {
-  const _PickedLocation({
-    required this.address,
-    required this.latitude,
-    required this.longitude,
-  });
-
-  final String address;
-  final double latitude;
-  final double longitude;
-}
-
-class _LocationPickerPage extends StatefulWidget {
-  const _LocationPickerPage({
-    required this.initialAddress,
-    required this.initialLatitude,
-    required this.initialLongitude,
-  });
-
-  final String initialAddress;
-  final double? initialLatitude;
-  final double? initialLongitude;
-
-  @override
-  State<_LocationPickerPage> createState() => _LocationPickerPageState();
-}
-
-class _LocationPickerPageState extends State<_LocationPickerPage> {
-  static const LatLng _defaultCenter = LatLng(-6.200000, 106.816666);
-
-  final MapController _mapController = MapController();
-  late LatLng _selectedPoint;
-  late String _address;
-  bool _loadingAddress = false;
-  bool _loadingCurrentLocation = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedPoint = LatLng(
-      widget.initialLatitude ?? _defaultCenter.latitude,
-      widget.initialLongitude ?? _defaultCenter.longitude,
-    );
-    _address = widget.initialAddress.trim();
-    if (widget.initialLatitude == null || widget.initialLongitude == null) {
-      _moveToCurrentLocation();
-    } else if (_address.isEmpty) {
-      _reverseGeocode(_selectedPoint);
-    }
-  }
-
-  Future<void> _moveToCurrentLocation() async {
-    setState(() => _loadingCurrentLocation = true);
-
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        await _reverseGeocode(_selectedPoint);
-        return;
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        await _reverseGeocode(_selectedPoint);
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      ).timeout(const Duration(seconds: 12));
-
-      if (!mounted) return;
-      final point = LatLng(position.latitude, position.longitude);
-      setState(() {
-        _selectedPoint = point;
-        _address = 'Mencari alamat...';
-        _loadingAddress = true;
-      });
-      _mapController.move(point, 16);
-      await _reverseGeocode(point);
-    } catch (_) {
-      if (mounted) await _reverseGeocode(_selectedPoint);
-    } finally {
-      if (mounted) setState(() => _loadingCurrentLocation = false);
-    }
-  }
-
-  Future<void> _selectPoint(LatLng point) async {
-    setState(() {
-      _selectedPoint = point;
-      _loadingAddress = true;
-      _address = 'Mencari alamat...';
-    });
-    await _reverseGeocode(point);
-  }
-
-  Future<void> _reverseGeocode(LatLng point) async {
-    try {
-      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
-        'format': 'jsonv2',
-        'lat': point.latitude.toString(),
-        'lon': point.longitude.toString(),
-      });
-      final response = await http.get(
-        uri,
-        headers: const {
-          'Accept': 'application/json',
-          'Accept-Language': 'id',
-          'User-Agent': 'KosFinder/1.0 (com.example.projek_mobile)',
-        },
-      ).timeout(const Duration(seconds: 12));
-
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final displayName = data['display_name'] as String?;
-        setState(() {
-          _address = displayName?.trim().isNotEmpty == true
-              ? displayName!.trim()
-              : _coordinateLabel(point);
-          _loadingAddress = false;
-        });
-        return;
-      }
-    } catch (_) {
-      if (!mounted) return;
-    }
-
-    setState(() {
-      _address = _coordinateLabel(point);
-      _loadingAddress = false;
-    });
-  }
-
-  String _coordinateLabel(LatLng point) {
-    return '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
-  }
-
-  void _saveLocation() {
-    Navigator.of(context).pop(
-      _PickedLocation(
-        address: _address.trim().isEmpty ? _coordinateLabel(_selectedPoint) : _address,
-        latitude: _selectedPoint.latitude,
-        longitude: _selectedPoint.longitude,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: UserTheme.background,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        title: const Text(
-          'Pilih Lokasi',
-          style: TextStyle(
-            color: UserTheme.primaryDark,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _selectedPoint,
-              initialZoom: widget.initialLatitude == null ? 12 : 16,
-              onTap: (_, point) => _selectPoint(point),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.projek_mobile',
-              ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: _selectedPoint,
-                    width: 48,
-                    height: 48,
-                    child: const Icon(
-                      Icons.location_pin,
-                      color: UserTheme.danger,
-                      size: 46,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          Positioned(
-            right: 16,
-            top: 16,
-            child: FloatingActionButton.small(
-              heroTag: 'current-location',
-              onPressed:
-                  _loadingCurrentLocation ? null : _moveToCurrentLocation,
-              backgroundColor: Colors.white,
-              foregroundColor: UserTheme.primary,
-              child: _loadingCurrentLocation
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location_rounded),
-            ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 18,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [UserTheme.softShadow(opacity: 0.12)],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _loadingAddress
-                            ? Icons.hourglass_top_rounded
-                            : Icons.place_outlined,
-                        color: UserTheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _address.trim().isEmpty
-                              ? _coordinateLabel(_selectedPoint)
-                              : _address,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: UserTheme.text,
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _loadingAddress ? null : _saveLocation,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: UserTheme.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                      ),
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Gunakan Lokasi Ini'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

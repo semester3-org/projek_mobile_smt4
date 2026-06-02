@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/merchant_models.dart';
 import '../../merchant_ui.dart';
-import '../../widgets/merchant_laundry_estimates_panel.dart';
 import 'merchant_edit_product_page.dart';
 import 'merchant_notifications_page.dart';
 
@@ -23,24 +24,43 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
   List<MerchantProduct> _products = [];
   bool _loading = true;
   String? _error;
+  String _selectedFilter = 'Semua';
+  StreamSubscription<void>? _catalogSubscription;
 
   @override
   void initState() {
     super.initState();
+    _catalogSubscription = MerchantRepository.catalogChanges.listen((_) {
+      _load(silent: true);
+    });
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _catalogSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getProducts();
     if (!mounted) return;
     setState(() {
-      _products = result.data ?? [];
-      _error = result.error;
-      _loading = false;
+      if (result.data != null) {
+        _products = result.data!;
+      }
+      if (!silent || result.error != null) {
+        _error = result.error;
+      }
+      if (!silent) {
+        _loading = false;
+      }
     });
   }
 
@@ -54,15 +74,45 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         ),
       ),
     );
-    _load();
+    _load(silent: true);
+  }
+
+  List<String> get _filterLabels {
+    if (!widget.isLaundry) {
+      return const ['Semua', 'Full Day', 'Weekday', 'Promo aktif'];
+    }
+    return const ['Semua', 'Per Kg', 'Per Item', 'Promo aktif'];
+  }
+
+  List<MerchantProduct> get _visibleProducts {
+    if (_selectedFilter == 'Semua') return _products;
+    if (_selectedFilter == 'Promo aktif') {
+      return _products.where((product) => product.hasActivePromo).toList();
+    }
+    if (widget.isLaundry) {
+      return _products
+          .where((product) =>
+              product.pricingTypeLabel.toLowerCase() ==
+              _selectedFilter.toLowerCase())
+          .toList();
+    }
+    if (_selectedFilter == 'Weekday') {
+      return _products
+          .where((product) =>
+              product.price20Days != null && product.price20Days! > 0)
+          .toList();
+    }
+    return _products;
   }
 
   @override
   Widget build(BuildContext context) {
     final title = widget.isLaundry ? 'Kelola Layanan' : 'Kelola Paket Menu';
+    final visibleProducts = _visibleProducts;
     return MerchantPage(
       topBar: MerchantTopBar(
-        title: 'MerchantHub',
+        title: 'Produk',
+        showAvatar: false,
         onAction: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),
@@ -74,6 +124,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         onPressed: () => _openEdit(),
         child: const Icon(Icons.add_rounded),
       ),
+      onRefresh: () => _load(),
       children: [
         Text(
           title,
@@ -86,7 +137,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         const SizedBox(height: 8),
         Text(
           widget.isLaundry
-              ? 'Nama, deskripsi, harga, foto, dan jam operasional merchant akan tampil ke user.'
+              ? 'Atur layanan, tipe harga, estimasi durasi, tambahan layanan, deskripsi, dan foto yang tampil ke user.'
               : 'Atur paket bulanan, pilihan menu, deskripsi lauk, harga, dan foto untuk user.',
           style: const TextStyle(
             color: MerchantPalette.muted,
@@ -95,11 +146,6 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           ),
         ),
         const SizedBox(height: 24),
-        if (widget.isLaundry)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 20),
-            child: MerchantLaundryEstimatesPanel(),
-          ),
         MerchantCard(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           child: Row(
@@ -134,6 +180,16 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
           ),
         ),
         const SizedBox(height: 24),
+        MerchantFilterChips(
+          labels: _filterLabels,
+          selectedIndex: !_filterLabels.contains(_selectedFilter)
+              ? 0
+              : _filterLabels.indexOf(_selectedFilter),
+          onSelected: (index) {
+            setState(() => _selectedFilter = _filterLabels[index]);
+          },
+        ),
+        const SizedBox(height: 18),
         if (_loading)
           const Padding(
             padding: EdgeInsets.only(top: 80),
@@ -158,8 +214,15 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
                 : 'Tambah Paket Menu Baru',
             onTap: () => _openEdit(),
           )
+        else if (visibleProducts.isEmpty)
+          MerchantCard(
+            child: Text(
+              'Tidak ada item untuk filter $_selectedFilter.',
+              style: const TextStyle(color: MerchantPalette.muted),
+            ),
+          )
         else ...[
-          ..._products.map(
+          ...visibleProducts.map(
             (product) => Padding(
               padding: const EdgeInsets.only(bottom: 22),
               child: _ProductCard(
@@ -211,7 +274,7 @@ class _ProductCard extends StatelessWidget {
                     ? Icons.local_laundry_service_outlined
                     : Icons.restaurant_rounded,
                 width: double.infinity,
-                height: 178,
+                height: 156,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(12),
                 ),
@@ -232,7 +295,7 @@ class _ProductCard extends StatelessWidget {
                   top: 12,
                   right: 16,
                   child: MerchantStatusPill(
-                    label: 'Weekday tersedia',
+                    label: 'Weekday 30 hari tersedia',
                     color: MerchantPalette.text,
                     background: Colors.white.withValues(alpha: 0.92),
                   ),
@@ -245,7 +308,7 @@ class _ProductCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Text(
@@ -254,38 +317,27 @@ class _ProductCard extends StatelessWidget {
                           color: MerchantPalette.text,
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
+                          height: 1.2,
                         ),
                       ),
                     ),
-                    if (isLaundry)
-                      Row(
-                        children: [
-                          Text(
-                            formatMerchantCurrency(product.price),
-                            style: const TextStyle(
-                              color: MerchantPalette.primary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          Text(
-                            product.unit,
-                            style: const TextStyle(
-                              color: MerchantPalette.muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
+                    if (isLaundry) ...[
+                      const SizedBox(width: 14),
+                      _LaundryPriceBlock(product: product),
+                    ],
                   ],
                 ),
+                const SizedBox(height: 12),
+                if (isLaundry) ...[
+                  _LaundryServiceMeta(product: product),
+                ] else
+                  _ProductRatingTag(product: product),
                 if (!isLaundry) ...[
                   const SizedBox(height: 10),
                   _PackagePriceTag(
                     icon: Icons.calendar_month_rounded,
                     text:
-                        'Full Day ${formatMerchantCurrency(product.price)} - dikirim setiap hari',
+                        'Full Day 30 hari ${formatMerchantCurrency(product.price)} - dikirim setiap hari',
                     color: MerchantPalette.primary,
                     background: const Color(0xFFF3F6FF),
                     border: const Color(0xFFD8E1FF),
@@ -295,12 +347,22 @@ class _ProductCard extends StatelessWidget {
                     _PackagePriceTag(
                       icon: Icons.event_busy_rounded,
                       text:
-                          'Weekday ${formatMerchantCurrency(product.price20Days!)} - Sabtu/Minggu libur',
+                          'Weekday 30 hari ${formatMerchantCurrency(product.price20Days!)} - Sabtu/Minggu libur',
                       color: const Color(0xFF2F7D4E),
                       background: const Color(0xFFF2F7F4),
                       border: const Color(0xFFCDE3D5),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  _PackagePriceTag(
+                    icon: Icons.delivery_dining_rounded,
+                    text: product.mealDeliveryCount >= 2
+                        ? 'Pengantaran 2x per hari: ${product.deliveryTime1} dan ${product.deliveryTime2 ?? '15:00'}'
+                        : 'Pengantaran 1x per hari: ${product.deliveryTime1}',
+                    color: const Color(0xFF7C3AED),
+                    background: const Color(0xFFF6F1FF),
+                    border: const Color(0xFFE4D7FF),
+                  ),
                 ],
                 const SizedBox(height: 8),
                 Text(
@@ -325,6 +387,173 @@ class _ProductCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductRatingTag extends StatelessWidget {
+  const _ProductRatingTag({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReviews = product.reviewCount > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E5),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFFFE3A3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star_rounded, size: 17, color: Color(0xFFFFB300)),
+          const SizedBox(width: 6),
+          Text(
+            hasReviews
+                ? '${product.rating.toStringAsFixed(1)} (${product.reviewCount} ulasan)'
+                : 'Belum ada rating',
+            style: const TextStyle(
+              color: MerchantPalette.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaundryPriceBlock extends StatelessWidget {
+  const _LaundryPriceBlock({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F8FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD7E8FF)),
+      ),
+      child: Text(
+        _productPriceLabel(product),
+        textAlign: TextAlign.right,
+        style: const TextStyle(
+          color: MerchantPalette.primary,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+String _productPriceLabel(MerchantProduct product) {
+  final unit = product.unit.trim();
+  if (product.pricingType == 'flat' || unit == 'fixed' || unit.isEmpty) {
+    return formatMerchantCurrency(product.price);
+  }
+  return '${formatMerchantCurrency(product.price)}$unit';
+}
+
+class _LaundryServiceMeta extends StatelessWidget {
+  const _LaundryServiceMeta({required this.product});
+
+  final MerchantProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    final addonLabel = product.addons.isEmpty
+        ? 'Tanpa tambahan'
+        : '${product.addons.length} tambahan';
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (product.pricingType != 'flat')
+          _ServiceInfoChip(
+            icon: Icons.sell_outlined,
+            text: product.pricingTypeLabel,
+            color: MerchantPalette.primary,
+          ),
+        _ServiceInfoChip(
+          icon: Icons.schedule_rounded,
+          text: product.durationLabel.isEmpty
+              ? 'Durasi belum diatur'
+              : product.durationLabel,
+          color: const Color(0xFF7C3AED),
+        ),
+        _ServiceInfoChip(
+          icon: Icons.add_circle_outline_rounded,
+          text: addonLabel,
+          color: const Color(0xFF0F766E),
+        ),
+        if (product.hasActivePromo)
+          _ServiceInfoChip(
+            icon: Icons.local_offer_outlined,
+            text: product.activePromoName.isEmpty
+                ? 'Promo aktif'
+                : product.activePromoName,
+            color: const Color(0xFFB45309),
+          ),
+        if (product.reviewCount > 0)
+          _ServiceInfoChip(
+            icon: Icons.star_rounded,
+            text:
+                '${product.rating.toStringAsFixed(1)} (${product.reviewCount})',
+            color: const Color(0xFFFFB300),
+          ),
+      ],
+    );
+  }
+}
+
+class _ServiceInfoChip extends StatelessWidget {
+  const _ServiceInfoChip({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 210),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],

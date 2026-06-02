@@ -23,7 +23,8 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fade = CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
+    _fade =
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
     _scale = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
     );
@@ -61,96 +62,76 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedBuilder(
-                  animation: _animationController,
-                  builder: (context, child) {
-                    return Opacity(
-                      opacity: _fade.value,
-                      child: Transform.scale(
-                        scale: _scale.value,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Container(
-                    width: 110,
-                    height: 110,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryGreen.withOpacity(0.16),
-                          blurRadius: 26,
-                          offset: const Offset(0, 14),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.home_work_rounded,
-                        size: 48,
-                        color: AppTheme.primaryGreen,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 26),
-                Text(
-                  'Sentra Ruang',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryGreen,
-                      ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Semua kebutuhan kos dalam satu aplikasi',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 15),
-                ),
-                const SizedBox(height: 30),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _Dot(active: true),
-                    _Dot(active: false),
-                    _Dot(active: false),
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) {
+                        return Opacity(
+                          opacity: _fade.value,
+                          child: Transform.scale(
+                            scale: _scale.value,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 112,
+                        height: 112,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.primaryGreen
+                                  .withValues(alpha: 0.16),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(30),
+                          child: Center(
+                            child: Image.asset(
+                              'assets/app_branding/ic_launcher.png',
+                              width: 78,
+                              height: 78,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'NgeKos',
+                      textAlign: TextAlign.center,
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primaryGreen,
+                              ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Semua kebutuhan kos dalam satu aplikasi',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(color: Colors.grey.shade700, fontSize: 15),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Memuat kenyamanan',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Dot extends StatelessWidget {
-  const _Dot({required this.active});
-
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      width: active ? 14 : 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: active ? AppTheme.primaryGreen : AppTheme.primaryGreen.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(6),
       ),
     );
   }

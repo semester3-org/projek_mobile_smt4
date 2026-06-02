@@ -1,0 +1,70 @@
+{
+  "project_info": {
+    "project_number": "474454721171",
+    "project_id": "ngekos-app-project",
+    "storage_bucket": "ngekos-app-project.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:474454721171:android:f5e9bff2c70d10172f0366",
+        "android_client_info": {
+          "package_name": "com.example.projek_mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "474454721171-cbe0t1alfhacv3n310pj0gq17i4en205.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.projek_mobile",
+            "certificate_hash": "6bad534c8642748753d87347e0c128261100f033"
+          }
+        },
+        {
+          "client_id": "474454721171-hnsps0d6t7qrakp90ch5hv5jd9vrr121.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.projek_mobile",
+            "certificate_hash": "7aaf01475a35080d119d31c5c784ef3c0786307d"
+          }
+        },
+        {
+          "client_id": "474454721171-v4jk0vgorm5eu68q7t7hv2efqar4fu48.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.projek_mobile",
+            "certificate_hash": "a5c710ed1d74ee4fe2747c118f3691b48bea2c62"
+          }
+        },
+        {
+          "client_id": "474454721171-shmdm4ccjri96iaeqpndh17rtvu8v6l8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC37Ab8-9Gxc9XCd3jPvTus8kV1EPM9yoE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "474454721171-shmdm4ccjri96iaeqpndh17rtvu8v6l8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "474454721171-qj852iagrp2rc37s2t3i2anafviunsbp.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.projekMobile"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

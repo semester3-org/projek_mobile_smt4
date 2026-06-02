@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 
@@ -19,6 +20,12 @@ class RealtimeService extends ChangeNotifier {
   int _userPollingClients = 0;
   int _dashboardPollingClients = 0;
   int _merchantOrdersPollingClients = 0;
+  bool _pollingUserOrders = false;
+  bool _pollingMerchantDashboard = false;
+  bool _pollingMerchantOrders = false;
+  String? _lastUserOrdersSignature;
+  String? _lastMerchantDashboardSignature;
+  String? _lastMerchantOrdersSignature;
 
   // Callback untuk notifikasi update
   final Map<String, List<VoidCallback>> _listeners = {
@@ -55,7 +62,7 @@ class RealtimeService extends ChangeNotifier {
 
   /// Start polling untuk user order status
   void startUserOrderPolling({
-    Duration interval = const Duration(seconds: 5),
+    Duration interval = const Duration(seconds: 14),
   }) {
     _userPollingClients++;
     if (_orderStatusPolling != null) return;
@@ -75,23 +82,50 @@ class RealtimeService extends ChangeNotifier {
     if (_userPollingClients > 0) return;
     _orderStatusPolling?.cancel();
     _orderStatusPolling = null;
+    _lastUserOrdersSignature = null;
+    _pollingUserOrders = false;
   }
 
   /// Poll user orders status
   Future<void> _pollUserOrders() async {
+    if (_pollingUserOrders) return;
+    _pollingUserOrders = true;
     try {
-      final res = await ApiService.get('api/user_orders');
+      final res = await ApiService.get(
+        'api/user_orders',
+        queryParams: const {'sync': '1'},
+      );
       if (res.success && res.data != null) {
-        _notifyListeners('order_status_updated');
+        final signature = _payloadSignature(res.data, const [
+          'id',
+          'databaseId',
+          'status',
+          'merchantStatus',
+          'paymentStatus',
+          'totalAmount',
+          'updatedAt',
+          'readyToPay',
+          'awaitingWeighing',
+        ]);
+        if (_lastUserOrdersSignature == null) {
+          _lastUserOrdersSignature = signature;
+          return;
+        }
+        if (_lastUserOrdersSignature != signature) {
+          _lastUserOrdersSignature = signature;
+          _notifyListeners('order_status_updated');
+        }
       }
     } catch (e) {
       debugPrint('Polling error: $e');
+    } finally {
+      _pollingUserOrders = false;
     }
   }
 
   /// Start polling untuk merchant dashboard
   void startMerchantDashboardPolling({
-    Duration interval = const Duration(seconds: 6),
+    Duration interval = const Duration(seconds: 18),
   }) {
     _dashboardPollingClients++;
     if (_dashboardPolling != null) return;
@@ -111,24 +145,19 @@ class RealtimeService extends ChangeNotifier {
     if (_dashboardPollingClients > 0) return;
     _dashboardPolling?.cancel();
     _dashboardPolling = null;
+    _lastMerchantDashboardSignature = null;
+    _pollingMerchantDashboard = false;
   }
 
   /// Polling daftar pesanan merchant (tab pesanan & lihat semua).
   void startMerchantOrdersPolling({
-    Duration interval = const Duration(seconds: 6),
+    Duration interval = const Duration(seconds: 12),
   }) {
     _merchantOrdersPollingClients++;
     if (_merchantOrdersPolling != null) return;
 
     _merchantOrdersPolling = Timer.periodic(interval, (timer) async {
-      try {
-        final res = await ApiService.get('api/merchant_orders');
-        if (res.success && res.data != null) {
-          _notifyListeners('merchant_order_updated');
-        }
-      } catch (e) {
-        debugPrint('Error polling merchant orders: $e');
-      }
+      await _pollMerchantOrders();
     });
   }
 
@@ -137,18 +166,86 @@ class RealtimeService extends ChangeNotifier {
     if (_merchantOrdersPollingClients > 0) return;
     _merchantOrdersPolling?.cancel();
     _merchantOrdersPolling = null;
+    _lastMerchantOrdersSignature = null;
+    _pollingMerchantOrders = false;
   }
 
   /// Poll merchant dashboard
   Future<void> _pollMerchantDashboard() async {
+    if (_pollingMerchantDashboard) return;
+    _pollingMerchantDashboard = true;
     try {
       final res = await ApiService.get('api/merchant_dashboard');
       if (res.success && res.data != null) {
-        _notifyListeners('dashboard_updated');
+        final signature = jsonEncode(res.data?['data'] ?? res.data);
+        if (_lastMerchantDashboardSignature == null) {
+          _lastMerchantDashboardSignature = signature;
+          return;
+        }
+        if (_lastMerchantDashboardSignature != signature) {
+          _lastMerchantDashboardSignature = signature;
+          _notifyListeners('dashboard_updated');
+        }
       }
     } catch (e) {
       debugPrint('Dashboard polling error: $e');
+    } finally {
+      _pollingMerchantDashboard = false;
     }
+  }
+
+  Future<void> _pollMerchantOrders() async {
+    if (_pollingMerchantOrders) return;
+    _pollingMerchantOrders = true;
+    try {
+      final res = await ApiService.get(
+        'api/merchant_orders',
+        queryParams: const {'sync': '1'},
+      );
+      if (res.success && res.data != null) {
+        final signature = _payloadSignature(res.data, const [
+          'id',
+          'code',
+          'status',
+          'paymentStatus',
+          'totalAmount',
+          'updatedAt',
+          'actualWeight',
+          'readyToPay',
+        ]);
+        if (_lastMerchantOrdersSignature == null) {
+          _lastMerchantOrdersSignature = signature;
+          return;
+        }
+        if (_lastMerchantOrdersSignature != signature) {
+          _lastMerchantOrdersSignature = signature;
+          _notifyListeners('merchant_order_updated');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error polling merchant orders: $e');
+    } finally {
+      _pollingMerchantOrders = false;
+    }
+  }
+
+  String _payloadSignature(
+    Map<String, dynamic>? payload,
+    List<String> fields,
+  ) {
+    final data = payload?['data'];
+    if (data is List) {
+      return data.map((item) => _itemSignature(item, fields)).join('::');
+    }
+    if (data is Map<String, dynamic>) {
+      return _itemSignature(data, fields);
+    }
+    return jsonEncode(payload);
+  }
+
+  String _itemSignature(dynamic item, List<String> fields) {
+    if (item is! Map) return item.toString();
+    return fields.map((field) => '${item[field] ?? ''}').join('|');
   }
 
   /// Poll specific merchant order
@@ -184,6 +281,9 @@ class RealtimeService extends ChangeNotifier {
     _userPollingClients = 0;
     _dashboardPollingClients = 0;
     _merchantOrdersPollingClients = 0;
+    _lastUserOrdersSignature = null;
+    _lastMerchantDashboardSignature = null;
+    _lastMerchantOrdersSignature = null;
     _listeners.clear();
     super.dispose();
   }

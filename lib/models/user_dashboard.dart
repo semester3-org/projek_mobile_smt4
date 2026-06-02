@@ -48,24 +48,7 @@ class UserDashboard {
       billProgress: 0,
       announcementTitle: '',
       announcementSubtitle: '',
-      recommendations: const [
-        MerchantMenuItem(
-          id: 'rec-1',
-          name: 'Salad Sehat Ayam Bakar',
-          description: 'Menu harian',
-          price: 25000,
-          imageUrl:
-              'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800',
-        ),
-        MerchantMenuItem(
-          id: 'rec-2',
-          name: 'Cuci Lipat Regular',
-          description: 'Layanan laundry praktis',
-          price: 8000,
-          imageUrl:
-              'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=800',
-        ),
-      ],
+      recommendations: const [],
     );
   }
 }

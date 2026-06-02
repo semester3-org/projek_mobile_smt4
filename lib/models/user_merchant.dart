@@ -1,3 +1,52 @@
+class MerchantMenuAddon {
+  const MerchantMenuAddon({
+    required this.id,
+    required this.name,
+    required this.price,
+    this.pricingType = 'flat',
+    this.pricingTypeLabel = 'Flat Price',
+    this.unit = 'fixed',
+    this.isActive = true,
+  });
+
+  final String id;
+  final String name;
+  final double price;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final String unit;
+  final bool isActive;
+
+  factory MerchantMenuAddon.fromJson(Map<String, dynamic> json) {
+    final isActiveRaw = json['isActive'];
+    return MerchantMenuAddon(
+      id: (json['id'] ?? '').toString(),
+      name: json['name'] as String? ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      pricingType: json['pricingType'] as String? ?? 'flat',
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? 'Flat Price',
+      unit: json['unit'] as String? ?? 'fixed',
+      isActive: isActiveRaw is bool
+          ? isActiveRaw
+          : isActiveRaw is num
+              ? isActiveRaw.toInt() == 1
+              : true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'price': price,
+      'pricingType': pricingType,
+      'pricingTypeLabel': pricingTypeLabel,
+      'unit': unit,
+      'isActive': isActive,
+    };
+  }
+}
+
 class MerchantMenuItem {
   const MerchantMenuItem({
     required this.id,
@@ -5,16 +54,39 @@ class MerchantMenuItem {
     required this.description,
     required this.price,
     required this.imageUrl,
+    this.merchantId = '',
+    this.merchantName = '',
+    this.merchantType = '',
     this.category = '',
     this.unit = '',
     this.price20Days,
     this.price30Days,
     this.packageDeliveryType,
+    this.mealDeliveryCount = 1,
+    this.deliveryTime1 = '07:00',
+    this.deliveryTime2,
+    this.rating = 0,
+    this.reviewCount = 0,
+    this.hasPromo = false,
+    this.originalPrice,
+    this.promoPrice,
+    this.promoDiscountAmount,
+    this.promoDiscountType,
+    this.promoDiscountValue,
+    this.promoLabel,
+    this.promoDescription,
+    this.pricingType = '',
+    this.pricingTypeLabel = '',
+    this.durationLabel = '',
+    this.addons = const [],
   });
 
   final String id;
   final String name;
   final String description;
+  final String merchantId;
+  final String merchantName;
+  final String merchantType;
 
   /// Harga Full Day (catering) atau harga layanan (laundry).
   final double price;
@@ -22,10 +94,27 @@ class MerchantMenuItem {
   final String category;
   final String unit;
 
-  /// Harga Weekday: dikirim Senin-Jumat, weekend libur.
+  /// Harga Weekday 30 hari: dikirim Senin-Jumat, weekend libur.
   final double? price20Days;
   final double? price30Days;
   final String? packageDeliveryType;
+  final int mealDeliveryCount;
+  final String deliveryTime1;
+  final String? deliveryTime2;
+  final double rating;
+  final int reviewCount;
+  final bool hasPromo;
+  final double? originalPrice;
+  final double? promoPrice;
+  final double? promoDiscountAmount;
+  final String? promoDiscountType;
+  final double? promoDiscountValue;
+  final String? promoLabel;
+  final String? promoDescription;
+  final String pricingType;
+  final String pricingTypeLabel;
+  final String durationLabel;
+  final List<MerchantMenuAddon> addons;
 
   bool get hasWeekdayPrice => price20Days != null && price20Days! > 0;
 
@@ -47,17 +136,52 @@ class MerchantMenuItem {
     final price30 = (json['price30Days'] as num?)?.toDouble() ??
         (json['price'] as num?)?.toDouble() ??
         0;
+    final addonsRaw = json['addons'] as List<dynamic>? ?? const [];
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
     return MerchantMenuItem(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       price: price30,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
+      merchantId: json['merchantId'] as String? ?? '',
+      merchantName: json['merchantName'] as String? ?? '',
+      merchantType: json['merchantType'] as String? ?? '',
       category: json['category'] as String? ?? '',
       unit: json['unit'] as String? ?? '',
       price20Days: (json['price20Days'] as num?)?.toDouble(),
       price30Days: price30 > 0 ? price30 : null,
       packageDeliveryType: json['packageDeliveryType'] as String?,
+      mealDeliveryCount: (json['mealDeliveryCount'] as num?)?.toInt() ?? 1,
+      deliveryTime1: json['deliveryTime1'] as String? ?? '07:00',
+      deliveryTime2: json['deliveryTime2'] as String?,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      hasPromo: json['hasPromo'] as bool? ?? false,
+      originalPrice: (json['originalPrice'] as num?)?.toDouble(),
+      promoPrice: (json['promoPrice'] as num?)?.toDouble(),
+      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
+      promoDiscountType: json['promoDiscountType'] as String?,
+      promoDiscountValue: (json['promoDiscountValue'] as num?)?.toDouble(),
+      promoLabel: json['promoLabel'] as String?,
+      promoDescription: json['promoDescription'] as String?,
+      pricingType: json['pricingType'] as String? ?? '',
+      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? '',
+      durationLabel: json['durationLabel'] as String? ?? '',
+      addons: addonsRaw
+          .whereType<Map>()
+          .map((addon) => MerchantMenuAddon.fromJson(
+                Map<String, dynamic>.from(addon),
+              ))
+          .where((addon) => addon.id.isNotEmpty && addon.name.isNotEmpty)
+          .toList(),
     );
   }
 
@@ -68,11 +192,31 @@ class MerchantMenuItem {
       'description': description,
       'price': price,
       'imageUrl': imageUrl,
+      'merchantId': merchantId,
+      'merchantName': merchantName,
+      'merchantType': merchantType,
       'category': category,
       'unit': unit,
       'price20Days': price20Days,
       'price30Days': price30Days ?? price,
       'packageDeliveryType': packageDeliveryType,
+      'mealDeliveryCount': mealDeliveryCount,
+      'deliveryTime1': deliveryTime1,
+      'deliveryTime2': deliveryTime2,
+      'rating': rating,
+      'reviewCount': reviewCount,
+      'hasPromo': hasPromo,
+      'originalPrice': originalPrice,
+      'promoPrice': promoPrice,
+      'promoDiscountAmount': promoDiscountAmount,
+      'promoDiscountType': promoDiscountType,
+      'promoDiscountValue': promoDiscountValue,
+      'promoLabel': promoLabel,
+      'promoDescription': promoDescription,
+      'pricingType': pricingType,
+      'pricingTypeLabel': pricingTypeLabel,
+      'durationLabel': durationLabel,
+      'addons': addons.map((addon) => addon.toJson()).toList(),
     };
   }
 }
@@ -243,6 +387,15 @@ class UserMerchant {
     final menuRaw = json['menuItems'] as List<dynamic>? ?? const [];
     final reviewsRaw = json['reviews'] as List<dynamic>? ?? const [];
 
+    final imageUrl = [
+      json['imageUrl'],
+      json['image_url'],
+      json['photoUrl'],
+      json['photo_url'],
+    ]
+        .map((value) => value?.toString().trim() ?? '')
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+
     return UserMerchant(
       id: json['id'] as String? ?? '',
       placeId: json['placeId'] as String? ?? '',
@@ -254,7 +407,7 @@ class UserMerchant {
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: imageUrl,
       status: json['status'] as String? ?? 'Tersedia',
       tags: tagsRaw.map((e) => e.toString()).toList(),
       minPrice: (json['minPrice'] as num?)?.toDouble() ?? 0,

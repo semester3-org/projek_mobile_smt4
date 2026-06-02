@@ -73,10 +73,11 @@ class _BillingListPageState extends State<BillingListPage> {
     final historyBillings = _historyBillings;
     final activeUntil = activeBill?.activeUntil;
 
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope<bool>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
         Navigator.of(context).pop(_didChange);
-        return false;
       },
       child: Scaffold(
         backgroundColor: UserTheme.background,
@@ -89,15 +90,6 @@ class _BillingListPageState extends State<BillingListPage> {
               fontWeight: FontWeight.w800,
             ),
           ),
-          actions: const [
-            Padding(
-              padding: EdgeInsets.only(right: 18),
-              child: CircleAvatar(
-                backgroundColor: UserTheme.primaryDark,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-            ),
-          ],
         ),
         body: RefreshIndicator(
           onRefresh: _load,
@@ -126,10 +118,11 @@ class _BillingListPageState extends State<BillingListPage> {
                       children: [
                         Text(
                           'Riwayat Tagihan',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: UserTheme.text,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: UserTheme.text,
+                                  ),
                         ),
                         const Spacer(),
                         IconButton(
@@ -189,7 +182,8 @@ class _ActiveBillingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPaid = billing.isPaid;
     final title = isPaid ? 'Masa Sewa Aktif' : 'Total Tagihan Aktif';
-    final rentActiveUntil = activeUntil ?? billing.activeUntil ?? billing.dueDate;
+    final rentActiveUntil =
+        activeUntil ?? billing.activeUntil ?? billing.dueDate;
     final dateLabel = isPaid
         ? 'Aktif sampai: ${formatShortDate(rentActiveUntil)}'
         : 'Batas bayar: ${formatShortDate(rentActiveUntil.add(const Duration(days: 1)))}';
@@ -215,7 +209,7 @@ class _ActiveBillingCard extends StatelessWidget {
                 child: Text(
                   title,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.72),
+                    color: Colors.white.withValues(alpha: 0.72),
                     fontSize: 16,
                   ),
                 ),
@@ -224,7 +218,7 @@ class _ActiveBillingCard extends StatelessWidget {
                 isPaid
                     ? Icons.event_available_rounded
                     : Icons.account_balance_wallet_outlined,
-                color: Colors.white.withOpacity(0.5),
+                color: Colors.white.withValues(alpha: 0.5),
               ),
             ],
           ),
@@ -241,7 +235,7 @@ class _ActiveBillingCard extends StatelessWidget {
             Text(
               billing.kosName!,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.92),
+                color: Colors.white.withValues(alpha: 0.92),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -254,16 +248,16 @@ class _ActiveBillingCard extends StatelessWidget {
                   'Kamar ${billing.roomNumber}',
                 if ((billing.roomType ?? '').isNotEmpty) billing.roomType!,
               ].join(' - '),
-              style: TextStyle(color: Colors.white.withOpacity(0.76)),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.76)),
             ),
             const SizedBox(height: 18),
           ],
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(0.22)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -286,7 +280,8 @@ class _ActiveBillingCard extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () {
-                Navigator.of(context).push<bool>(
+                Navigator.of(context)
+                    .push<bool>(
                   MaterialPageRoute<bool>(
                     builder: (_) => BillingDetailPage(
                       billing: billing,
@@ -295,7 +290,8 @@ class _ActiveBillingCard extends StatelessWidget {
                       activeUntilForStopRenewal: rentActiveUntil,
                     ),
                   ),
-                ).then((changed) {
+                )
+                    .then((changed) {
                   if (changed == true) onUpdated();
                 });
               },
@@ -335,14 +331,16 @@ class _BillingHistoryCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push<bool>(
+          Navigator.of(context)
+              .push<bool>(
             MaterialPageRoute<bool>(
               builder: (_) => BillingDetailPage(
                 billing: billing,
                 actionsEnabled: false,
               ),
             ),
-          ).then((changed) {
+          )
+              .then((changed) {
             if (changed == true) onUpdated();
           });
         },
@@ -433,7 +431,7 @@ class _BillingHistoryCard extends StatelessWidget {
                           ? const Color(0xFFD9F9E7)
                           : cancelled
                               ? const Color(0xFFE6E8EE)
-                          : const Color(0xFFFFEBD1),
+                              : const Color(0xFFFFEBD1),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(

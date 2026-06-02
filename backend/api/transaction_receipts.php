@@ -42,11 +42,27 @@ function receiptOrderData(mysqli $conn, int $orderId, string $userId): ?array {
         'serviceType' => (string)($row['service_type'] ?? ''),
         'paymentMethod' => (string)($row['payment_method'] ?? ''),
         'paymentStatus' => (string)($row['payment_status'] ?? ''),
+        'orderStatus' => (string)($row['status'] ?? ''),
         'totalAmount' => (float)($row['total_harga'] ?? 0),
         'createdAt' => date('d/m/Y H:i', strtotime($row['created_at'] ?? 'now')),
         'items' => $items,
         'deliveryAddress' => (string)($row['delivery_address'] ?? ''),
     ];
+}
+
+function receiptCanGenerate(array $data): bool {
+    $total = (float)($data['totalAmount'] ?? 0);
+    if ($total <= 0) {
+        return false;
+    }
+    $payment = strtolower(trim((string)($data['paymentStatus'] ?? '')));
+    if ($payment === 'paid') {
+        return true;
+    }
+    $method = strtolower(trim((string)($data['paymentMethod'] ?? '')));
+    $status = strtolower(trim((string)($data['orderStatus'] ?? '')));
+    $isCod = str_contains($method, 'cod') || str_contains($method, 'cash');
+    return $isCod && in_array($status, ['done', 'completed'], true);
 }
 
 try {
@@ -63,6 +79,9 @@ try {
         if (!$data) {
             merchantSendJson(false, null, 'Pesanan tidak ditemukan', 404);
         }
+        if (!receiptCanGenerate($data)) {
+            merchantSendJson(false, null, 'Struk tersedia setelah pembayaran selesai', 409);
+        }
         merchantSendJson(true, $data, 'Data struk berhasil dimuat');
     }
 
@@ -75,6 +94,9 @@ try {
         $data = receiptOrderData($conn, $orderId, $userId);
         if (!$data) {
             merchantSendJson(false, null, 'Pesanan tidak ditemukan', 404);
+        }
+        if (!receiptCanGenerate($data)) {
+            merchantSendJson(false, null, 'Struk tersedia setelah pembayaran selesai', 409);
         }
 
         if (merchantTableExists($conn, 'transaction_receipts')) {

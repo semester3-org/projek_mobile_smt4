@@ -63,23 +63,35 @@ function midtransEnabledPayments(string $paymentMethod): array {
     if (textContains($normalizedMethod, 'cod') || textContains($normalizedMethod, 'cash')) {
         sendError('COD tidak diproses melalui Midtrans', 400);
     }
-    if (textContains($normalizedMethod, 'shopeepay')) {
-        return ['shopeepay', 'qris'];
+    if (textContains($normalizedMethod, 'bca')) {
+        return ['bca_va'];
     }
-    if (textContains($normalizedMethod, 'bca') ||
-        textContains($normalizedMethod, 'mandiri') ||
-        textContains($normalizedMethod, 'virtual account') ||
+    if (textContains($normalizedMethod, 'bni')) {
+        return ['bni_va'];
+    }
+    if (textContains($normalizedMethod, 'mandiri') || textContains($normalizedMethod, 'echannel')) {
+        return ['echannel'];
+    }
+    if (textContains($normalizedMethod, 'gopay')) {
+        return ['gopay'];
+    }
+    if (textContains($normalizedMethod, 'shopeepay')) {
+        return ['shopeepay'];
+    }
+    if (textContains($normalizedMethod, 'ovo') ||
+        textContains($normalizedMethod, 'dana') ||
+        textContains($normalizedMethod, 'qris') ||
+        textContains($normalizedMethod, 'linkaja')) {
+        return ['gopay', 'shopeepay'];
+    }
+    if (textContains($normalizedMethod, 'virtual account') ||
         textContains($normalizedMethod, 'bank') ||
         textContains($normalizedMethod, 'transfer')) {
-        return ['bank_transfer'];
+        return ['bca_va', 'bni_va', 'echannel'];
     }
-    if (textContains($normalizedMethod, 'qris') ||
-        textContains($normalizedMethod, 'gopay') ||
-        textContains($normalizedMethod, 'ovo') ||
-        textContains($normalizedMethod, 'dana') ||
-        textContains($normalizedMethod, 'e-wallet') ||
+    if (textContains($normalizedMethod, 'e-wallet') ||
         textContains($normalizedMethod, 'ewallet')) {
-        return ['gopay', 'qris', 'shopeepay'];
+        return ['gopay', 'shopeepay'];
     }
     if (textContains($normalizedMethod, 'credit') ||
         textContains($normalizedMethod, 'debit') ||
@@ -111,12 +123,240 @@ function tableExists(mysqli $conn, string $table): bool {
     return (int)($row['total'] ?? 0) > 0;
 }
 
+function uuid(): string {
+    $data = random_bytes(16);
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
+function paymentHistoryIdColumn(mysqli $conn): ?array {
+    $stmt = $conn->prepare("
+        SELECT DATA_TYPE AS data_type, EXTRA AS extra
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'payment_history'
+          AND column_name = 'id'
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function paymentHistoryUsesAutoIncrementId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+
+    $extra = strtolower((string)($column['extra'] ?? ''));
+    return strpos($extra, 'auto_increment') !== false;
+}
+
+function paymentHistoryUsesStringId(mysqli $conn): bool {
+    $column = paymentHistoryIdColumn($conn);
+    if (!$column) return false;
+
+    $dataType = strtolower((string)($column['data_type'] ?? ''));
+    $isStringType = in_array($dataType, ['char', 'varchar', 'text'], true);
+    return $isStringType;
+}
+
+function nextPaymentHistoryNumericId(mysqli $conn): int {
+    $result = $conn->query("SELECT COALESCE(MAX(CAST(id AS UNSIGNED)), 0) + 1 AS next_id FROM payment_history");
+    if (!$result) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $row = $result->fetch_assoc();
+    return max(1, (int)($row['next_id'] ?? 1));
+}
+
+function latestPaymentHistoryId(mysqli $conn, string $registrationId, string $period): string {
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM payment_history
+        WHERE registration_id = ? AND period_month = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ");
+    if (!$stmt) return '';
+    $stmt->bind_param('ss', $registrationId, $period);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return isset($row['id']) ? (string)$row['id'] : '';
+}
+
+function createPaymentHistoryForGeneratedBill(
+    mysqli $conn,
+    string $registrationId,
+    int $amount,
+    string $period
+): string {
+    if (!paymentHistoryUsesAutoIncrementId($conn)) {
+        $usesStringId = paymentHistoryUsesStringId($conn);
+        $billingId = $usesStringId ? uuid() : nextPaymentHistoryNumericId($conn);
+        $insert = $conn->prepare("
+            INSERT INTO payment_history
+                (id, registration_id, amount, period_month, payment_status, payment_method, created_at)
+            VALUES (?, ?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
+        ");
+        if (!$insert) {
+            sendError('Database error: ' . $conn->error, 500);
+        }
+        if ($usesStringId) {
+            $insert->bind_param('ssis', $billingId, $registrationId, $amount, $period);
+        } else {
+            $insert->bind_param('isis', $billingId, $registrationId, $amount, $period);
+        }
+        if (!$insert->execute()) {
+            $error = $insert->error;
+            $insert->close();
+            sendError('Gagal membuat tagihan pembayaran: ' . $error, 500);
+        }
+        $insert->close();
+        return (string)$billingId;
+    }
+
+    $insert = $conn->prepare("
+        INSERT INTO payment_history
+            (registration_id, amount, period_month, payment_status, payment_method, created_at)
+        VALUES (?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
+    ");
+    if (!$insert) {
+        sendError('Database error: ' . $conn->error, 500);
+    }
+    $insert->bind_param('sis', $registrationId, $amount, $period);
+    if (!$insert->execute()) {
+        $error = $insert->error;
+        $insert->close();
+        sendError('Gagal membuat tagihan pembayaran: ' . $error, 500);
+    }
+    $insert->close();
+
+    $billingId = (string)$conn->insert_id;
+    if ($billingId !== '' && $billingId !== '0') {
+        return $billingId;
+    }
+
+    $fallbackId = latestPaymentHistoryId($conn, $registrationId, $period);
+    if ($fallbackId !== '') {
+        return $fallbackId;
+    }
+
+    sendError('Tagihan dibuat, tetapi ID pembayaran tidak bisa dibaca dari database', 500);
+}
+
 function ensurePaymentPeriodColumn(mysqli $conn): void {
     if (!tableExists($conn, 'payment_history')) return;
     $conn->query("
         ALTER TABLE payment_history
         MODIFY period_month VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL
     ");
+}
+
+function billingPaymentContext(mysqli $conn, string $billingId, ?string $userId = null): ?array {
+    $userSql = $userId !== null && $userId !== '' ? ' AND rr.user_id = ?' : '';
+    $stmt = $conn->prepare("
+        SELECT
+            ph.id,
+            ph.amount,
+            ph.payment_status,
+            ph.period_month,
+            rr.user_id,
+            k.owner_id,
+            k.title AS kos_title,
+            r.room_number,
+            u.display_name,
+            u.email
+        FROM payment_history ph
+        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE ph.id = ?
+          AND rr.status IN ('active', 'approved')
+          $userSql
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    if ($userSql !== '') {
+        $stmt->bind_param('ss', $billingId, $userId);
+    } else {
+        $stmt->bind_param('s', $billingId);
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function createOwnerBillingPaymentNotification(mysqli $conn, string $ownerId, string $title, string $message): void {
+    $notificationId = merchantCreateNotification(
+        $conn,
+        $ownerId,
+        $title,
+        $message,
+        'payment',
+        'Lihat Keuangan',
+        'owner:finance',
+        'important',
+        false
+    );
+
+    if ($notificationId > 0) {
+        merchantDispatchNotificationPush(
+            $conn,
+            $notificationId,
+            $ownerId,
+            $title,
+            $message,
+            'payment',
+            'owner:finance',
+            true
+        );
+    }
+}
+
+function notifyBillingPaymentPaid(mysqli $conn, array $context): void {
+    try {
+        require_once __DIR__ . '/merchant_helpers.php';
+        merchantEnsureSchema($conn);
+
+        $billingId = (string)($context['id'] ?? '');
+        $amount = (int)round((float)($context['amount'] ?? 0));
+        $kosTitle = (string)($context['kos_title'] ?? 'kos');
+        $roomNumber = (string)($context['room_number'] ?? '-');
+        $tenantName = (string)($context['display_name'] ?? 'Penyewa');
+        $amountLabel = 'Rp ' . number_format($amount, 0, ',', '.');
+
+        if (!empty($context['owner_id'])) {
+            createOwnerBillingPaymentNotification(
+                $conn,
+                (string)$context['owner_id'],
+                'Pembayaran sewa masuk',
+                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.'
+            );
+        } else {
+            error_log('Billing payment paid without owner_id for billing: ' . $billingId);
+        }
+
+        if (!empty($context['user_id'])) {
+            merchantCreateNotification(
+                $conn,
+                (string)$context['user_id'],
+                'Pembayaran sewa berhasil',
+                'Pembayaran kamar ' . $roomNumber . ' di ' . $kosTitle . ' sudah diterima. Masa sewa Anda diperbarui otomatis.',
+                'payment',
+                'Lihat Tagihan',
+                'billing:' . $billingId,
+                'important'
+            );
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to notify billing payment paid: ' . $e->getMessage());
+    }
 }
 
 function resolveBillingIdForPayment(mysqli $conn, string $requestedOrderId, string $userId, int $amount): string {
@@ -169,24 +409,7 @@ function resolveBillingIdForPayment(mysqli $conn, string $requestedOrderId, stri
             return (string)$existingRow['id'];
         }
 
-        $insert = $conn->prepare("
-            INSERT INTO payment_history
-                (registration_id, amount, period_month, payment_status, payment_method, created_at)
-            VALUES (?, ?, ?, 'unpaid', 'MIDTRANS', NOW())
-        ");
-        if (!$insert) {
-            sendError('Database error: ' . $conn->error, 500);
-        }
-        $insert->bind_param('sis', $registrationId, $amount, $period);
-        $insert->execute();
-        $billingId = (string)$conn->insert_id;
-        $insert->close();
-
-        if ($billingId === '' || $billingId === '0') {
-            sendError('Gagal membuat tagihan pembayaran', 500);
-        }
-
-        return $billingId;
+        return createPaymentHistoryForGeneratedBill($conn, $registrationId, $amount, $period);
     }
 
     $billingId = preg_replace('/[^A-Za-z0-9\-_]/', '-', $requestedOrderId);
@@ -274,14 +497,22 @@ if ($action === 'create_order_payment') {
     }
 
     $currentPaymentStatus = strtolower((string)($order['payment_status'] ?? ''));
-    if (in_array($currentPaymentStatus, ['paid', 'payment_submitted'], true)) {
+    $currentOrderStatus = strtolower((string)($order['status'] ?? ''));
+    if ($currentPaymentStatus === 'paid') {
         sendError('Pembayaran pesanan sudah tercatat', 400);
+    }
+    if (in_array($currentPaymentStatus, ['cancelled'], true) ||
+        in_array($currentOrderStatus, ['done', 'completed', 'cancelled'], true)) {
+        sendError('Pesanan sudah selesai atau tidak dapat dibayar', 400);
     }
 
     $serviceType = strtolower((string)($order['service_type'] ?? $order['merchant_type'] ?? ''));
+    if ($serviceType === 'catering' && strtolower((string)($order['status'] ?? '')) !== 'accepted') {
+        sendError('Pesanan catering perlu disetujui merchant sebelum dibayar', 400);
+    }
     $paymentMethod = $paymentMethodInput !== '' ? $paymentMethodInput : (string)($order['payment_method'] ?? '');
     if ($paymentMethod === '') {
-        $paymentMethod = $serviceType === 'catering' ? 'GoPay/QRIS' : 'Transfer Bank';
+        $paymentMethod = 'bca';
     }
     if ($serviceType === 'catering' &&
         (textContains(strtolower($paymentMethod), 'cod') || textContains(strtolower($paymentMethod), 'cash'))) {
@@ -291,7 +522,9 @@ if ($action === 'create_order_payment') {
     $enabledPayments = midtransEnabledPayments($paymentMethod);
     $amount = (int)round((float)($order['total_harga'] ?? 0));
     if ($amount <= 0) {
-        sendError('Total pesanan tidak valid', 400);
+        sendError($serviceType === 'laundry'
+            ? 'Total laundry belum ditentukan merchant'
+            : 'Total pesanan tidak valid', 400);
     }
 
     $orderIdInt = (int)$order['id'];
@@ -348,6 +581,7 @@ if ($action === 'create_order_payment') {
         ],
         'item_details' => $items,
         'enabled_payments' => $enabledPayments,
+        'callbacks' => midtransCallbackUrls(),
     ];
 
     try {
@@ -397,10 +631,31 @@ if ($action === 'sync_order_status') {
         require_once __DIR__ . '/merchant_helpers.php';
         merchantEnsureSchema($conn);
 
+        $existingOrder = null;
+        $lookup = $conn->prepare("
+            SELECT o.id, o.order_code, o.payment_status, o.service_type,
+                   m.user_id AS merchant_user_id
+            FROM orders o
+            INNER JOIN merchants m ON m.id = o.merchant_id
+            WHERE (o.midtrans_order_id = ? OR o.id = ?)
+              AND o.user_id = ?
+            LIMIT 1
+        ");
+        if ($lookup) {
+            $orderIdForLookup = $orderId ?? 0;
+            $lookup->bind_param('sis', $midtransOrderId, $orderIdForLookup, $userId);
+            $lookup->execute();
+            $existingOrder = $lookup->get_result()->fetch_assoc();
+            $lookup->close();
+        }
+        if (!$existingOrder) {
+            sendError('Pesanan Midtrans tidak ditemukan', 404);
+        }
+
         $stmt = $conn->prepare("
             UPDATE orders
             SET payment_status = ?,
-                payment_method = IF(? = '', payment_method, ?),
+                payment_method = IF(? = '' OR ? = 'bank_transfer', payment_method, ?),
                 paid_at = IF(? = 'paid', COALESCE(paid_at, NOW()), paid_at),
                 subscription_status = IF(
                     service_type = 'catering'
@@ -417,28 +672,43 @@ if ($action === 'sync_order_status') {
             sendError('Database error: ' . $conn->error, 500);
         }
         $orderIdForBind = $orderId ?? 0;
-        $stmt->bind_param('ssssssis', $localStatus, $paymentType, $paymentType, $localStatus, $localStatus, $midtransOrderId, $orderIdForBind, $userId);
+        $stmt->bind_param('sssssssis', $localStatus, $paymentType, $paymentType, $paymentType, $localStatus, $localStatus, $midtransOrderId, $orderIdForBind, $userId);
         $stmt->execute();
         $affectedRows = $stmt->affected_rows;
         $stmt->close();
 
-        if ($localStatus === 'paid') {
-            $merchantUserId = merchantQueryValue(
-                $conn,
-                'SELECT m.user_id FROM orders o INNER JOIN merchants m ON m.id = o.merchant_id WHERE (o.midtrans_order_id = ? OR o.id = ?) LIMIT 1',
-                'si',
-                [$midtransOrderId, $orderIdForBind]
-            );
+        $wasAlreadyPaid = strtolower((string)($existingOrder['payment_status'] ?? '')) === 'paid';
+        if ($localStatus === 'paid' && !$wasAlreadyPaid) {
+            if ($orderIdForBind > 0) {
+                merchantActivateCateringSubscription($conn, $orderIdForBind);
+            }
+            $merchantUserId = $existingOrder['merchant_user_id'] ?? null;
+            $orderCode = $existingOrder['order_code'] ?? ('#' . $orderIdForBind);
             if ($merchantUserId) {
                 merchantCreateNotification(
                     $conn,
                     (string)$merchantUserId,
                     'Pembayaran pesanan berhasil',
-                    'Pembayaran Midtrans untuk pesanan user sudah diterima.',
+                    'Pembayaran Midtrans untuk ' . $orderCode . ' sudah diterima.',
                     'payment',
                     'Lihat Pesanan',
-                    'order:' . (string)$orderIdForBind
+                    'order:' . (string)$orderIdForBind,
+                    'important'
                 );
+            }
+            merchantCreateNotification(
+                $conn,
+                (string)$userId,
+                'Pembayaran berhasil',
+                'Pembayaran ' . $orderCode . ' berhasil diterima. Pesanan akan dilanjutkan merchant.',
+                'payment',
+                'Lihat Pesanan',
+                'order:' . (string)$orderIdForBind,
+                'important'
+            );
+        } elseif ($localStatus === 'paid') {
+            if ($orderIdForBind > 0) {
+                merchantActivateCateringSubscription($conn, $orderIdForBind);
             }
         }
 
@@ -469,6 +739,8 @@ if ($action === 'sync_status') {
         $localStatus = localPaymentStatus($transactionStatus);
 
         require_once __DIR__ . '/../config/db.php';
+        $paymentContext = billingPaymentContext($conn, $billingId, (string)$userId);
+        $wasAlreadyPaid = strtolower((string)($paymentContext['payment_status'] ?? '')) === 'paid';
         $stmt = $conn->prepare("
             UPDATE payment_history ph
             INNER JOIN room_registrations rr ON rr.id = ph.registration_id
@@ -489,6 +761,10 @@ if ($action === 'sync_status') {
         $affectedRows = $stmt->affected_rows;
         $stmt->close();
 
+        if ($localStatus === 'paid' && !$wasAlreadyPaid && $paymentContext) {
+            notifyBillingPaymentPaid($conn, $paymentContext);
+        }
+
         sendSuccess([
             'billing_id' => $billingId,
             'midtrans_order_id' => $midtransOrderId,
@@ -506,7 +782,7 @@ $orderId = trim((string)($body['order_id'] ?? ''));
 $amount = isset($body['amount']) ? (float)$body['amount'] : 0;
 $customerName = trim((string)($body['customer_name'] ?? ''));
 $customerEmail = trim((string)($body['customer_email'] ?? ''));
-$paymentMethod = trim((string)($body['payment_method'] ?? 'QRIS'));
+$paymentMethod = trim((string)($body['payment_method'] ?? 'bca'));
 $items = $body['items'] ?? [];
 
 if ($orderId === '' || $amount <= 0) {
@@ -518,6 +794,22 @@ $amount = (int)round($amount);
 require_once __DIR__ . '/../config/db.php';
 ensurePaymentPeriodColumn($conn);
 $billingId = resolveBillingIdForPayment($conn, $orderId, (string)$userId, $amount);
+
+$billingContext = billingPaymentContext($conn, $billingId, (string)$userId);
+if ($billingContext) {
+    if ($customerName === '' || strtolower($customerName) === 'pelanggan kos') {
+        $customerName = (string)($billingContext['display_name'] ?? $customerName);
+    }
+    if ($customerEmail === '' || strtolower($customerEmail) === 'customer@example.com') {
+        $customerEmail = (string)($billingContext['email'] ?? $customerEmail);
+    }
+}
+if ($customerName === '') {
+    $customerName = 'Penyewa Kos';
+}
+if ($customerEmail === '') {
+    $customerEmail = 'customer@example.com';
+}
 
 // Midtrans order_id must be unique and max 50 characters.
 $orderSuffix = date('His') . mt_rand(100, 999);
@@ -564,20 +856,7 @@ if (count($normalizedItems) === 0) {
     $items = $normalizedItems;
 }
 
-$normalizedMethod = strtolower($paymentMethod);
-$enabledPayments = [];
-
-if (textContains($normalizedMethod, 'shopeepay')) {
-    $enabledPayments = ['shopeepay', 'qris'];
-} elseif (textContains($normalizedMethod, 'bca') || textContains($normalizedMethod, 'mandiri') || textContains($normalizedMethod, 'virtual account') || textContains($normalizedMethod, 'bank')) {
-    $enabledPayments = ['bank_transfer'];
-} elseif (textContains($normalizedMethod, 'qris') || textContains($normalizedMethod, 'gopay') || textContains($normalizedMethod, 'ovo') || textContains($normalizedMethod, 'dana')) {
-    $enabledPayments = ['gopay', 'qris'];
-} elseif (textContains($normalizedMethod, 'credit') || textContains($normalizedMethod, 'debit') || textContains($normalizedMethod, 'kartu')) {
-    $enabledPayments = ['credit_card'];
-} else {
-    sendError('Payment method tidak didukung: ' . $paymentMethod, 400);
-}
+$enabledPayments = midtransEnabledPayments($paymentMethod);
 
 $transactionParams = [
     'transaction_details' => [
@@ -590,6 +869,7 @@ $transactionParams = [
     ],
     'item_details' => $items,
     'enabled_payments' => $enabledPayments,
+    'callbacks' => midtransCallbackUrls(),
 ];
 
 try {

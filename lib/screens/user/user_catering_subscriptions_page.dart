@@ -27,23 +27,47 @@ class _UserCateringSubscriptionsPageState
     super.initState();
     _load();
     RealtimeService().startUserOrderPolling();
-    RealtimeService().addEventListener('order_status_updated', _load);
+    RealtimeService().addEventListener('order_status_updated', _silentLoad);
   }
 
   @override
   void dispose() {
-    RealtimeService().removeEventListener('order_status_updated', _load);
+    RealtimeService().removeEventListener('order_status_updated', _silentLoad);
+    RealtimeService().stopUserOrderPolling();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  String _itemsSignature(List<CateringSubscriber> items) {
+    return items
+        .map(
+          (item) => [
+            item.id,
+            item.orderId,
+            item.subscriptionStatus,
+            item.startDate ?? '',
+            item.endDate ?? '',
+            item.cancellationRequestedAt ?? '',
+          ].join('|'),
+        )
+        .join('::');
+  }
+
+  Future<void> _silentLoad() => _load(showLoading: false);
+
+  Future<void> _load({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() => _loading = true);
+    }
     final result = await UserRepository.getCateringSubscriptions(
       status: _filters[_tab],
     );
     if (!mounted) return;
+    final nextItems = result.data ?? [];
+    final hasChanged = _itemsSignature(nextItems) != _itemsSignature(_items);
     setState(() {
-      _items = result.data ?? [];
+      if (hasChanged || showLoading) {
+        _items = nextItems;
+      }
       _loading = false;
     });
   }

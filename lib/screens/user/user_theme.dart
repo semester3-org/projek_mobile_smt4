@@ -16,7 +16,7 @@ class UserTheme {
 
   static BoxShadow softShadow({double opacity = 0.08}) {
     return BoxShadow(
-      color: const Color(0xFF0F172A).withOpacity(opacity),
+      color: const Color(0xFF0F172A).withValues(alpha: opacity),
       blurRadius: 24,
       offset: const Offset(0, 12),
     );

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/payment_methods.dart';
-import '../../core/user_location_service.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
@@ -50,13 +50,13 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     super.dispose();
   }
 
-  Future<void> _load({bool silent = false}) async {
-    final coords = await UserLocationService.current();
+  Future<void> _load({
+    bool forceRefresh = false,
+  }) async {
     final result = await UserRepository.getMerchantDetail(
       type: widget.merchant.type,
       id: _merchantId,
-      latitude: coords?.latitude,
-      longitude: coords?.longitude,
+      forceRefresh: forceRefresh,
     );
     if (!mounted) return;
     setState(() {
@@ -157,12 +157,14 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     await _openOrder(
       result.item,
       initialCateringDays: result.cateringDays,
+      initialLaundryAddonIds: result.selectedAddonIds,
     );
   }
 
   Future<void> _openOrder(
     MerchantMenuItem? item, {
     int? initialCateringDays,
+    List<String> initialLaundryAddonIds = const [],
   }) async {
     final draft = await showModalBottomSheet<_OrderDraft>(
       context: context,
@@ -176,6 +178,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         merchant: _merchant,
         initialItem: item,
         initialCateringDays: initialCateringDays,
+        initialLaundryAddonIds: initialLaundryAddonIds,
       ),
     );
 
@@ -190,6 +193,17 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     }
 
     if (!mounted) return;
+    if (_merchant.type == 'catering') {
+      final existingMessage = await _existingCateringOrderMessage();
+      if (!mounted) return;
+      if (existingMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(existingMessage)),
+        );
+        return;
+      }
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Mengirim pesanan ke merchant...')),
     );
@@ -207,6 +221,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
       customerName: draft.customerName,
       customerPhone: draft.customerPhone,
       notes: draft.notes,
+      addonIds: draft.selectedAddonIds,
     );
     if (!mounted) return;
 
@@ -222,6 +237,25 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.error ?? 'Gagal membuat pesanan')),
     );
+  }
+
+  Future<String?> _existingCateringOrderMessage() async {
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
+    if (!result.isSuccess) return null;
+    final active = (result.data ?? const []).where((subscription) {
+      final status = subscription.subscriptionStatus.toLowerCase();
+      return subscription.isActive ||
+          status == 'pending' ||
+          status == 'pending_payment';
+    }).toList();
+    if (active.isEmpty) return null;
+    final item = active.first;
+    final product = item.productName.isNotEmpty
+        ? item.productName
+        : item.packageLabel.isNotEmpty
+            ? item.packageLabel
+            : 'catering';
+    return 'Kamu masih punya pesanan/langganan $product. Gunakan menu perpanjang di detail langganan agar jadwal tidak bentrok.';
   }
 
   Future<void> _submitReview() async {
@@ -271,12 +305,10 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     if (!mounted) return;
 
     if (result.isSuccess) {
-      final coords = await UserLocationService.current();
       final refreshed = await UserRepository.getMerchantDetail(
         type: _merchant.type,
         id: _merchantId,
-        latitude: coords?.latitude,
-        longitude: coords?.longitude,
+        forceRefresh: true,
       );
       if (!mounted) return;
       setState(() {
@@ -335,12 +367,10 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
     );
     if (!mounted) return;
     if (result.isSuccess) {
-      final coords = await UserLocationService.current();
       final refreshed = await UserRepository.getMerchantDetail(
         type: _merchant.type,
         id: _merchantId,
-        latitude: coords?.latitude,
-        longitude: coords?.longitude,
+        forceRefresh: true,
       );
       if (!mounted) return;
       setState(() {
@@ -401,7 +431,7 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
         ),
         body: RefreshIndicator(
           color: UserTheme.primary,
-          onRefresh: _load,
+          onRefresh: () => _load(forceRefresh: true),
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(
@@ -410,6 +440,8 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     _HeaderCard(merchant: _merchant),
                     const SizedBox(height: 22),
                     _MerchantSummary(merchant: _merchant),
+                    const SizedBox(height: 18),
+                    _ActivePromoSection(merchant: _merchant),
                     const SizedBox(height: 30),
                     UserSectionHeader(
                       title: _merchant.type == 'laundry'
@@ -463,10 +495,12 @@ class _ProductDetailResult {
   const _ProductDetailResult({
     required this.item,
     this.cateringDays,
+    this.selectedAddonIds = const [],
   });
 
   final MerchantMenuItem item;
   final int? cateringDays;
+  final List<String> selectedAddonIds;
 }
 
 class _ProductDetailSheet extends StatefulWidget {
@@ -484,6 +518,7 @@ class _ProductDetailSheet extends StatefulWidget {
 
 class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   int _cateringDays = 30;
+  final Set<String> _selectedAddonIds = {};
 
   bool get _isCatering => widget.merchant.type == 'catering';
   bool get _hasWeekdayPackage => widget.item.hasWeekdayPrice;
@@ -493,8 +528,42 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     return widget.item.cateringPriceForDays(_cateringDays);
   }
 
+  bool get _showPromo {
+    final hasPromo = widget.item.hasPromo &&
+        (widget.item.promoPrice ?? 0) > 0 &&
+        (widget.item.promoDiscountAmount ?? 0) > 0;
+    if (!hasPromo) return false;
+    return _promoPrice < _price;
+  }
+
+  double get _promoPrice {
+    final discountAmount = widget.item.promoDiscountAmount ?? 0;
+    if (discountAmount <= 0) return _price;
+    final promoPrice = _price - discountAmount;
+    return promoPrice.clamp(0, double.infinity);
+  }
+
+  double get _displayPrice {
+    if (!_showPromo) return _price;
+    return _promoPrice;
+  }
+
+  double get _discountAmount =>
+      (_price - _displayPrice).clamp(0, double.infinity);
+
+  void _toggleAddon(String id) {
+    setState(() {
+      if (_selectedAddonIds.contains(id)) {
+        _selectedAddonIds.remove(id);
+      } else {
+        _selectedAddonIds.add(id);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final unitSuffix = _isCatering ? '' : _laundryUnitSuffix(widget.item);
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
@@ -546,22 +615,90 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 1.45,
               ),
             ),
+            if (_isCatering) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _ProductInfoChip(
+                    icon: Icons.star_rounded,
+                    label:
+                        '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                    color: const Color(0xFFFFB300),
+                  ),
+                  _ProductInfoChip(
+                    icon: Icons.delivery_dining_rounded,
+                    label: widget.item.mealDeliveryCount >= 2
+                        ? '2x makan/hari'
+                        : '1x makan/hari',
+                    color: UserTheme.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _CateringDeliveryInfoBox(item: widget.item),
+            ],
+            if (_showPromo &&
+                (widget.item.promoDescription ?? '').isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                widget.item.promoDescription!,
+                style: const TextStyle(
+                  color: UserTheme.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            if (_showPromo &&
+                _isCatering &&
+                _hasWeekdayPackage &&
+                _cateringDays == 20) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Catatan: promo dihitung berdasarkan paket Full Day (30 hari).',
+                style: TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 12,
+                  height: 1.3,
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             Text(
-              '${formatUserCurrency(_price)}${_isCatering ? '' : widget.item.unit}',
+              '${formatUserCurrency(_displayPrice)}$unitSuffix',
               style: const TextStyle(
                 color: UserTheme.primaryDark,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
+            if (_showPromo) ...[
+              Text(
+                '${formatUserCurrency(_price)}$unitSuffix',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  decoration: TextDecoration.lineThrough,
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                'Hemat ${formatUserCurrency(_discountAmount)}',
+                style: const TextStyle(
+                  color: UserTheme.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             if (_isCatering) ...[
               const SizedBox(height: 16),
               if (_hasWeekdayPackage)
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
-                    ButtonSegment(value: 30, label: Text('Full Day')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
+                    ButtonSegment(value: 30, label: Text('Full Day 30 hari')),
                   ],
                   selected: {_cateringDays},
                   onSelectionChanged: (value) {
@@ -571,10 +708,23 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               const SizedBox(height: 8),
               Text(
                 _hasWeekdayPackage && _cateringDays == 20
-                    ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+                    ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
                     : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
                 style: const TextStyle(color: UserTheme.muted, fontSize: 12),
               ),
+            ],
+            if (!_isCatering && widget.item.addons.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              const Text(
+                'Tambahan Layanan Opsional',
+                style: TextStyle(
+                  color: UserTheme.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...widget.item.addons.map(_buildAddonOption),
             ],
             const SizedBox(height: 20),
             SizedBox(
@@ -584,6 +734,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                   _ProductDetailResult(
                     item: widget.item,
                     cateringDays: _isCatering ? _cateringDays : null,
+                    selectedAddonIds: _selectedAddonIds.toList(),
                   ),
                 ),
                 style: FilledButton.styleFrom(
@@ -595,6 +746,59 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 ),
                 icon: const Icon(Icons.shopping_bag_outlined),
                 label: const Text('Lanjut Pesan'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddonOption(MerchantMenuAddon addon) {
+    final selected = _selectedAddonIds.contains(addon.id);
+    return InkWell(
+      onTap: () => _toggleAddon(addon.id),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? UserTheme.softBlue : const Color(0xFFF7F9FC),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? UserTheme.primary : const Color(0xFFE3EBF6),
+          ),
+        ),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: (_) => _toggleAddon(addon.id),
+              activeColor: UserTheme.primary,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    addon.name,
+                    style: const TextStyle(
+                      color: UserTheme.text,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              _laundryAddonPriceLabel(addon),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: UserTheme.primaryDark,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ],
@@ -617,6 +821,7 @@ class _OrderDraft {
     required this.customerName,
     required this.customerPhone,
     required this.notes,
+    this.selectedAddonIds = const [],
   });
 
   final List<MerchantMenuItem> items;
@@ -630,6 +835,7 @@ class _OrderDraft {
   final String customerName;
   final String customerPhone;
   final String notes;
+  final List<String> selectedAddonIds;
 }
 
 class _OrderCheckoutSheet extends StatefulWidget {
@@ -637,11 +843,13 @@ class _OrderCheckoutSheet extends StatefulWidget {
     required this.merchant,
     this.initialItem,
     this.initialCateringDays,
+    this.initialLaundryAddonIds = const [],
   });
 
   final UserMerchant merchant;
   final MerchantMenuItem? initialItem;
   final int? initialCateringDays;
+  final List<String> initialLaundryAddonIds;
 
   @override
   State<_OrderCheckoutSheet> createState() => _OrderCheckoutSheetState();
@@ -653,6 +861,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final Set<String> _selectedLaundryIds = {};
+  final Set<String> _selectedLaundryAddonIds = {};
 
   MerchantMenuItem? _selectedCateringItem;
   String _paymentMethod = 'cod';
@@ -660,11 +869,22 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   double? _deliveryLatitude;
   double? _deliveryLongitude;
   bool _didLoadProfile = false;
+  String? _sheetError;
 
   bool get _isLaundry => widget.merchant.type == 'laundry';
 
   List<String> get _paymentOptions =>
       PaymentMethodHelper.checkoutOptionKeys(isLaundry: _isLaundry);
+
+  String _paymentOptionLabel(String method) {
+    final displayName = PaymentMethodHelper.getDisplayName(method);
+    final category = PaymentMethodHelper.getCategory(method);
+    if (category.isEmpty ||
+        displayName.toLowerCase().contains(category.toLowerCase())) {
+      return displayName;
+    }
+    return '$displayName - $category';
+  }
 
   List<MerchantMenuItem> get _items {
     if (widget.merchant.menuItems.isNotEmpty) return widget.merchant.menuItems;
@@ -684,11 +904,15 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
   @override
   void initState() {
     super.initState();
-    _paymentMethod = _isLaundry ? 'cod' : 'gopay';
+    _paymentMethod = _isLaundry ? 'cod' : '';
     _cateringDays = widget.initialCateringDays ?? 30;
     final initial = widget.initialItem ?? _items.first;
     if (_isLaundry) {
       _selectedLaundryIds.add(initial.id);
+      final validAddonIds = initial.addons.map((addon) => addon.id).toSet();
+      _selectedLaundryAddonIds.addAll(
+        widget.initialLaundryAddonIds.where(validAddonIds.contains),
+      );
     } else {
       _selectedCateringItem = initial;
       if (_cateringDays == 20 && !initial.hasWeekdayPrice) {
@@ -734,7 +958,19 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
 
   double get _total {
     if (_isLaundry) return 0;
+    return (_subtotal - _promoDiscount).clamp(0, double.infinity);
+  }
+
+  double get _subtotal {
+    if (_isLaundry) return 0;
     return _adjustedCateringPrice(_selectedCateringItem);
+  }
+
+  double get _promoDiscount {
+    if (_isLaundry) return 0;
+    final selected = _selectedCateringItem;
+    if (selected == null || !selected.hasPromo) return 0;
+    return (selected.promoDiscountAmount ?? 0).clamp(0, _subtotal);
   }
 
   double _adjustedCateringPrice(MerchantMenuItem? item) {
@@ -747,6 +983,32 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     if (_isLaundry) {
       return _items
           .where((item) => _selectedLaundryIds.contains(item.id))
+          .map(
+            (item) => MerchantMenuItem(
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              price: item.price,
+              imageUrl: item.imageUrl,
+              category: item.category,
+              unit: item.unit,
+              price20Days: item.price20Days,
+              price30Days: item.price30Days,
+              packageDeliveryType: item.packageDeliveryType,
+              hasPromo: item.hasPromo,
+              originalPrice: item.originalPrice,
+              promoPrice: item.promoPrice,
+              promoDiscountAmount: item.promoDiscountAmount,
+              promoDiscountType: item.promoDiscountType,
+              promoDiscountValue: item.promoDiscountValue,
+              promoLabel: item.promoLabel,
+              promoDescription: item.promoDescription,
+              pricingType: item.pricingType,
+              pricingTypeLabel: item.pricingTypeLabel,
+              durationLabel: item.durationLabel,
+              addons: item.addons,
+            ),
+          )
           .toList();
     }
     final selected = _selectedCateringItem;
@@ -761,6 +1023,23 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         category: selected.category,
         unit: selected.unit,
         packageDeliveryType: selected.packageDeliveryType,
+        mealDeliveryCount: selected.mealDeliveryCount,
+        deliveryTime1: selected.deliveryTime1,
+        deliveryTime2: selected.deliveryTime2,
+        rating: selected.rating,
+        reviewCount: selected.reviewCount,
+        hasPromo: selected.hasPromo,
+        originalPrice: selected.originalPrice,
+        promoPrice: selected.promoPrice,
+        promoDiscountAmount: selected.promoDiscountAmount,
+        promoDiscountType: selected.promoDiscountType,
+        promoDiscountValue: selected.promoDiscountValue,
+        promoLabel: selected.promoLabel,
+        promoDescription: selected.promoDescription,
+        pricingType: selected.pricingType,
+        pricingTypeLabel: selected.pricingTypeLabel,
+        durationLabel: selected.durationLabel,
+        addons: selected.addons,
       ),
     ];
   }
@@ -783,33 +1062,62 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
       _addressCtrl.text = result.address;
       _deliveryLatitude = result.latitude;
       _deliveryLongitude = result.longitude;
+      _sheetError = null;
     });
+  }
+
+  void _showSheetError(String message) {
+    setState(() => _sheetError = message);
   }
 
   String _laundryServiceEstimateFor(List<MerchantMenuItem> items) {
     if (items.isEmpty) return 'Estimasi layanan ditentukan merchant';
+    final duration = items.first.durationLabel.trim();
+    if (duration.isNotEmpty) return duration;
     final category = items.first.category.trim();
     if (category.isEmpty) return 'Estimasi layanan ditentukan merchant';
     return category;
   }
 
+  List<MerchantMenuAddon> _addonsFor(MerchantMenuItem item) {
+    if (_selectedLaundryAddonIds.isEmpty) return const [];
+    return item.addons
+        .where((addon) => _selectedLaundryAddonIds.contains(addon.id))
+        .toList();
+  }
+
+  bool _isValidPhoneNumber(String value) {
+    final phone = value.trim();
+    if (phone.isEmpty) return false;
+    final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final hasValidPrefix = digits.startsWith('08') || digits.startsWith('628');
+    return hasValidPrefix && digits.length >= 10 && digits.length <= 15;
+  }
+
   void _submit() {
     final selectedItems = _selectedItems;
     if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih minimal satu layanan laundry')),
-      );
+      _showSheetError('Pilih minimal satu layanan laundry');
       return;
     }
     if (!_isLaundry && _total <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih paket catering terlebih dahulu')),
-      );
+      _showSheetError('Pilih paket catering terlebih dahulu');
       return;
     }
     if (_addressCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alamat tujuan wajib diisi')),
+      _showSheetError('Alamat tujuan wajib diisi');
+      return;
+    }
+    final customerName = _nameCtrl.text.trim();
+    final validName = RegExp(r"^[A-Za-z .'-]{2,}$").hasMatch(customerName) &&
+        RegExp(r'[A-Za-z]').hasMatch(customerName);
+    if (_isLaundry && !validName) {
+      _showSheetError('Nama penerima hanya boleh huruf dan spasi');
+      return;
+    }
+    if (!_isValidPhoneNumber(_phoneCtrl.text)) {
+      _showSheetError(
+        'Nomor telepon wajib valid. Gunakan format 08..., 628..., atau +628...',
       );
       return;
     }
@@ -820,7 +1128,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         (selectedCatering?.hasWeekdayPrice ?? false);
     final cateringNote = widget.merchant.type == 'catering'
         ? (useWeekday
-            ? 'Paket Weekday: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
+            ? 'Paket Weekday 30 hari: dikirim Senin-Jumat, Sabtu/Minggu tidak dikirim.'
             : 'Paket Full Day: dikirim setiap hari, termasuk Sabtu dan Minggu.')
         : '';
     final notes = [
@@ -840,12 +1148,14 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         deliveryLongitude: _deliveryLongitude,
         estimatedTime: _isLaundry
             ? _laundryServiceEstimateFor(selectedItems)
-            : (useWeekday ? 'Paket Weekday' : 'Paket Full Day'),
+            : (useWeekday ? 'Paket Weekday 30 Hari' : 'Paket Full Day'),
         paymentMethod: _paymentMethod,
-        subscriptionDays: _isLaundry ? null : (useWeekday ? 20 : 30),
-        customerName: _nameCtrl.text.trim(),
+        subscriptionDays: _isLaundry ? null : 30,
+        customerName: customerName,
         customerPhone: _phoneCtrl.text.trim(),
         notes: notes,
+        selectedAddonIds:
+            _isLaundry ? _selectedLaundryAddonIds.toList() : const [],
       ),
     );
   }
@@ -884,13 +1194,17 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
             const SizedBox(height: 14),
+            if (_sheetError != null) ...[
+              _SheetErrorBanner(message: _sheetError!),
+              const SizedBox(height: 14),
+            ],
             if (widget.initialItem != null) ...[
-              _lockedItemSummary(widget.initialItem!),
+              lockedItemSummary(widget.initialItem!),
               if (!_isLaundry && widget.initialItem!.hasWeekdayPrice) ...[
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
                   segments: const [
-                    ButtonSegment(value: 20, label: Text('Weekday')),
+                    ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
                     ButtonSegment(value: 30, label: Text('Full Day')),
                   ],
                   selected: {_cateringDays},
@@ -900,14 +1214,19 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 ),
               ],
             ] else if (_isLaundry)
-              _laundryItemPicker()
+              laundryItemPicker()
             else
-              _cateringItemPicker(),
+              cateringItemPicker(),
             const SizedBox(height: 18),
             _CheckoutField(
               controller: _nameCtrl,
               label: 'Nama Penerima',
               icon: Icons.person_outline_rounded,
+              readOnly: !_isLaundry,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.allow(RegExp(r"[A-Za-z .'-]")),
+                LengthLimitingTextInputFormatter(60),
+              ],
             ),
             const SizedBox(height: 12),
             _CheckoutField(
@@ -915,31 +1234,67 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               label: 'Nomor Telepon',
               icon: Icons.phone_outlined,
               keyboardType: TextInputType.phone,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(15),
+              ],
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _paymentOptions.contains(_paymentMethod)
-                  ? _paymentMethod
-                  : _paymentOptions.first,
-              decoration: _checkoutDecoration(
-                label: 'Metode Pembayaran',
-                icon: Icons.payments_outlined,
+            if (_isLaundry) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _paymentOptions.contains(_paymentMethod)
+                    ? _paymentMethod
+                    : _paymentOptions.first,
+                isExpanded: true,
+                decoration: _checkoutDecoration(
+                  label: 'Metode Pembayaran',
+                  icon: Icons.payments_outlined,
+                ),
+                items: _paymentOptions
+                    .map(
+                      (method) => DropdownMenuItem(
+                        value: method,
+                        child: Text(
+                          _paymentOptionLabel(method),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _paymentMethod = value);
+                },
               ),
-              items: _paymentOptions
-                  .map(
-                    (method) => DropdownMenuItem(
-                      value: method,
+              const SizedBox(height: 18),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F8FD),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD8E5F4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.payments_outlined, color: UserTheme.primary),
+                    SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        '${PaymentMethodHelper.getDisplayName(method)} (${PaymentMethodHelper.getCategory(method)})',
+                        'Metode pembayaran dipilih setelah merchant menyetujui pesanan.',
+                        style: TextStyle(
+                          color: UserTheme.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => _paymentMethod = value);
-              },
-            ),
-            const SizedBox(height: 18),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             _CheckoutField(
               controller: _addressCtrl,
               label: 'Alamat Tujuan',
@@ -1002,7 +1357,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                         SizedBox(height: 6),
                         Text(
-                          'Ditimbang merchant setelah cucian selesai. Harga per kg ditampilkan sebagai referensi saat jemput ke kos.',
+                          'Subtotal layanan, tambahan layanan, dan promo dihitung merchant setelah penimbangan.',
                           style: TextStyle(
                             color: UserTheme.muted,
                             fontSize: 13,
@@ -1011,24 +1366,109 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                       ],
                     )
-                  : Row(
+                  : Column(
                       children: [
-                        const Expanded(
-                          child: Text(
-                            'Total Pesanan',
-                            style: TextStyle(
-                              color: UserTheme.text,
-                              fontWeight: FontWeight.w900,
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Subtotal',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
-                          ),
+                            Text(formatUserCurrency(_subtotal)),
+                          ],
                         ),
-                        Text(
-                          formatUserCurrency(_total),
-                          style: const TextStyle(
-                            color: UserTheme.primaryDark,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                        if (_promoDiscount > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Promo dipakai',
+                                  style: TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _selectedCateringItem?.promoDescription ??
+                                    'Promo aktif',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Potongan Promo',
+                                  style: TextStyle(
+                                    color: UserTheme.muted,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '- ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Total Penghematan',
+                                  style: TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '+ ${formatUserCurrency(_promoDiscount)}',
+                                style: const TextStyle(
+                                  color: UserTheme.success,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Total Pesanan',
+                                style: TextStyle(
+                                  color: UserTheme.text,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              formatUserCurrency(_total),
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1054,8 +1494,11 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
     );
   }
 
-  Widget _lockedItemSummary(MerchantMenuItem item) {
-    final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+  Widget lockedItemSummary(MerchantMenuItem item) {
+    final unitLabel = _laundryUnitSuffix(item);
+    final hasLaundryPromo =
+        _isLaundry && item.hasPromo && (item.promoPrice ?? 0) > 0;
+    final selectedAddons = _isLaundry ? _addonsFor(item) : const [];
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1075,10 +1518,18 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               fontSize: 16,
             ),
           ),
-          if (item.category.isNotEmpty) ...[
+          if ((item.durationLabel.isNotEmpty || item.category.isNotEmpty) &&
+              _isLaundry) ...[
             const SizedBox(height: 6),
             Text(
-              'Estimasi: ${item.category}',
+              'Estimasi: ${item.durationLabel.isNotEmpty ? item.durationLabel : item.category}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+            ),
+          ] else if (item.category.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              item.category,
               textAlign: TextAlign.center,
               style: const TextStyle(color: UserTheme.muted, fontSize: 13),
             ),
@@ -1086,33 +1537,139 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
           if (!_isLaundry) ...[
             const SizedBox(height: 6),
             Text(
-              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+              '${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
               style: const TextStyle(color: UserTheme.muted),
             ),
+            const SizedBox(height: 8),
+            _CateringDeliveryInfoBox(item: item, compact: true),
           ] else ...[
             const SizedBox(height: 6),
-            Text(
-              'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
-              style: const TextStyle(color: UserTheme.muted, fontSize: 13),
-            ),
+            if (hasLaundryPromo) ...[
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.muted,
+                  fontSize: 13,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Harga promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                style: const TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ] else
+              Text(
+                'Referensi harga: ${formatUserCurrency(item.price)}$unitLabel',
+                style: const TextStyle(color: UserTheme.muted, fontSize: 13),
+              ),
+            if (selectedAddons.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: Color(0xFFD8E5F4)),
+              const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Tambahan dipilih',
+                  style: TextStyle(
+                    color: UserTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              ...selectedAddons.map(
+                (addon) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        size: 16,
+                        color: UserTheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          addon.name,
+                          style: const TextStyle(
+                            color: UserTheme.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _laundryAddonPriceLabel(addon),
+                        style: const TextStyle(
+                          color: UserTheme.primaryDark,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
     );
   }
 
-  Widget _laundryItemPicker() {
+  Widget laundryItemPicker() {
+    final mainServiceItems = _items.where((item) {
+      final normalized = item.name.toLowerCase();
+      return normalized.contains('cuci') || item.unit.contains('kg');
+    }).toList();
+    final addonItems =
+        _items.where((item) => !mainServiceItems.contains(item)).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Pilih layanan laundry (tanpa jumlah kg). Merchant akan menimbang dan menetapkan total setelah selesai.',
+          'Pilih layanan utama dan tambahan service opsional. Merchant akan menimbang dan menetapkan total setelah selesai.',
           style: TextStyle(color: UserTheme.muted, fontSize: 12, height: 1.4),
         ),
-        const SizedBox(height: 10),
-        ..._items.map((item) {
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF4D6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE1A3)),
+          ),
+          child: const Text(
+            'Referensi harga ditampilkan per satuan. Total akhir akan ditentukan merchant setelah penimbangan.',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.3,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Layanan Utama',
+          style: TextStyle(
+            color: UserTheme.text,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...((mainServiceItems.isNotEmpty ? mainServiceItems : _items)
+            .map((item) {
           final selected = _selectedLaundryIds.contains(item.id);
-          final unitLabel = item.unit.isNotEmpty ? item.unit : '/kg';
+          final unitLabel = _laundryUnitSuffix(item);
+          final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
           return InkWell(
             onTap: () {
               setState(() {
@@ -1155,10 +1712,26 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
-                          style: const TextStyle(color: UserTheme.muted),
-                        ),
+                        if (hasPromo) ...[
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.muted,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          Text(
+                            'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                            style: const TextStyle(
+                              color: UserTheme.primaryDark,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ] else
+                          Text(
+                            'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                            style: const TextStyle(color: UserTheme.muted),
+                          ),
                         if (item.description.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
@@ -1178,12 +1751,110 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
               ),
             ),
           );
-        }),
+        })),
+        if (addonItems.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text(
+            'Tambahan Layanan (opsional)',
+            style: TextStyle(
+              color: UserTheme.text,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...addonItems.map((item) {
+            final selected = _selectedLaundryIds.contains(item.id);
+            final unitLabel = _laundryUnitSuffix(item, fallback: '/item');
+            final hasPromo = item.hasPromo && (item.promoPrice ?? 0) > 0;
+            return InkWell(
+              onTap: () {
+                setState(() {
+                  if (selected) {
+                    _selectedLaundryIds.remove(item.id);
+                  } else {
+                    _selectedLaundryIds.add(item.id);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color:
+                      selected ? UserTheme.softBlue : const Color(0xFFF7F9FC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? UserTheme.primary : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_box_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      color: selected ? UserTheme.primary : UserTheme.muted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              color: UserTheme.text,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (hasPromo) ...[
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.originalPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            Text(
+                              'Promo: ${formatUserCurrency(item.promoPrice ?? item.price)}$unitLabel',
+                              style: const TextStyle(
+                                color: UserTheme.primaryDark,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              'Referensi: ${formatUserCurrency(item.price)}$unitLabel',
+                              style: const TextStyle(color: UserTheme.muted),
+                            ),
+                          if (item.description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              item.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
 
-  Widget _cateringItemPicker() {
+  Widget cateringItemPicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1226,13 +1897,40 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday' : 'Full Day'}',
+                          '${item.description}\n${formatUserCurrency(_adjustedCateringPrice(item))} / ${_cateringDays == 20 && item.hasWeekdayPrice ? 'Weekday 30 hari' : 'Full Day'}',
                           style: const TextStyle(color: UserTheme.muted),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _ProductInfoChip(
+                              icon: Icons.star_rounded,
+                              label:
+                                  '${item.rating.toStringAsFixed(1)} (${item.reviewCount})',
+                              color: const Color(0xFFFFB300),
+                            ),
+                            _ProductInfoChip(
+                              icon: Icons.delivery_dining_rounded,
+                              label: _cateringDeliveryFrequency(item),
+                              color: UserTheme.primary,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _cateringDeliverySchedule(item),
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         if (item.hasWeekdayPrice) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Weekday tersedia: ${formatUserCurrency(item.price20Days!)}',
+                            'Weekday 30 hari tersedia: ${formatUserCurrency(item.price20Days!)}',
                             style: const TextStyle(
                               color: UserTheme.primary,
                               fontSize: 12,
@@ -1252,7 +1950,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         if (_selectedCateringItem?.hasWeekdayPrice ?? false)
           SegmentedButton<int>(
             segments: const [
-              ButtonSegment(value: 20, label: Text('Weekday')),
+              ButtonSegment(value: 20, label: Text('Weekday 30 hari')),
               ButtonSegment(value: 30, label: Text('Full Day')),
             ],
             selected: {_cateringDays},
@@ -1264,7 +1962,7 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
         Text(
           _cateringDays == 20 &&
                   (_selectedCateringItem?.hasWeekdayPrice ?? false)
-              ? 'Weekday: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
+              ? 'Weekday 30 hari: dikirim Senin-Jumat. Sabtu dan Minggu libur.'
               : 'Full Day: makanan dikirim setiap hari, termasuk Sabtu dan Minggu.',
           style: const TextStyle(color: UserTheme.muted, fontSize: 12),
         ),
@@ -1280,6 +1978,8 @@ class _CheckoutField extends StatelessWidget {
     required this.icon,
     this.maxLines = 1,
     this.keyboardType,
+    this.readOnly = false,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -1287,6 +1987,8 @@ class _CheckoutField extends StatelessWidget {
   final IconData icon;
   final int maxLines;
   final TextInputType? keyboardType;
+  final bool readOnly;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -1315,6 +2017,8 @@ class _CheckoutField extends StatelessWidget {
             controller: controller,
             maxLines: maxLines,
             keyboardType: keyboardType,
+            readOnly: readOnly,
+            inputFormatters: inputFormatters,
             textAlign: TextAlign.start,
             textAlignVertical: TextAlignVertical.center,
             decoration: _checkoutDecoration(multiline: true),
@@ -1326,12 +2030,86 @@ class _CheckoutField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      readOnly: readOnly,
+      inputFormatters: inputFormatters,
       decoration: _checkoutDecoration(
         label: label,
         icon: icon,
       ),
     );
   }
+}
+
+class _SheetErrorBanner extends StatelessWidget {
+  const _SheetErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC9C9)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFD82121),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF8F1A1A),
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _laundryAddonPriceLabel(MerchantMenuAddon addon) {
+  final unit = addon.unit.trim();
+  if (addon.pricingType == 'flat' || unit == 'fixed' || unit.isEmpty) {
+    return formatUserCurrency(addon.price);
+  }
+  return '${formatUserCurrency(addon.price)}${_normalizeUnitSuffix(unit)}';
+}
+
+String _laundryUnitSuffix(
+  MerchantMenuItem item, {
+  String fallback = '/kg',
+}) {
+  final pricingType = item.pricingType.trim().toLowerCase();
+  final rawUnit = item.unit.trim();
+  final normalizedUnit = rawUnit.toLowerCase();
+  if (pricingType == 'flat' || normalizedUnit == 'fixed') return '';
+  if (rawUnit.isNotEmpty) return _normalizeUnitSuffix(rawUnit);
+  if (pricingType == 'per_item') return '/item';
+  if (pricingType == 'per_kg') return '/kg';
+  return fallback;
+}
+
+String _normalizeUnitSuffix(String unit) {
+  final value = unit.trim();
+  final lower = value.toLowerCase();
+  if (value.isEmpty || lower == 'fixed') return '';
+  if (lower == 'kg' || lower == '/kg') return '/kg';
+  if (lower == 'item' || lower == '/item') return '/item';
+  if (value.startsWith('/')) return value;
+  return '/$value';
 }
 
 InputDecoration _checkoutDecoration({
@@ -1371,7 +2149,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = _iconForType(merchant.type);
+    final icon = iconForType(merchant.type);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1434,20 +2212,22 @@ class _HeaderCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.location_on_outlined,
-                  size: 18, color: UserTheme.muted),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  merchant.address,
-                  style: const TextStyle(color: UserTheme.muted),
+          if (merchant.address.trim().isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.location_on_outlined,
+                    size: 18, color: UserTheme.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    merchant.address,
+                    style: const TextStyle(color: UserTheme.muted),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1458,7 +2238,7 @@ class _HeaderCard extends StatelessWidget {
     );
   }
 
-  IconData _iconForType(String type) {
+  IconData iconForType(String type) {
     switch (type) {
       case 'laundry':
         return Icons.local_laundry_service_rounded;
@@ -1506,19 +2286,20 @@ class _MerchantSummary extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                 ],
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 18, color: UserTheme.muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        merchant.address,
-                        style: const TextStyle(color: UserTheme.muted),
+                if (merchant.address.trim().isNotEmpty)
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          size: 18, color: UserTheme.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          merchant.address,
+                          style: const TextStyle(color: UserTheme.muted),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -1547,159 +2328,100 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   @override
   Widget build(BuildContext context) {
     if (widget.type == 'laundry') {
-      return _buildLaundryCard();
+      return buildLaundryCard();
     }
-    return _buildCateringCard();
+    return buildCateringCard();
   }
 
-  Widget _buildLaundryCard() {
+  Widget buildLaundryCard() {
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final percentBadge = _percentagePromoBadge(widget.item);
+    final unitSuffix = _laundryUnitSuffix(widget.item);
     return GestureDetector(
       onTap: widget.onOrder,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-        ),
-        child: Row(
-          children: [
-            UserImage(
-              url: widget.item.imageUrl,
-              icon: Icons.local_laundry_service_rounded,
-              width: 84,
-              height: 84,
-              borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.item.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: UserTheme.text,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.item.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: UserTheme.muted),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${formatUserCurrency(widget.item.price)}${widget.item.unit}',
-                    style: const TextStyle(
-                      color: UserTheme.primaryDark,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            FilledButton(
-              onPressed: widget.onOrder,
-              style: FilledButton.styleFrom(
-                backgroundColor: UserTheme.primaryDark,
-                shape: RoundedRectangleBorder(
+            child: Row(
+              children: [
+                UserImage(
+                  url: widget.item.imageUrl,
+                  icon: Icons.local_laundry_service_rounded,
+                  width: 72,
+                  height: 72,
                   borderRadius: BorderRadius.circular(12),
                 ),
-              ),
-              child: const Text('Pesan'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCateringCard() {
-    final basePrice = widget.item.price;
-
-    return GestureDetector(
-      onTap: widget.onOrder,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            UserImage(
-              url: widget.item.imageUrl,
-              icon: Icons.restaurant_rounded,
-              width: double.infinity,
-              height: 180,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              widget.item.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: UserTheme.text,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.item.description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: UserTheme.muted,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Harga',
-                        style: TextStyle(
-                          color: UserTheme.muted,
-                          fontSize: 12,
+                      Text(
+                        widget.item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: UserTheme.text,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${formatUserCurrency(basePrice)} / bulan',
-                        style: const TextStyle(
-                          color: UserTheme.primaryDark,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
+                        widget.item.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: UserTheme.muted),
                       ),
+                      const SizedBox(height: 8),
+                      if (hasPromo) ...[
+                        Text(
+                          '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)}$unitSuffix',
+                          style: const TextStyle(
+                            color: UserTheme.muted,
+                            decoration: TextDecoration.lineThrough,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          '${formatUserCurrency(widget.item.promoPrice ?? widget.item.price)}$unitSuffix',
+                          style: const TextStyle(
+                            color: UserTheme.primaryDark,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                          style: const TextStyle(
+                            color: UserTheme.primary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ] else
+                        Text(
+                          '${formatUserCurrency(widget.item.price)}$unitSuffix',
+                          style: const TextStyle(
+                            color: UserTheme.primaryDark,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 10),
                 FilledButton(
                   onPressed: widget.onOrder,
                   style: FilledButton.styleFrom(
-                    backgroundColor: UserTheme.primary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
+                    backgroundColor: UserTheme.primaryDark,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1708,11 +2430,316 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                 ),
               ],
             ),
-          ],
+          ),
+          if (percentBadge != null)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: _PromoCornerBadge(label: percentBadge),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildCateringCard() {
+    final hasPromo = widget.item.hasPromo && (widget.item.promoPrice ?? 0) > 0;
+    final percentBadge = _percentagePromoBadge(widget.item);
+    final basePrice = hasPromo
+        ? (widget.item.promoPrice ?? widget.item.price)
+        : widget.item.price;
+
+    return GestureDetector(
+      onTap: widget.onOrder,
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                UserImage(
+                  url: widget.item.imageUrl,
+                  icon: Icons.restaurant_rounded,
+                  width: double.infinity,
+                  height: 150,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _ProductInfoChip(
+                      icon: Icons.star_rounded,
+                      label:
+                          '${widget.item.rating.toStringAsFixed(1)} (${widget.item.reviewCount})',
+                      color: const Color(0xFFFFB300),
+                    ),
+                    _ProductInfoChip(
+                      icon: Icons.delivery_dining_rounded,
+                      label: _cateringDeliveryFrequency(widget.item),
+                      color: UserTheme.primary,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _CateringDeliveryInfoBox(item: widget.item),
+                const SizedBox(height: 8),
+                Text(
+                  widget.item.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Harga',
+                            style: TextStyle(
+                              color: UserTheme.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${formatUserCurrency(basePrice)} / bulan',
+                            style: const TextStyle(
+                              color: UserTheme.primaryDark,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
+                          ),
+                          if (hasPromo)
+                            Text(
+                              '${formatUserCurrency(widget.item.originalPrice ?? widget.item.price)} / bulan',
+                              style: const TextStyle(
+                                color: UserTheme.muted,
+                                fontSize: 12,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          if (hasPromo)
+                            Text(
+                              'Hemat ${formatUserCurrency(widget.item.promoDiscountAmount ?? 0)}',
+                              style: const TextStyle(
+                                color: UserTheme.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed: widget.onOrder,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: UserTheme.primary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Pesan'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (percentBadge != null)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _PromoCornerBadge(label: percentBadge),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String? _percentagePromoBadge(MerchantMenuItem item) {
+  if (!item.hasPromo || (item.promoPrice ?? 0) <= 0) return null;
+  if ((item.promoDiscountType ?? '').toLowerCase() != 'percentage') return null;
+  final value = item.promoDiscountValue ?? 0;
+  if (value <= 0) return null;
+  final text = value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '-$text%';
+}
+
+class _PromoCornerBadge extends StatelessWidget {
+  const _PromoCornerBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE11D48),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [UserTheme.softShadow(opacity: 0.08)],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
   }
+}
+
+class _ProductInfoChip extends StatelessWidget {
+  const _ProductInfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CateringDeliveryInfoBox extends StatelessWidget {
+  const _CateringDeliveryInfoBox({
+    required this.item,
+    this.compact = false,
+  });
+
+  final MerchantMenuItem item;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3EAF4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: UserTheme.softBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.delivery_dining_rounded,
+              color: UserTheme.primary,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _cateringDeliveryFrequency(item),
+                  style: const TextStyle(
+                    color: UserTheme.text,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _cateringDeliverySchedule(item),
+                  style: const TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _cateringDeliveryFrequency(MerchantMenuItem item) {
+  return item.mealDeliveryCount >= 2 ? '2x makan/hari' : '1x makan/hari';
+}
+
+String _cateringDeliverySchedule(MerchantMenuItem item) {
+  if (item.mealDeliveryCount >= 2) {
+    final second = (item.deliveryTime2 ?? '').trim().isEmpty
+        ? '15:00'
+        : item.deliveryTime2!.trim();
+    return 'Gelombang pengantaran mulai ${item.deliveryTime1} dan $second.';
+  }
+  return 'Gelombang pengantaran mulai ${item.deliveryTime1}.';
 }
 
 class _EmptyMenu extends StatelessWidget {
@@ -1733,6 +2760,53 @@ class _EmptyMenu extends StatelessWidget {
             ? 'Layanan akan segera ditambahkan.'
             : 'Menu akan segera ditambahkan.',
         style: const TextStyle(color: UserTheme.muted),
+      ),
+    );
+  }
+}
+
+class _ActivePromoSection extends StatelessWidget {
+  const _ActivePromoSection({required this.merchant});
+
+  final UserMerchant merchant;
+
+  @override
+  Widget build(BuildContext context) {
+    final promoItems =
+        merchant.menuItems.where((item) => item.hasPromo).toList();
+    if (promoItems.isEmpty) return const SizedBox.shrink();
+    final topPromo = promoItems.first;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: UserTheme.softBlue,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Promo Aktif',
+            style: TextStyle(
+              color: UserTheme.primaryDark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            topPromo.promoDescription ?? 'Diskon produk aktif',
+            style: const TextStyle(color: UserTheme.text),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Hemat ${formatUserCurrency(topPromo.promoDiscountAmount ?? 0)}',
+            style: const TextStyle(
+              color: UserTheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1768,7 +2842,9 @@ class _ReviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final products = reviewState?.reviewableProducts ?? const [];
-    final myReviews = reviewState?.myReviews.where((review) => !review.isDeleted).toList() ?? const <MerchantReview>[];
+    final myReviews =
+        reviewState?.myReviews.where((review) => !review.isDeleted).toList() ??
+            const <MerchantReview>[];
     final canReview = products.isNotEmpty;
     final remainingEditAttempts = activeReview?.remainingEditAttempts ?? 0;
 
@@ -1852,13 +2928,9 @@ class _ReviewSection extends StatelessWidget {
                         },
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  activeReview == null
-                      ? 'Belum ada ulasan aktif untuk produk ini.'
-                      : (remainingEditAttempts > 0
-                          ? 'Ulasan produk ini sudah ada. Anda bisa mengedit atau menghapusnya.'
-                          : 'Batas edit ulasan tercapai. Anda tidak dapat memperbarui lagi.'),
-                  style: const TextStyle(
+                const Text(
+                  'Belum ada ulasan aktif untuk produk ini.',
+                  style: TextStyle(
                     color: UserTheme.muted,
                     fontSize: 12,
                     height: 1.35,
@@ -1914,7 +2986,8 @@ class _ReviewSection extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: isSubmitting || !canReview ||
+                  onPressed: isSubmitting ||
+                          !canReview ||
                           (activeReview != null && remainingEditAttempts <= 0)
                       ? null
                       : onSubmit,
@@ -1925,31 +2998,9 @@ class _ReviewSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(isSubmitting
-                      ? 'Menyimpan...'
-                      : activeReview == null
-                          ? 'Kirim Ulasan'
-                          : 'Update Ulasan'),
+                  child: Text(isSubmitting ? 'Menyimpan...' : 'Kirim Ulasan'),
                 ),
               ),
-              if (activeReview != null) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: isSubmitting ? null : onDelete,
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Hapus Ulasan'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -1963,7 +3014,8 @@ class _ReviewSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...myReviews.map((review) => ReviewCard(review: review, showProductName: true)),
+          ...myReviews.map(
+              (review) => ReviewCard(review: review, showProductName: true)),
         ],
         const SizedBox(height: 16),
         if (merchant.reviews.isNotEmpty)
@@ -2004,4 +3056,3 @@ class _ReviewSection extends StatelessWidget {
     );
   }
 }
-

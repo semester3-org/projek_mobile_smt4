@@ -77,6 +77,101 @@ $statusMapping = [
 $localStatus = $statusMapping[$transactionStatus] ?? 'unpaid';
 
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/merchant_helpers.php';
+
+function notificationBillingPaymentContext(mysqli $conn, string $billingId): ?array {
+    $stmt = $conn->prepare("
+        SELECT
+            ph.id,
+            ph.amount,
+            ph.payment_status,
+            rr.user_id,
+            k.owner_id,
+            k.title AS kos_title,
+            r.room_number,
+            u.display_name
+        FROM payment_history ph
+        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        INNER JOIN users u ON u.id = rr.user_id
+        WHERE ph.id = ?
+          AND rr.status IN ('active', 'approved')
+        LIMIT 1
+    ");
+    if (!$stmt) return null;
+    $stmt->bind_param('s', $billingId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function notificationCreateOwnerBillingPaymentNotification(mysqli $conn, string $ownerId, string $title, string $message): void {
+    $notificationId = merchantCreateNotification(
+        $conn,
+        $ownerId,
+        $title,
+        $message,
+        'payment',
+        'Lihat Keuangan',
+        'owner:finance',
+        'important',
+        false
+    );
+
+    if ($notificationId > 0) {
+        merchantDispatchNotificationPush(
+            $conn,
+            $notificationId,
+            $ownerId,
+            $title,
+            $message,
+            'payment',
+            'owner:finance',
+            true
+        );
+    }
+}
+
+function notificationNotifyBillingPaid(mysqli $conn, array $context): void {
+    try {
+        merchantEnsureSchema($conn);
+
+        $billingId = (string)($context['id'] ?? '');
+        $amount = (int)round((float)($context['amount'] ?? 0));
+        $kosTitle = (string)($context['kos_title'] ?? 'kos');
+        $roomNumber = (string)($context['room_number'] ?? '-');
+        $tenantName = (string)($context['display_name'] ?? 'Penyewa');
+        $amountLabel = 'Rp ' . number_format($amount, 0, ',', '.');
+
+        if (!empty($context['owner_id'])) {
+            notificationCreateOwnerBillingPaymentNotification(
+                $conn,
+                (string)$context['owner_id'],
+                'Pembayaran sewa masuk',
+                'Pembayaran ' . $tenantName . ' untuk kamar ' . $roomNumber . ' di ' . $kosTitle . ' sebesar ' . $amountLabel . ' sudah diterima.'
+            );
+        } else {
+            error_log('Midtrans billing paid without owner_id for billing: ' . $billingId);
+        }
+
+        if (!empty($context['user_id'])) {
+            merchantCreateNotification(
+                $conn,
+                (string)$context['user_id'],
+                'Pembayaran sewa berhasil',
+                'Pembayaran kamar ' . $roomNumber . ' di ' . $kosTitle . ' sudah diterima. Masa sewa Anda diperbarui otomatis.',
+                'payment',
+                'Lihat Tagihan',
+                'billing:' . $billingId,
+                'important'
+            );
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to notify Midtrans billing paid: ' . $e->getMessage());
+    }
+}
 
 if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
     require_once __DIR__ . '/merchant_helpers.php';
@@ -93,6 +188,23 @@ if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
         ? 'paid'
         : ($transactionStatus === 'pending' ? 'waiting_payment' : 'cancelled');
     $orderInt = (int)$orderIdForOrder;
+
+    $existingOrder = null;
+    $lookup = $conn->prepare("
+        SELECT o.id, o.order_code, o.user_id, o.payment_status,
+               m.user_id AS merchant_user_id
+        FROM orders o
+        INNER JOIN merchants m ON m.id = o.merchant_id
+        WHERE o.id = ? OR o.midtrans_order_id = ?
+        LIMIT 1
+    ");
+    if ($lookup) {
+        $lookup->bind_param('is', $orderInt, $rawMidtransOrderId);
+        $lookup->execute();
+        $existingOrder = $lookup->get_result()->fetch_assoc();
+        $lookup->close();
+    }
+
     $stmt = $conn->prepare("
         UPDATE orders
         SET payment_status = ?,
@@ -119,11 +231,47 @@ if (strpos($rawMidtransOrderId, 'ORD-') === 0) {
         sendError('Failed to update order payment status', 500);
     }
 
+    if ($orderPaymentStatus === 'paid') {
+        merchantActivateCateringSubscription($conn, $orderInt);
+        $wasAlreadyPaid = strtolower((string)($existingOrder['payment_status'] ?? '')) === 'paid';
+        if (!$wasAlreadyPaid && $existingOrder) {
+            $orderCode = (string)($existingOrder['order_code'] ?? ('#' . $orderInt));
+            $merchantUserId = (string)($existingOrder['merchant_user_id'] ?? '');
+            $orderUserId = (string)($existingOrder['user_id'] ?? '');
+            if ($merchantUserId !== '') {
+                merchantCreateNotification(
+                    $conn,
+                    $merchantUserId,
+                    'Pembayaran pesanan berhasil',
+                    'Pembayaran Midtrans untuk ' . $orderCode . ' sudah diterima.',
+                    'payment',
+                    'Lihat Pesanan',
+                    'order:' . (string)$orderInt,
+                    'important'
+                );
+            }
+            if ($orderUserId !== '') {
+                merchantCreateNotification(
+                    $conn,
+                    $orderUserId,
+                    'Pembayaran berhasil',
+                    'Pembayaran ' . $orderCode . ' berhasil diterima. Pesanan akan dilanjutkan merchant.',
+                    'payment',
+                    'Lihat Pesanan',
+                    'order:' . (string)$orderInt,
+                    'important'
+                );
+            }
+        }
+    }
+
     error_log("Midtrans order notification: Order ID $orderIdForOrder, Status $transactionStatus -> $orderPaymentStatus");
     sendSuccess(null, 'Order notification processed successfully');
 }
 
 // Update payment_history berdasarkan order_id
+$paymentContext = notificationBillingPaymentContext($conn, $orderId);
+$wasAlreadyPaid = strtolower((string)($paymentContext['payment_status'] ?? '')) === 'paid';
 $stmt = $conn->prepare("
     UPDATE payment_history ph
     INNER JOIN room_registrations rr ON rr.id = ph.registration_id
@@ -145,6 +293,10 @@ $stmt->close();
 
 if (!$success) {
     sendError('Failed to update payment status', 500);
+}
+
+if ($localStatus === 'paid' && !$wasAlreadyPaid && $paymentContext) {
+    notificationNotifyBillingPaid($conn, $paymentContext);
 }
 
 // Log notifikasi untuk debugging

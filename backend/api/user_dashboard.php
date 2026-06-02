@@ -229,64 +229,7 @@ if (
     }
 }
 
-$recommendations = [
-    [
-        'id' => 'rec-1',
-        'name' => 'Paket Menu Harian',
-        'description' => 'Sering dipesan pengguna kos',
-        'price' => 25000,
-        'imageUrl' => 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800',
-    ],
-    [
-        'id' => 'rec-2',
-        'name' => 'Cuci Lipat Regular',
-        'description' => 'Layanan laundry praktis',
-        'price' => 8000,
-        'imageUrl' => 'https://images.unsplash.com/photo-1517677200551-7920f4b53198?w=800',
-    ],
-];
-
-if (
-    $userId &&
-    tableExists($conn, 'orders') &&
-    tableExists($conn, 'order_items') &&
-    tableExists($conn, 'products')
-) {
-    $stmt = $conn->prepare("
-        SELECT
-            p.id,
-            p.nama_produk,
-            p.deskripsi,
-            p.harga,
-            p.image_url,
-            COUNT(oi.id) AS order_count,
-            MAX(o.created_at) AS last_ordered_at
-        FROM orders o
-        INNER JOIN order_items oi ON oi.order_id = o.id
-        INNER JOIN products p ON p.id = oi.product_id
-        WHERE o.user_id = ?
-          AND COALESCE(o.service_type, p.service_type, '') IN ('laundry', 'catering')
-        GROUP BY p.id, p.nama_produk, p.deskripsi, p.harga, p.image_url
-        ORDER BY order_count DESC, last_ordered_at DESC
-        LIMIT 6
-    ");
-    if ($stmt) {
-        $stmt->bind_param('s', $userId);
-        $stmt->execute();
-        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
-
-        if (!empty($rows)) {
-            $recommendations = array_map(fn($row) => [
-                'id' => (string)$row['id'],
-                'name' => $row['nama_produk'] ?? '',
-                'description' => $row['deskripsi'] ?? 'Sering Anda pesan',
-                'price' => (float)($row['harga'] ?? 0),
-                'imageUrl' => $row['image_url'] ?? '',
-            ], $rows);
-        }
-    }
-}
+$recommendations = [];
 
 sendDashboard([
     'displayName' => $displayName,

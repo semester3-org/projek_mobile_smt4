@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/api_service.dart';
 import '../../models/catering_package_category.dart';
 import '../../models/catering_subscriber.dart';
@@ -8,15 +10,59 @@ import 'kos_repository.dart' show RepoResult;
 class MerchantRepository {
   MerchantRepository._();
 
+  static const Duration _shortCacheTtl = Duration(seconds: 3);
+  static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
+  static _DashboardCacheEntry? _dashboardCache;
+  static final Map<String, _MerchantOrdersCacheEntry> _ordersCache = {};
+  static int? _unreadNotificationCountCache;
+  static DateTime? _unreadNotificationCountCachedAt;
+  static final StreamController<void> _notificationCountController =
+      StreamController<void>.broadcast();
+  static final StreamController<void> _catalogController =
+      StreamController<void>.broadcast();
+
+  static Stream<void> get notificationCountChanges =>
+      _notificationCountController.stream;
+
+  static Stream<void> get catalogChanges => _catalogController.stream;
+
+  static void _notifyNotificationCountChanged() {
+    if (!_notificationCountController.isClosed) {
+      _notificationCountController.add(null);
+    }
+  }
+
+  static void _notifyCatalogChanged() {
+    if (!_catalogController.isClosed) {
+      _catalogController.add(null);
+    }
+  }
+
+  static void clearSessionCache() {
+    _dashboardCache = null;
+    _ordersCache.clear();
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
   static Future<RepoResult<MerchantDashboard>> getDashboard() async {
+    final cached = _dashboardCache;
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) < _shortCacheTtl) {
+      return RepoResult.ok(cached.dashboard);
+    }
+
     final res = await ApiService.get('api/merchant_dashboard');
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memuat dashboard');
     }
     try {
-      return RepoResult.ok(
-        MerchantDashboard.fromJson(res.data!['data'] as Map<String, dynamic>),
+      final dashboard = MerchantDashboard.fromJson(
+        res.data!['data'] as Map<String, dynamic>,
       );
+      _dashboardCache = _DashboardCacheEntry(dashboard, DateTime.now());
+      return RepoResult.ok(dashboard);
     } catch (e) {
       return RepoResult.fail('Gagal membaca dashboard: $e');
     }
@@ -29,6 +75,12 @@ class MerchantRepository {
     final params = <String, String>{};
     if (status != null && status.isNotEmpty) params['status'] = status;
     if (search != null && search.isNotEmpty) params['search'] = search;
+    final cacheKey = '${status ?? ''}:${search ?? ''}';
+    final cached = _ordersCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) < _shortCacheTtl) {
+      return RepoResult.ok(List<MerchantOrder>.of(cached.orders));
+    }
 
     final res = await ApiService.get(
       'api/merchant_orders',
@@ -41,6 +93,10 @@ class MerchantRepository {
       final data = (res.data!['data'] as List)
           .map((item) => MerchantOrder.fromJson(item as Map<String, dynamic>))
           .toList();
+      _ordersCache[cacheKey] = _MerchantOrdersCacheEntry(
+        List<MerchantOrder>.of(data),
+        DateTime.now(),
+      );
       return RepoResult.ok(data);
     } catch (e) {
       return RepoResult.fail('Gagal membaca pesanan: $e');
@@ -71,27 +127,87 @@ class MerchantRepository {
     bool nextStatus = false,
     double? laundryWeightKg,
     double? laundryTotalAmount,
+    List<String> laundryAddonIds = const [],
+    String? deliveryLogId,
   }) async {
+    _clearOrderCaches();
     final res = await ApiService.put('api/merchant_orders', {
       'id': id,
       if (status != null) 'status': status,
       if (estimatedTime != null) 'estimatedTime': estimatedTime,
       if (nextStatus) 'action': 'next',
-      if (laundryWeightKg != null && laundryTotalAmount != null)
-        'action': 'set_laundry_total',
+      if (laundryWeightKg != null) 'action': 'set_laundry_total',
       if (laundryWeightKg != null) 'weightKg': laundryWeightKg,
       if (laundryTotalAmount != null) 'totalAmount': laundryTotalAmount,
+      if (laundryAddonIds.isNotEmpty) 'addonIds': laundryAddonIds,
+      if (deliveryLogId != null) 'deliveryLogId': deliveryLogId,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui pesanan');
     }
     try {
+      _clearOrderCaches();
       return RepoResult.ok(
         MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
     } catch (e) {
       return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
     }
+  }
+
+  static Future<RepoResult<MerchantOrder>> completeCateringDelivery({
+    required String orderId,
+    required String deliveryLogId,
+    String deliveryNote = '',
+    String deliveryPhotoUrl = '',
+  }) async {
+    _clearOrderCaches();
+    final res = await ApiService.put('api/merchant_orders', {
+      'id': orderId,
+      'action': 'complete_delivery',
+      'deliveryLogId': deliveryLogId,
+      'deliveryNote': deliveryNote,
+      'deliveryPhotoUrl': deliveryPhotoUrl,
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menyelesaikan pengantaran');
+    }
+    try {
+      _clearOrderCaches();
+      return RepoResult.ok(
+        MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
+    }
+  }
+
+  static Future<RepoResult<MerchantOrder>> rejectOrder({
+    required String orderId,
+    required String reason,
+  }) async {
+    _clearOrderCaches();
+    final res = await ApiService.put('api/merchant_orders', {
+      'id': orderId,
+      'action': 'reject_order',
+      'reason': reason,
+    });
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal menolak pesanan');
+    }
+    try {
+      _clearOrderCaches();
+      return RepoResult.ok(
+        MerchantOrder.fromJson(res.data!['data'] as Map<String, dynamic>),
+      );
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca pesanan terbaru: $e');
+    }
+  }
+
+  static void _clearOrderCaches() {
+    _ordersCache.clear();
+    _dashboardCache = null;
   }
 
   static Future<RepoResult<List<MerchantProduct>>> getProducts() async {
@@ -117,8 +233,15 @@ class MerchantRepository {
     double? price20Days,
     required String category,
     required String unit,
+    String pricingType = 'per_kg',
+    int? durationValue,
+    String durationUnit = 'day',
+    List<MerchantLaundryAddon> addons = const [],
     required String imageUrl,
     required bool isActive,
+    int mealDeliveryCount = 1,
+    String deliveryTime1 = '07:00',
+    String? deliveryTime2,
   }) async {
     final payload = {
       if (id != null && id.isNotEmpty) 'id': id,
@@ -128,8 +251,16 @@ class MerchantRepository {
       if (price20Days != null) 'price20Days': price20Days,
       'category': category,
       'unit': unit,
+      'pricingType': pricingType,
+      if (durationValue != null) 'durationValue': durationValue,
+      'durationUnit': durationUnit,
+      if (addons.isNotEmpty) 'addons': addons.map((e) => e.toJson()).toList(),
       'imageUrl': imageUrl,
       'isActive': isActive,
+      'mealDeliveryCount': mealDeliveryCount,
+      'deliveryTime1': deliveryTime1,
+      if (deliveryTime2 != null && deliveryTime2.isNotEmpty)
+        'deliveryTime2': deliveryTime2,
     };
     final res = id == null || id.isEmpty
         ? await ApiService.post('api/merchant_products', payload)
@@ -138,6 +269,8 @@ class MerchantRepository {
       return RepoResult.fail(res.message ?? 'Gagal menyimpan produk');
     }
     try {
+      _dashboardCache = null;
+      _notifyCatalogChanged();
       return RepoResult.ok(
         MerchantProduct.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -154,7 +287,34 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menghapus produk');
     }
+    _dashboardCache = null;
+    _notifyCatalogChanged();
     return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<List<MerchantProductReviewSummary>>>
+      getProductReviews({
+    int? rating,
+  }) async {
+    final params = <String, String>{};
+    if (rating != null && rating > 0) params['rating'] = rating.toString();
+    final res = await ApiService.get(
+      'api/merchant_product_reviews',
+      queryParams: params.isEmpty ? null : params,
+    );
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat ulasan produk');
+    }
+    try {
+      final list = (res.data!['data'] as List)
+          .map((item) => MerchantProductReviewSummary.fromJson(
+                item as Map<String, dynamic>,
+              ))
+          .toList();
+      return RepoResult.ok(list);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca ulasan produk: $e');
+    }
   }
 
   static Future<RepoResult<List<MerchantPromo>>> getPromos() async {
@@ -176,7 +336,8 @@ class MerchantRepository {
     String? id,
     required String name,
     required String description,
-    required String productId,
+    String productId = '',
+    List<String> productIds = const [],
     required String discountType,
     required double discountValue,
     required double minOrderAmount,
@@ -184,13 +345,16 @@ class MerchantRepository {
     required DateTime? startAt,
     required DateTime? endAt,
     required bool isActive,
+    String? status,
     int? usageLimit,
+    int perUserUsageLimit = 1,
   }) async {
     final payload = {
       if (id != null && id.isNotEmpty) 'id': id,
       'name': name,
       'description': description,
-      'productId': productId,
+      if (productId.isNotEmpty) 'productId': productId,
+      if (productIds.isNotEmpty) 'productIds': productIds,
       'discountType': discountType,
       'discountValue': discountValue,
       'minOrderAmount': minOrderAmount,
@@ -198,15 +362,27 @@ class MerchantRepository {
       'startAt': startAt?.toIso8601String(),
       'endAt': endAt?.toIso8601String(),
       'isActive': isActive,
+      if (status != null && status.isNotEmpty) 'status': status,
+      'perUserUsageLimit': perUserUsageLimit,
       if (usageLimit != null) 'usageLimit': usageLimit,
     };
     final res = id == null || id.isEmpty
-        ? await ApiService.post('api/merchant_promos', payload)
-        : await ApiService.put('api/merchant_promos', payload);
+        ? await ApiService.post(
+            'api/merchant_promos',
+            payload,
+            timeout: const Duration(seconds: 30),
+          )
+        : await ApiService.put(
+            'api/merchant_promos',
+            payload,
+            timeout: const Duration(seconds: 30),
+          );
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menyimpan promo');
     }
     try {
+      _dashboardCache = null;
+      _notifyCatalogChanged();
       return RepoResult.ok(
         MerchantPromo.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -223,7 +399,53 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menonaktifkan promo');
     }
+    _dashboardCache = null;
+    _notifyCatalogChanged();
     return const RepoResult.ok(true);
+  }
+
+  static Future<RepoResult<Map<String, dynamic>>> previewPromo({
+    String? merchantId,
+    required double subtotal,
+    List<String> productIds = const [],
+    String? discountType,
+    double? discountValue,
+    double? minOrderAmount,
+    double? maxDiscountAmount,
+    String? name,
+    String? userId,
+  }) async {
+    final items = productIds
+        .where((id) => id.isNotEmpty)
+        .map((id) => {'productId': int.tryParse(id) ?? 0})
+        .where((item) => (item['productId'] ?? 0) > 0)
+        .toList();
+
+    final payload = <String, dynamic>{
+      'subtotal': subtotal,
+      if (items.isNotEmpty) 'items': items,
+      if (discountType != null && discountType.isNotEmpty)
+        'discountType': discountType,
+      if (discountValue != null && discountValue > 0)
+        'discountValue': discountValue,
+      if (minOrderAmount != null) 'minOrderAmount': minOrderAmount,
+      if (maxDiscountAmount != null) 'maxDiscountAmount': maxDiscountAmount,
+      if (name != null && name.isNotEmpty) 'name': name,
+      if (userId != null && userId.isNotEmpty) 'userId': userId,
+    };
+    if (merchantId != null && merchantId.isNotEmpty) {
+      payload['merchantId'] = merchantId;
+    }
+
+    final res = await ApiService.post('api/promo_preview', payload);
+    if (!res.success) {
+      return RepoResult.fail(res.message ?? 'Gagal preview promo');
+    }
+    try {
+      return RepoResult.ok(res.data!['data'] as Map<String, dynamic>);
+    } catch (e) {
+      return RepoResult.fail('Gagal membaca preview promo: $e');
+    }
   }
 
   static Future<RepoResult<MerchantProfile>> getProfile() async {
@@ -250,7 +472,6 @@ class MerchantRepository {
     required String photoUrl,
     required String openTime,
     required String closeTime,
-    required List<String> categories,
   }) async {
     final res = await ApiService.put('api/merchant_profile', {
       'businessName': businessName,
@@ -262,12 +483,12 @@ class MerchantRepository {
       'photoUrl': photoUrl,
       'openTime': openTime,
       'closeTime': closeTime,
-      'categories': categories,
     });
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memperbarui profil');
     }
     try {
+      _dashboardCache = null;
       return RepoResult.ok(
         MerchantProfile.fromJson(res.data!['data'] as Map<String, dynamic>),
       );
@@ -276,9 +497,13 @@ class MerchantRepository {
     }
   }
 
-  static Future<RepoResult<List<MerchantNotification>>>
-      getNotifications() async {
-    final res = await ApiService.get('api/merchant_notifications');
+  static Future<RepoResult<List<MerchantNotification>>> getNotifications({
+    int limit = 30,
+  }) async {
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: {'limit': limit.toString()},
+    );
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal memuat notifikasi');
     }
@@ -301,6 +526,8 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal menandai notifikasi');
     }
+    _unreadNotificationCountCache = null;
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
@@ -311,13 +538,41 @@ class MerchantRepository {
     if (!res.success) {
       return RepoResult.fail(res.message ?? 'Gagal membaca semua notifikasi');
     }
+    _unreadNotificationCountCache = 0;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    _notifyNotificationCountChanged();
     return const RepoResult.ok(true);
   }
 
   static Future<bool> hasUnreadNotifications() async {
-    final result = await getNotifications();
-    return (result.data ?? const <MerchantNotification>[])
-        .any((item) => item.isUnread);
+    return (await unreadNotificationCount()) > 0;
+  }
+
+  static void invalidateNotificationCountCache() {
+    _unreadNotificationCountCache = null;
+    _unreadNotificationCountCachedAt = null;
+    _notifyNotificationCountChanged();
+  }
+
+  static Future<int> unreadNotificationCount() async {
+    final cachedAt = _unreadNotificationCountCachedAt;
+    final cached = _unreadNotificationCountCache;
+    if (cachedAt != null &&
+        cached != null &&
+        DateTime.now().difference(cachedAt) < _notificationCountCacheTtl) {
+      return cached;
+    }
+    final res = await ApiService.get(
+      'api/merchant_notifications',
+      queryParams: const {'count': '1'},
+    );
+    final payload = res.data?['data'];
+    final count = res.success && payload is Map<String, dynamic>
+        ? (payload['count'] as num?)?.toInt() ?? 0
+        : 0;
+    _unreadNotificationCountCache = count;
+    _unreadNotificationCountCachedAt = DateTime.now();
+    return count;
   }
 
   static Future<RepoResult<List<CateringSubscriber>>> getCateringSubscribers({
@@ -455,4 +710,18 @@ class MerchantRepository {
     }
     return const RepoResult.ok(true);
   }
+}
+
+class _DashboardCacheEntry {
+  const _DashboardCacheEntry(this.dashboard, this.createdAt);
+
+  final MerchantDashboard dashboard;
+  final DateTime createdAt;
+}
+
+class _MerchantOrdersCacheEntry {
+  const _MerchantOrdersCacheEntry(this.orders, this.createdAt);
+
+  final List<MerchantOrder> orders;
+  final DateTime createdAt;
 }

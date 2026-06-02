@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
@@ -29,7 +31,7 @@ class _LoginPageState extends State<LoginPage> {
 
   void _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorText = null;
@@ -58,6 +60,36 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _submitGoogle() async {
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
+
+    try {
+      final errorMsg = await AuthScope.of(context).loginWithGoogle();
+
+      if (!mounted) return;
+
+      if (errorMsg != null) {
+        setState(() {
+          _errorText = errorMsg;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = 'Terjadi kesalahan: ${e.toString()}';
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,7 +105,9 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 18),
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
               elevation: 4,
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -93,7 +127,9 @@ class _LoginPageState extends State<LoginPage> {
                         validator: (v) {
                           final s = (v ?? '').trim();
                           if (s.isEmpty) return 'Email wajib diisi';
-                          if (!s.contains('@')) return 'Format email tidak valid';
+                          if (!s.contains('@')) {
+                            return 'Format email tidak valid';
+                          }
                           return null;
                         },
                       ),
@@ -106,9 +142,12 @@ class _LoginPageState extends State<LoginPage> {
                           labelText: 'Kata Sandi',
                           prefixIcon: const Icon(Icons.lock_outline),
                           suffixIcon: IconButton(
-                            onPressed: () => setState(() => _obscure = !_obscure),
+                            onPressed: () =>
+                                setState(() => _obscure = !_obscure),
                             icon: Icon(
-                              _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              _obscure
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
                             ),
                           ),
                         ),
@@ -152,7 +191,8 @@ class _LoginPageState extends State<LoginPage> {
                                   width: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                                    valueColor:
+                                        AlwaysStoppedAnimation(Colors.white),
                                   ),
                                 )
                               : const Text('Masuk'),
@@ -185,15 +225,105 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.login),
-              label: const Text('Google'),
+              onPressed: _isLoading ? null : _submitGoogle,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              icon: const _GoogleLogoMark(),
+              label: const Text(
+                'Google',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _GoogleLogoMark extends StatelessWidget {
+  const _GoogleLogoMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 24,
+      height: 24,
+      child: CustomPaint(painter: _GoogleLogoPainter()),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.15;
+    final rect = Rect.fromLTWH(
+      stroke,
+      stroke,
+      size.width - stroke * 2,
+      size.height - stroke * 2,
+    );
+    Paint segment(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.square;
+
+    canvas.drawArc(
+      rect,
+      math.pi * 1.15,
+      math.pi * 0.42,
+      false,
+      segment(const Color(0xFFEA4335)),
+    );
+    canvas.drawArc(
+      rect,
+      math.pi * 0.78,
+      math.pi * 0.37,
+      false,
+      segment(const Color(0xFFFBBC05)),
+    );
+    canvas.drawArc(
+      rect,
+      math.pi * 0.28,
+      math.pi * 0.50,
+      false,
+      segment(const Color(0xFF34A853)),
+    );
+    canvas.drawArc(
+      rect,
+      -math.pi * 0.05,
+      math.pi * 0.43,
+      false,
+      segment(const Color(0xFF4285F4)),
+    );
+
+    final blue = segment(const Color(0xFF4285F4));
+    canvas.drawLine(
+      Offset(size.width * 0.52, size.height * 0.5),
+      Offset(size.width * 0.9, size.height * 0.5),
+      blue,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.78, size.height * 0.5),
+      Offset(size.width * 0.78, size.height * 0.68),
+      blue,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _Header extends StatelessWidget {

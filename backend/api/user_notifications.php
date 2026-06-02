@@ -63,6 +63,24 @@ try {
 
     $items = [];
     if (merchantTableExists($conn, 'app_notifications')) {
+        if (!empty($_GET['count'])) {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*) AS total
+                FROM app_notifications
+                WHERE user_id = ?
+                  AND read_at IS NULL
+                  AND title NOT LIKE 'Tes Notifikasi%'
+                  AND title <> 'Tes Push Backend'
+            ");
+            if (!$stmt) merchantSendJson(false, null, 'Database error', 500);
+            $stmt->bind_param('s', $userId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            merchantSendJson(true, ['count' => (int)($row['total'] ?? 0)], 'Jumlah notifikasi belum dibaca berhasil dimuat');
+        }
+
+        $limit = isset($_GET['limit']) ? max(1, min(50, (int)$_GET['limit'])) : 30;
         $hasType = merchantColumnExists($conn, 'app_notifications', 'type');
         $hasAction = merchantColumnExists($conn, 'app_notifications', 'action_text');
         $hasActionUrl = merchantColumnExists($conn, 'app_notifications', 'action_url');
@@ -73,11 +91,13 @@ try {
                    " . ($hasActionUrl ? "action_url" : "NULL") . " AS action_url
             FROM app_notifications
             WHERE user_id = ?
+              AND title NOT LIKE 'Tes Notifikasi%'
+              AND title <> 'Tes Push Backend'
             ORDER BY created_at DESC, id DESC
-            LIMIT 50
+            LIMIT ?
         ");
         if ($stmt) {
-            $stmt->bind_param('s', $userId);
+            $stmt->bind_param('si', $userId, $limit);
             $stmt->execute();
             $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();

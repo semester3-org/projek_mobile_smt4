@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+require_once __DIR__ . '/merchant_helpers.php';
 
 function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
     http_response_code($code);
@@ -55,6 +56,7 @@ function ensureUserProfileColumns(mysqli $conn): void {
         'latitude' => "ALTER TABLE users ADD COLUMN latitude decimal(10,8) DEFAULT NULL AFTER address",
         'longitude' => "ALTER TABLE users ADD COLUMN longitude decimal(11,8) DEFAULT NULL AFTER latitude",
         'photo_url' => "ALTER TABLE users ADD COLUMN photo_url longtext DEFAULT NULL AFTER longitude",
+        'ktp_photo' => "ALTER TABLE users ADD COLUMN ktp_photo longtext DEFAULT NULL AFTER photo_url",
     ];
 
     foreach ($columns as $column => $sql) {
@@ -226,6 +228,7 @@ function activeRentHistory(mysqli $conn, string $userId): array {
     $stmt->close();
 
     $items = [];
+    $slotIndexes = [];
     $today = date('Y-m-d');
     foreach ($rows as $row) {
         $paidPeriods = (int)($row['paid_periods'] ?? 0);
@@ -251,7 +254,7 @@ function activeRentHistory(mysqli $conn, string $userId): array {
             continue;
         }
 
-        $items[] = [
+        $item = [
             'registrationId' => $row['registration_id'],
             'kosName' => $row['kos_name'],
             'kosAccessCode' => $row['access_code'],
@@ -264,6 +267,36 @@ function activeRentHistory(mysqli $conn, string $userId): array {
             'paidPeriods' => $paidPeriods,
             'status' => $row['status'],
         ];
+
+        $slotKey = strtoupper(trim((string)($row['access_code'] ?? ''))) . '|' .
+            strtoupper(trim((string)($row['room_number'] ?? '')));
+        if ($slotKey === '|') {
+            $slotKey = (string)($row['registration_id'] ?? count($items));
+        }
+
+        if (isset($slotIndexes[$slotKey])) {
+            $existingIndex = $slotIndexes[$slotKey];
+            $existing = $items[$existingIndex];
+            $existingUntil = (string)($existing['activeUntil'] ?? '');
+            $nextUntil = (string)($item['activeUntil'] ?? '');
+            $existingPending = ($existing['status'] ?? '') === 'pending';
+            $nextPending = ($item['status'] ?? '') === 'pending';
+
+            $shouldReplace = false;
+            if ($existingPending && !$nextPending) {
+                $shouldReplace = true;
+            } elseif ($existingPending === $nextPending && $nextUntil !== '' && $nextUntil >= $existingUntil) {
+                $shouldReplace = true;
+            }
+
+            if ($shouldReplace) {
+                $items[$existingIndex] = $item;
+            }
+            continue;
+        }
+
+        $slotIndexes[$slotKey] = count($items);
+        $items[] = $item;
     }
 
     return $items;
@@ -556,6 +589,37 @@ function endRegistrationAndFreeRoom(mysqli $conn, string $registrationId, string
     $freeRoom->close();
 }
 
+function notifyOwnerRoomApplication(mysqli $conn, string $kosId, string $roomNumber, string $displayName): void {
+    $ownerQuery = $conn->prepare("SELECT owner_id, title FROM kos_listings WHERE id = ? LIMIT 1");
+    if (!$ownerQuery) {
+        return;
+    }
+    $ownerQuery->bind_param('s', $kosId);
+    $ownerQuery->execute();
+    $ownerInfo = $ownerQuery->get_result()->fetch_assoc();
+    $ownerQuery->close();
+
+    if (!$ownerInfo) {
+        return;
+    }
+
+    try {
+        merchantEnsureSchema($conn);
+        merchantCreateNotification(
+            $conn,
+            (string)$ownerInfo['owner_id'],
+            'Pengajuan sewa baru',
+            'Pengajuan sewa dari ' . $displayName . ' untuk kamar ' . $roomNumber . ' di ' . ($ownerInfo['title'] ?? 'kos Anda') . '.',
+            'booking',
+            'Lihat Approval',
+            'owner:tenants',
+            'important'
+        );
+    } catch (Throwable $e) {
+        error_log('Failed to notify owner room application: ' . $e->getMessage());
+    }
+}
+
 function expireScheduledEndDates(mysqli $conn, string $userId): void {
     if (!tableExists($conn, 'room_registrations') ||
         !tableExists($conn, 'kos_rooms')) {
@@ -606,6 +670,7 @@ function profilePayload(mysqli $conn, array $payload): array {
         'longitude' => null,
         'role' => $payload['role'] ?? 'user',
         'photoUrl' => $payload['photoUrl'] ?? null,
+        'ktpPhoto' => null,
         'kosName' => null,
         'kosAccessCode' => null,
         'roomNumber' => null,
@@ -633,6 +698,7 @@ function profilePayload(mysqli $conn, array $payload): array {
             u.latitude,
             u.longitude,
             u.photo_url,
+            u.ktp_photo,
             u.role,
             k.title AS kos_name,
             k.access_code,
@@ -668,6 +734,7 @@ function profilePayload(mysqli $conn, array $payload): array {
         'longitude' => $row['longitude'] !== null ? (float)$row['longitude'] : null,
         'role' => $row['role'] ?? $base['role'],
         'photoUrl' => $row['photo_url'] ?? null,
+        'ktpPhoto' => $row['ktp_photo'] ?? null,
         'kosName' => $row['kos_name'] ?? null,
         'kosAccessCode' => $row['access_code'] ?? null,
         'roomNumber' => $row['room_number'] ?? null,
@@ -717,6 +784,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         ? (float)$body['longitude']
         : null;
     $photoUrl = trim($body['photoUrl'] ?? '');
+    $ktpPhoto = trim($body['ktpPhoto'] ?? '');
 
     if ($displayName === '') {
         sendJson(false, null, 'Nama wajib diisi', 400);
@@ -734,6 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             latitude = ?,
             longitude = ?,
             photo_url = NULLIF(?, \'\'),
+            ktp_photo = NULLIF(?, \'\'),
             updated_at = NOW()
         WHERE id = ?
     ');
@@ -741,13 +810,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         sendJson(false, null, 'Database error', 500);
     }
     $stmt->bind_param(
-        'sssddss',
+        'sssddsss',
         $displayName,
         $phone,
         $address,
         $latitude,
         $longitude,
         $photoUrl,
+        $ktpPhoto,
         $userId
     );
     $stmt->execute();
@@ -763,6 +833,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJson(false, null, 'Only GET, POST, or PUT method allowed', 405);
+}
+
+$displayName = $payload['displayName'] ?? '';
+if (empty($displayName) || $displayName === 'User') {
+    $stmtUser = $conn->prepare("SELECT display_name FROM users WHERE id = ? LIMIT 1");
+    if ($stmtUser) {
+        $stmtUser->bind_param('s', $userId);
+        $stmtUser->execute();
+        $resUser = $stmtUser->get_result()->fetch_assoc();
+        if ($resUser && !empty($resUser['display_name'])) {
+            $displayName = $resUser['display_name'];
+        }
+        $stmtUser->close();
+    }
+}
+if (empty($displayName)) {
+    $displayName = 'User';
 }
 
 $accessCode = strtoupper(trim($body['accessCode'] ?? ''));
@@ -988,6 +1075,7 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
         $mark->close();
 
         $conn->commit();
+        notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
     } catch (Exception $e) {
         $conn->rollback();
         sendJson(false, null, 'Gagal mengajukan perpindahan kamar/kos', 500);
@@ -1002,6 +1090,8 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->bind_param('s', $room['room_id']);
     $mark->execute();
     $mark->close();
+
+    notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
 } else {
     $id = uuid();
     $ins = $conn->prepare("
@@ -1017,6 +1107,8 @@ if ($currentRegistration && in_array($currentRegistration['status'], ['active', 
     $mark->bind_param('s', $room['room_id']);
     $mark->execute();
     $mark->close();
+
+    notifyOwnerRoomApplication($conn, (string)$room['kos_id'], $roomNumber, $displayName);
 }
 
 sendJson(true, profilePayload($conn, $payload), 'Pengajuan kamar berhasil dikirim dan menunggu persetujuan owner');

@@ -9,6 +9,7 @@ import '../user/merchant_detail_page.dart';
 import '../user/order_detail_page.dart';
 import '../user/user_theme.dart';
 import '../user/user_widgets.dart';
+import 'billing_detail_page.dart';
 import 'billing_list_page.dart';
 
 class NotificationListPage extends StatefulWidget {
@@ -99,14 +100,20 @@ class _NotificationListPageState extends State<NotificationListPage> {
     }
     if (!mounted) return;
 
-    if (notification.type == 'room') {
+    final actionUrl = notification.actionUrl ?? '';
+    if (actionUrl.startsWith('billing:')) {
+      await _openBillingById(actionUrl.substring('billing:'.length));
+      return;
+    }
+
+    if (notification.type == 'room' ||
+        _looksLikeBillingNotification(notification)) {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const BillingListPage()),
       );
       return;
     }
 
-    final actionUrl = notification.actionUrl ?? '';
     if (actionUrl.startsWith('order:')) {
       _openOrderDetailById(actionUrl.substring('order:'.length));
       return;
@@ -127,6 +134,39 @@ class _NotificationListPageState extends State<NotificationListPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(notification.title)),
+    );
+  }
+
+  bool _looksLikeBillingNotification(AppNotification notification) {
+    final text =
+        '${notification.type} ${notification.title} ${notification.message}'
+            .toLowerCase();
+    return text.contains('tagihan') ||
+        text.contains('sewa') ||
+        text.contains('kos') ||
+        text.contains('kamar');
+  }
+
+  Future<void> _openBillingById(String id) async {
+    final result = await UserRepository.getBillings();
+    if (!mounted) return;
+
+    final matches =
+        result.data?.where((billing) => billing.id == id).toList() ?? const [];
+    if (matches.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BillingDetailPage(
+            billing: matches.first,
+            actionsEnabled: false,
+          ),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const BillingListPage()),
     );
   }
 
@@ -208,24 +248,26 @@ class _NotificationListPageState extends State<NotificationListPage> {
       backgroundColor: UserTheme.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        titleSpacing: 20,
-        title: const Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: UserTheme.softBlue,
-              child: Icon(Icons.person, color: UserTheme.primary),
-            ),
-            SizedBox(width: 12),
-            Text(
-              'Sentra Ruang',
+        title: const Text(
+          'Notifikasi',
+          style: TextStyle(
+            color: UserTheme.primaryDark,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _markAllRead,
+            child: const Text(
+              'Tandai semua dibaca',
               style: TextStyle(
-                color: UserTheme.primaryDark,
+                color: UserTheme.primary,
                 fontWeight: FontWeight.w800,
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -235,30 +277,6 @@ class _NotificationListPageState extends State<NotificationListPage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Notifikasi',
-                        style:
-                            Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: UserTheme.text,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: _markAllRead,
-                        child: const Text(
-                          'Tandai semua dibaca',
-                          style: TextStyle(
-                            color: UserTheme.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(

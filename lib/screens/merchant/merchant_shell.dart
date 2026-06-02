@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
 import '../../data/repositories/merchant_repository.dart';
+import '../../widgets/exit_guard.dart';
 import 'pages/laundry/laundry_dashboard_page.dart';
 import 'pages/laundry/laundry_orders_page.dart';
 import 'pages/laundry/laundry_services_page.dart';
@@ -46,19 +47,21 @@ class _MerchantShellState extends State<MerchantShell> {
             const MerchantProfilePage(),
           ];
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: pages,
-      ),
-      bottomNavigationBar: MerchantBottomNav(
-        currentIndex: _index,
-        onChanged: (i) {
-          if (i == 1) {
-            _MerchantOrderBadgeState.markOrdersOpened();
-          }
-          setState(() => _index = i);
-        },
+    return ExitGuard(
+      child: Scaffold(
+        body: IndexedStack(
+          index: _index,
+          children: pages,
+        ),
+        bottomNavigationBar: MerchantBottomNav(
+          currentIndex: _index,
+          onChanged: (i) {
+            if (i == 1) {
+              _MerchantOrderBadgeState.markOrdersOpened();
+            }
+            setState(() => _index = i);
+          },
+        ),
       ),
     );
   }

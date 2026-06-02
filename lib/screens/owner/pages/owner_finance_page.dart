@@ -250,6 +250,12 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     return 'Keuntungan untuk tanggal yang dipilih';
   }
 
+  String get _periodActionLabel {
+    if (_tab == 1) return 'Pilih Bulan';
+    if (_tab == 2) return 'Pilih Tahun';
+    return 'Pilih Tanggal';
+  }
+
   Future<void> _setTab(int tab) async {
     if (_tab == tab) return;
     setState(() => _tab = tab);
@@ -258,15 +264,9 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
 
   Future<void> _pickPeriod() async {
     if (_tab == 1) {
-      final picked = await showDatePicker(
-        context: context,
-        initialDate: _selectedMonth,
-        firstDate: DateTime(2000),
-        lastDate: DateTime(2100, 12, 31),
-        initialDatePickerMode: DatePickerMode.year,
-      );
+      final picked = await _showMonthPicker();
       if (picked == null || !mounted) return;
-      setState(() => _selectedMonth = DateTime(picked.year, picked.month));
+      setState(() => _selectedMonth = picked);
       await _loadFinanceData();
       return;
     }
@@ -294,6 +294,124 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
     if (picked == null || !mounted) return;
     setState(() => _selectedDate = picked);
     await _loadFinanceData();
+  }
+
+  Future<DateTime?> _showMonthPicker() {
+    var visibleYear = _selectedMonth.year;
+    const monthNames = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pilih Bulan',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Pilih tahun, lalu pilih nama bulan.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: 'Tahun sebelumnya',
+                          onPressed: visibleYear <= 2000
+                              ? null
+                              : () => setSheetState(() => visibleYear--),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              '$visibleYear',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton.filledTonal(
+                          tooltip: 'Tahun berikutnya',
+                          onPressed: visibleYear >= 2100
+                              ? null
+                              : () => setSheetState(() => visibleYear++),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: monthNames.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 2.4,
+                      ),
+                      itemBuilder: (context, index) {
+                        final month = index + 1;
+                        final selected = visibleYear == _selectedMonth.year &&
+                            month == _selectedMonth.month;
+                        return FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: selected
+                                ? AppTheme.primaryGreen.withValues(alpha: 0.16)
+                                : Colors.grey.shade100,
+                            foregroundColor: selected
+                                ? AppTheme.primaryGreen
+                                : Colors.grey.shade800,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).pop(
+                              DateTime(visibleYear, month),
+                            );
+                          },
+                          child: Text(monthNames[index]),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _selectChartPeriod(_ChartData item) async {
@@ -671,7 +789,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                                 ),
                               ),
                               IconButton.filledTonal(
-                                tooltip: 'Pilih periode',
+                                tooltip: _periodActionLabel,
                                 onPressed: _pickPeriod,
                                 icon: const Icon(Icons.edit_calendar_rounded),
                               ),
@@ -723,7 +841,7 @@ class _OwnerFinancePageState extends State<OwnerFinancePage> {
                           ),
                           TextButton(
                             onPressed: _pickPeriod,
-                            child: const Text('Pilih Periode'),
+                            child: Text(_periodActionLabel),
                           ),
                         ],
                       ),

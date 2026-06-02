@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
 import '../pages/owner_rooms_page.dart';
+
+String _formatTenantDateTime(String? value) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) return '-';
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return raw;
+  return DateFormat('dd MMM yyyy, HH:mm').format(parsed);
+}
 
 class OwnerTenantsPage extends StatefulWidget {
   const OwnerTenantsPage({super.key});
@@ -16,6 +25,16 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
   final Set<String> _updatingIds = <String>{};
   bool _loading = true;
   String? _error;
+  String? _statusFilter;
+
+  static const List<String?> _statusFilters = [
+    null,
+    'pending',
+    'approved',
+    'active',
+    'rejected',
+    'ended',
+  ];
 
   @override
   void initState() {
@@ -44,6 +63,7 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
       final list = (res.data!['data'] as List)
           .map((e) => OwnerTenant.fromJson(e as Map<String, dynamic>))
           .toList();
+      list.sort((a, b) => _tenantSortTime(b).compareTo(_tenantSortTime(a)));
       setState(() {
         _tenants = list;
         _loading = false;
@@ -54,6 +74,32 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
         _error = 'Gagal membaca data penghuni';
       });
     }
+  }
+
+  DateTime _tenantSortTime(OwnerTenant tenant) {
+    return DateTime.tryParse(
+          tenant.registeredAt ?? tenant.startDate ?? tenant.endDate ?? '',
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  String _formatDateTime(String? value) {
+    return _formatTenantDateTime(value);
+  }
+
+  List<OwnerTenant> get _filteredTenants {
+    if (_statusFilter == null) return _tenants;
+    return _tenants.where((tenant) => tenant.status == _statusFilter).toList();
+  }
+
+  String _filterLabel(String? status) {
+    if (status == null) return 'Semua';
+    return OwnerTenant.statusLabelFor(status);
+  }
+
+  int _filterCount(String? status) {
+    if (status == null) return _tenants.length;
+    return _tenants.where((tenant) => tenant.status == status).length;
   }
 
   Future<bool> _updateTenantStatus(
@@ -201,6 +247,10 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                 _DetailRow(
                     label: 'Harga Kamar',
                     value: _formatPrice(tenant.roomPrice)),
+                _DetailRow(
+                  label: 'Waktu Pengajuan',
+                  value: _formatDateTime(tenant.registeredAt),
+                ),
                 if (tenant.startDate != null)
                   _DetailRow(label: 'Mulai Sewa', value: tenant.startDate!),
                 if (tenant.status == 'pending') ...[
@@ -265,6 +315,8 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredTenants = _filteredTenants;
+
     return Scaffold(
       backgroundColor: AppTheme.surfaceTint,
       appBar: AppBar(title: const Text('Penghuni')),
@@ -291,10 +343,28 @@ class _OwnerTenantsPageState extends State<OwnerTenantsPage> {
                 : ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
+                      if (_tenants.isNotEmpty) ...[
+                        _TenantStatusFilter(
+                          selected: _statusFilter,
+                          filters: _statusFilters,
+                          labelFor: _filterLabel,
+                          countFor: _filterCount,
+                          onSelected: (status) {
+                            setState(() => _statusFilter = status);
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       if (_tenants.isEmpty)
                         const _EmptyTenants()
+                      else if (filteredTenants.isEmpty)
+                        _EmptyTenants(
+                          title: 'Tidak ada data pada filter ini.',
+                          message:
+                              'Tidak ada approval dengan filter ${_filterLabel(_statusFilter).toLowerCase()}.',
+                        )
                       else
-                        ..._tenants.map(
+                        ...filteredTenants.map(
                           (tenant) => _TenantTile(
                             tenant: tenant,
                             isUpdating: _updatingIds.contains(
@@ -339,6 +409,8 @@ class OwnerTenant {
     required this.roomPrice,
     required this.status,
     this.startDate,
+    this.endDate,
+    this.registeredAt,
   });
 
   final String registrationId;
@@ -353,6 +425,8 @@ class OwnerTenant {
   final double roomPrice;
   final String status;
   final String? startDate;
+  final String? endDate;
+  final String? registeredAt;
 
   factory OwnerTenant.fromJson(Map<String, dynamic> json) {
     return OwnerTenant(
@@ -368,10 +442,16 @@ class OwnerTenant {
       roomPrice: (json['roomPrice'] as num?)?.toDouble() ?? 0,
       status: json['status'] as String? ?? 'active',
       startDate: json['startDate'] as String?,
+      endDate: json['endDate'] as String?,
+      registeredAt: json['registeredAt'] as String?,
     );
   }
 
   String get statusLabel {
+    return statusLabelFor(status);
+  }
+
+  static String statusLabelFor(String status) {
     switch (status) {
       case 'active':
         return 'Aktif';
@@ -391,6 +471,8 @@ class OwnerTenant {
   OwnerTenant copyWith({
     String? status,
     String? startDate,
+    String? endDate,
+    String? registeredAt,
   }) {
     return OwnerTenant(
       registrationId: registrationId,
@@ -405,6 +487,61 @@ class OwnerTenant {
       roomPrice: roomPrice,
       status: status ?? this.status,
       startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      registeredAt: registeredAt ?? this.registeredAt,
+    );
+  }
+}
+
+class _TenantStatusFilter extends StatelessWidget {
+  const _TenantStatusFilter({
+    required this.selected,
+    required this.filters,
+    required this.labelFor,
+    required this.countFor,
+    required this.onSelected,
+  });
+
+  final String? selected;
+  final List<String?> filters;
+  final String Function(String?) labelFor;
+  final int Function(String?) countFor;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters.map((status) {
+          final isSelected = selected == status;
+          final count = countFor(status);
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              selected: isSelected,
+              label: Text('${labelFor(status)} ($count)'),
+              avatar: Icon(
+                isSelected
+                    ? Icons.check_circle_rounded
+                    : Icons.filter_list_rounded,
+                size: 16,
+              ),
+              onSelected: (_) => onSelected(status),
+              selectedColor: AppTheme.primaryGreen.withValues(alpha: 0.16),
+              checkmarkColor: AppTheme.primaryGreen,
+              side: BorderSide(
+                color:
+                    isSelected ? AppTheme.primaryGreen : Colors.grey.shade300,
+              ),
+              labelStyle: TextStyle(
+                color: isSelected ? AppTheme.primaryGreen : Colors.black87,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }
@@ -427,6 +564,7 @@ class _TenantTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canAction = tenant.status == 'pending' && !isUpdating;
+    final requestedAt = _formatTenantDateTime(tenant.registeredAt);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -453,6 +591,27 @@ class _TenantTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     _KosBadge(tenant: tenant, compact: true),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.schedule_rounded,
+                          size: 15,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Diajukan: $requestedAt',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     if (tenant.status == 'pending') ...[
                       const SizedBox(height: 10),
                       Row(
@@ -596,7 +755,13 @@ class _DetailRow extends StatelessWidget {
 }
 
 class _EmptyTenants extends StatelessWidget {
-  const _EmptyTenants();
+  const _EmptyTenants({
+    this.title = 'Belum ada penghuni terhubung.',
+    this.message = 'Bagikan kode kos ke user agar mereka bisa tersambung.',
+  });
+
+  final String title;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -606,13 +771,14 @@ class _EmptyTenants extends StatelessWidget {
         children: [
           Icon(Icons.people_outline, size: 54, color: Colors.grey.shade500),
           const SizedBox(height: 12),
-          const Text(
-            'Belum ada penghuni terhubung.',
-            style: TextStyle(fontWeight: FontWeight.w800),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
-            'Bagikan kode kos ke user agar mereka bisa tersambung.',
+            message,
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade700),
           ),

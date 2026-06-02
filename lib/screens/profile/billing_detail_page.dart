@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
+import '../../core/midtrans_launcher.dart';
 import '../../core/payment_methods.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/billing_record.dart';
@@ -249,7 +249,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     }
 
     if (paymentUrl != null && paymentUrl.isNotEmpty) {
-      final launched = await launchUrlString(paymentUrl);
+      final launched = await launchMidtransPaymentUrl(paymentUrl);
       if (!launched) {
         messenger.showSnackBar(
           const SnackBar(content: Text('Gagal membuka halaman pembayaran')),
@@ -288,6 +288,8 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     final isPastPaymentWindow =
         billing.canPay && _isPastPaymentWindow(paymentWindowBase);
     final paymentLimitDate = paymentWindowBase.add(const Duration(days: 1));
+    final showPaymentPicker =
+        widget.actionsEnabled && billing.canPay && !isPastPaymentWindow;
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -468,50 +470,54 @@ class _BillingDetailPageState extends State<BillingDetailPage>
             ),
           ),
           const SizedBox(height: 28),
-          Text(
-            'Pilih Metode Pembayaran',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: UserTheme.text,
-                ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [UserTheme.softShadow(opacity: 0.05)],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Pilih channel yang umum tersedia',
-                  style: TextStyle(
-                    color: UserTheme.muted,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+          if (showPaymentPicker) ...[
+            Text(
+              'Pilih Metode Pembayaran',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: UserTheme.text,
                   ),
-                ),
-                const SizedBox(height: 12),
-                ..._billingPaymentOptions.map(
-                  (option) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _PaymentMethodCard(
-                      title: PaymentMethodHelper.getDisplayName(option.key),
-                      subtitle: option.subtitle,
-                      icon: option.icon,
-                      selected: _method == option.key,
-                      onTap: () => setState(() => _method = option.key),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Pilih channel yang umum tersedia',
+                    style: TextStyle(
+                      color: UserTheme.muted,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  ..._billingPaymentOptions.map(
+                    (option) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _PaymentMethodCard(
+                        title: PaymentMethodHelper.getDisplayName(option.key),
+                        subtitle: option.subtitle,
+                        icon: option.icon,
+                        selected: _method == option.key,
+                        onTap: () => setState(() => _method = option.key),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ] else ...[
+            _BillingPaymentSummaryCard(billing: billing),
+          ],
           const SizedBox(height: 24),
-          if (widget.actionsEnabled) ...[
+          if (widget.actionsEnabled && billing.canPay) ...[
             FilledButton(
               onPressed: !billing.canPay || isPastPaymentWindow || _paying
                   ? null
@@ -532,11 +538,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
                         strokeWidth: 2,
                       ),
                     )
-                  : Text(isPaid
-                      ? 'Sudah Dibayar'
-                      : isCancelled
-                          ? 'Dibatalkan'
-                          : 'Bayar Sekarang'),
+                  : const Text('Bayar Sekarang'),
             ),
             const SizedBox(height: 10),
             SizedBox(
@@ -559,11 +561,11 @@ class _BillingDetailPageState extends State<BillingDetailPage>
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(isCancelled
-                        ? 'Order Dibatalkan'
-                        : isPaid || widget.cancellationMeansStopRenewal
+                    : Text(
+                        widget.cancellationMeansStopRenewal
                             ? 'Tidak Perpanjang'
-                            : 'Batalkan Order'),
+                            : 'Batalkan Order',
+                      ),
               ),
             ),
             const SizedBox(height: 14),
@@ -572,7 +574,92 @@ class _BillingDetailPageState extends State<BillingDetailPage>
               textAlign: TextAlign.center,
               style: TextStyle(color: UserTheme.muted, fontSize: 12),
             ),
+          ] else if (widget.actionsEnabled && isPaid) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _cancelling ? null : _cancelOrder,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: UserTheme.danger,
+                  side: BorderSide(
+                    color: UserTheme.danger.withValues(alpha: 0.4),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                child: _cancelling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Tidak Perpanjang'),
+              ),
+            ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BillingPaymentSummaryCard extends StatelessWidget {
+  const _BillingPaymentSummaryCard({required this.billing});
+
+  final BillingRecord billing;
+
+  @override
+  Widget build(BuildContext context) {
+    final method = billing.paymentMethod?.trim() ?? '';
+    final hasMethod = method.isNotEmpty;
+    final showMethod = hasMethod || billing.isPaid;
+    final statusLabel = billing.isPaid
+        ? 'Pembayaran diterima'
+        : billing.isCancelled
+            ? 'Pembayaran dibatalkan'
+            : 'Belum dibayar';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [UserTheme.softShadow(opacity: 0.05)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                color: UserTheme.primaryDark,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Informasi Pembayaran',
+                style: TextStyle(
+                  color: UserTheme.primaryDark,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (showMethod)
+            _DetailInfoRow(
+              label: 'Metode',
+              value:
+                  hasMethod ? PaymentMethodHelper.getDisplayName(method) : '-',
+            ),
+          if (billing.isPaid || billing.paymentDate != null)
+            _DetailInfoRow(
+              label: 'Tanggal Bayar',
+              value: billing.paymentDate == null
+                  ? '-'
+                  : _formatBillingDateTime(billing.paymentDate!),
+            ),
+          _DetailInfoRow(label: 'Status', value: statusLabel),
         ],
       ),
     );
@@ -766,6 +853,11 @@ String _billingPeriodLabel(BillingRecord billing) {
     return parts.last.trim();
   }
   return description.isEmpty ? '-' : description;
+}
+
+String _formatBillingDateTime(DateTime date) {
+  final local = date.isUtc ? date.toLocal() : date;
+  return '${formatShortDate(local)} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }
 
 class _DetailInfoRow extends StatelessWidget {

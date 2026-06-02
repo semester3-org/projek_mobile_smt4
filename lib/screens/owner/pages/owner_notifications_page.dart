@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/api_service.dart';
+import '../../../data/repositories/owner_repository.dart';
 
 class OwnerNotificationsPage extends StatefulWidget {
   const OwnerNotificationsPage({super.key});
@@ -68,6 +69,23 @@ class _OwnerNotificationsPageState extends State<OwnerNotificationsPage> {
         ),
       );
       return;
+    }
+
+    setState(() {
+      _allNotifications = _allNotifications.map((notification) {
+        if (notifId == null || notification['id'] == notifId) {
+          return {
+            ...Map<String, dynamic>.from(notification as Map),
+            'isRead': true,
+          };
+        }
+        return notification;
+      }).toList();
+    });
+    if (notifId == null) {
+      OwnerRepository.setUnreadNotificationCount(0);
+    } else {
+      OwnerRepository.invalidateNotificationCountCache();
     }
 
     await _loadNotifications();

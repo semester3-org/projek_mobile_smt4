@@ -29,7 +29,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     with WidgetsBindingObserver {
   late BillingRecord _billing;
   late String _billingLookupId;
-  String _method = 'bca';
+  String _method = '';
   String? _lastMidtransOrderId;
   bool _cancelling = false;
   bool _paying = false;
@@ -206,6 +206,12 @@ class _BillingDetailPageState extends State<BillingDetailPage>
 
   Future<void> _payNow() async {
     if (_paying || !_billing.canPay) return;
+    if (_method.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih metode pembayaran terlebih dulu')),
+      );
+      return;
+    }
     setState(() => _paying = true);
 
     final messenger = ScaffoldMessenger.of(context);
@@ -290,6 +296,8 @@ class _BillingDetailPageState extends State<BillingDetailPage>
     final paymentLimitDate = paymentWindowBase.add(const Duration(days: 1));
     final showPaymentPicker =
         widget.actionsEnabled && billing.canPay && !isPastPaymentWindow;
+    final canSubmitPayment =
+        billing.canPay && !isPastPaymentWindow && !_paying && _method.isNotEmpty;
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -519,9 +527,7 @@ class _BillingDetailPageState extends State<BillingDetailPage>
           const SizedBox(height: 24),
           if (widget.actionsEnabled && billing.canPay) ...[
             FilledButton(
-              onPressed: !billing.canPay || isPastPaymentWindow || _paying
-                  ? null
-                  : _payNow,
+              onPressed: canSubmitPayment ? _payNow : null,
               style: FilledButton.styleFrom(
                 backgroundColor: UserTheme.primaryDark,
                 padding: const EdgeInsets.symmetric(vertical: 17),
@@ -839,7 +845,6 @@ class _PropertySummary extends StatelessWidget {
             label: 'Tipe Kamar',
             value: billing.roomType ?? '-',
           ),
-          _DetailInfoRow(label: 'Periode', value: _billingPeriodLabel(billing)),
         ],
       ),
     );

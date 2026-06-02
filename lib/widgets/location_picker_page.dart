@@ -126,7 +126,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
         headers: const {
           'Accept': 'application/json',
           'Accept-Language': 'id',
-          'User-Agent': 'KosFinder/1.0 (com.example.projek_mobile)',
+          'User-Agent': 'NgeKos/1.0 (com.example.projek_mobile)',
         },
       ).timeout(const Duration(seconds: 12));
 

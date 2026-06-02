@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -7,6 +8,7 @@ import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/catering_subscriber.dart';
 import '../../models/user_dashboard.dart';
+import '../../models/user_profile.dart';
 import '../profile/billing_list_page.dart';
 import '../profile/notification_list_page.dart';
 import 'order_detail_page.dart';
@@ -28,6 +30,7 @@ class UserHomePage extends StatefulWidget {
 
 class _UserHomePageState extends State<UserHomePage> {
   UserDashboard? _dashboard;
+  UserProfile? _profile;
   bool _loading = true;
   bool _didLoad = false;
   bool _loadingDashboard = false;
@@ -72,6 +75,8 @@ class _UserHomePageState extends State<UserHomePage> {
     _loadingDashboard = true;
     final session = AuthScope.of(context).session;
     final displayName = session?.displayName ?? 'User';
+    final email = session?.email ?? '';
+    final role = session?.role.name ?? 'user';
     try {
       if (!silent) {
         setState(() {
@@ -79,16 +84,27 @@ class _UserHomePageState extends State<UserHomePage> {
           _loading = _dashboard == null;
         });
       }
-      final result = await UserRepository.getDashboard(
+      final dashboardFuture = UserRepository.getDashboard(
         displayName: displayName,
         forceRefresh: forceRefresh,
       );
+      final profileFuture = UserRepository.getProfile(
+        displayName: displayName,
+        email: email,
+        role: role,
+        forceRefresh: forceRefresh,
+      );
+      final result = await dashboardFuture;
       if (!mounted) return;
 
       setState(() {
         _dashboard = result.data ?? UserDashboard.fallback(displayName);
         _loading = false;
       });
+      _loadingDashboard = false;
+      final profileResult = await profileFuture;
+      if (!mounted || profileResult.data == null) return;
+      setState(() => _profile = profileResult.data);
     } finally {
       _loadingDashboard = false;
     }
@@ -98,6 +114,7 @@ class _UserHomePageState extends State<UserHomePage> {
   Widget build(BuildContext context) {
     final session = AuthScope.of(context).session;
     final displayName = _firstName(session?.displayName ?? 'User');
+    final avatarImage = _profileImage(_profile?.photoUrl);
 
     return Scaffold(
       backgroundColor: UserTheme.background,
@@ -109,7 +126,7 @@ class _UserHomePageState extends State<UserHomePage> {
             Icon(Icons.home_work_rounded, color: UserTheme.primary, size: 22),
             SizedBox(width: 10),
             Text(
-              'Sentra Ruang',
+              'NgeKos',
               style: TextStyle(
                 color: UserTheme.primaryDark,
                 fontWeight: FontWeight.w800,
@@ -165,15 +182,18 @@ class _UserHomePageState extends State<UserHomePage> {
                         onTap: () => widget.onSelectTab(3),
                         child: CircleAvatar(
                           backgroundColor: UserTheme.softBlue,
-                          child: Text(
-                            displayName.isEmpty
-                                ? 'U'
-                                : displayName[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: UserTheme.primary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                          backgroundImage: avatarImage,
+                          child: avatarImage == null
+                              ? Text(
+                                  displayName.isEmpty
+                                      ? 'U'
+                                      : displayName[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: UserTheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                )
+                              : null,
                         ),
                       ),
                     ],
@@ -215,6 +235,24 @@ class _UserHomePageState extends State<UserHomePage> {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return 'User';
     return trimmed.split(RegExp(r'\s+')).first;
+  }
+
+  ImageProvider? _profileImage(String? rawUrl) {
+    final value = rawUrl?.trim() ?? '';
+    if (value.isEmpty) return null;
+    if (value.startsWith('data:image')) {
+      final commaIndex = value.indexOf(',');
+      if (commaIndex == -1 || commaIndex + 1 >= value.length) return null;
+      try {
+        return MemoryImage(base64Decode(value.substring(commaIndex + 1)));
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return NetworkImage(value);
+    }
+    return null;
   }
 }
 

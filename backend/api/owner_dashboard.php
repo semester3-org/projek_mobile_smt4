@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Methods: GET, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../helpers/jwt.php';
+require_once __DIR__ . '/merchant_helpers.php';
 
 function sendJson(bool $success, $data = null, string $message = '', int $code = 200): void {
     http_response_code($code);
@@ -31,6 +32,154 @@ $ownerId = $payload['sub'] ?? '';
 $role = $payload['role'] ?? '';
 if (!in_array($role, ['owner', 'admin'], true)) {
     sendJson(false, null, 'Forbidden: hanya owner yang bisa akses', 403);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    handleOwnerDashboardPut($conn, $ownerId);
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    sendJson(false, null, 'Method not allowed', 405);
+}
+
+function rupiahLabel(int $amount): string {
+    return 'Rp ' . number_format($amount, 0, ',', '.');
+}
+
+function ownerDashboardDueLabel(?string $createdAt): array {
+    $createdTime = strtotime((string)$createdAt);
+    if ($createdTime === false) {
+        $createdTime = time();
+    }
+
+    $dueTime = $createdTime + (3 * 24 * 3600);
+    $diffDays = (int)ceil(($dueTime - time()) / (24 * 3600));
+
+    if ($diffDays < 0) {
+        $relative = abs($diffDays) . ' hari terlambat';
+    } elseif ($diffDays === 0) {
+        $relative = 'Hari ini';
+    } else {
+        $relative = $diffDays . ' hari lagi';
+    }
+
+    return [
+        'date' => date('d M Y', $dueTime),
+        'relative' => $relative,
+    ];
+}
+
+function handleOwnerDashboardPut(mysqli $conn, string $ownerId): void {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($body)) {
+        sendJson(false, null, 'Invalid JSON request', 400);
+    }
+
+    $action = strtolower(trim((string)($body['action'] ?? '')));
+    if ($action !== 'send_due_reminders') {
+        sendJson(false, null, 'Action tidak dikenal', 400);
+    }
+
+    $rawIds = $body['paymentIds'] ?? [];
+    $paymentIds = [];
+    if (is_array($rawIds)) {
+        foreach ($rawIds as $rawId) {
+            $id = (int)$rawId;
+            if ($id > 0) {
+                $paymentIds[] = $id;
+            }
+        }
+        $paymentIds = array_values(array_unique($paymentIds));
+    }
+
+    $whereIds = '';
+    if (!empty($paymentIds)) {
+        $whereIds = ' AND ph.id IN (' . implode(',', array_fill(0, count($paymentIds), '?')) . ')';
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            ph.id,
+            ph.amount,
+            ph.created_at,
+            rr.user_id,
+            u.display_name,
+            r.room_number,
+            k.title AS kos_title
+        FROM payment_history ph
+        INNER JOIN room_registrations rr ON rr.id = ph.registration_id
+        INNER JOIN users u ON u.id = rr.user_id
+        INNER JOIN kos_rooms r ON r.id = rr.room_id
+        INNER JOIN kos_listings k ON k.id = rr.kos_id
+        WHERE k.owner_id = ?
+          AND ph.payment_status IN ('unpaid', 'overdue')
+          $whereIds
+        ORDER BY ph.period_month ASC, ph.created_at ASC
+        LIMIT 25
+    ");
+    if (!$stmt) {
+        sendJson(false, null, 'Database error: ' . $conn->error, 500);
+    }
+
+    if (!empty($paymentIds)) {
+        $types = 's' . str_repeat('i', count($paymentIds));
+        $params = array_merge([$ownerId], $paymentIds);
+        $refs = [$types];
+        foreach ($params as $key => $value) {
+            $refs[] = &$params[$key];
+        }
+        call_user_func_array([$stmt, 'bind_param'], $refs);
+    } else {
+        $stmt->bind_param('s', $ownerId);
+    }
+
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    if (empty($rows)) {
+        sendJson(true, ['sent' => 0], 'Tidak ada tagihan jatuh tempo yang perlu diingatkan');
+    }
+
+    merchantEnsureSchema($conn);
+    $sent = 0;
+    $targets = [];
+    foreach ($rows as $row) {
+        $billingId = (string)($row['id'] ?? '');
+        $userId = (string)($row['user_id'] ?? '');
+        if ($billingId === '' || $userId === '') {
+            continue;
+        }
+
+        $due = ownerDashboardDueLabel($row['created_at'] ?? null);
+        $amount = rupiahLabel((int)($row['amount'] ?? 0));
+        $room = (string)($row['room_number'] ?? '-');
+        $kosTitle = (string)($row['kos_title'] ?? 'kos Anda');
+        $tenantName = (string)($row['display_name'] ?? 'Penghuni');
+
+        merchantCreateNotification(
+            $conn,
+            $userId,
+            'Pengingat jatuh tempo tagihan',
+            'Tagihan kamar ' . $room . ' di ' . $kosTitle . ' sebesar ' . $amount . ' jatuh tempo ' . $due['relative'] . ' (' . $due['date'] . '). Silakan cek detail tagihan Anda.',
+            'billing',
+            'Lihat Tagihan',
+            'billing:' . $billingId,
+            'important'
+        );
+        $sent++;
+        $targets[] = [
+            'paymentId' => (int)$billingId,
+            'tenantName' => $tenantName,
+            'roomNumber' => $room,
+            'dueLabel' => $due['relative'],
+        ];
+    }
+
+    sendJson(true, [
+        'sent' => $sent,
+        'targets' => $targets,
+    ], 'Pengingat jatuh tempo berhasil dikirim');
 }
 
 // 1. Ambil Statistik Kamar

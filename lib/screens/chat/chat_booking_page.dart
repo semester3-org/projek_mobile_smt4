@@ -20,7 +20,7 @@ class ChatBookingPage extends StatelessWidget {
         time: 'Kemarin',
       ),
       const _ChatPreview(
-        title: 'Support KosFinder',
+        title: 'Support NgeKos',
         subtitle: 'Halo! Ada yang bisa kami bantu?',
         time: 'Sen',
       ),

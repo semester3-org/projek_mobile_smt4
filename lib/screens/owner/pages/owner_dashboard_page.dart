@@ -17,6 +17,7 @@ class OwnerDashboardPage extends StatefulWidget {
 
 class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
   bool _isLoading = true;
+  bool _sendingDueReminders = false;
   String? _error;
 
   Map<String, dynamic> _stats = {
@@ -87,6 +88,48 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
     } else {
       return 'Selamat malam';
     }
+  }
+
+  Future<void> _sendDueReminders() async {
+    if (_sendingDueReminders || _dueSoon.isEmpty) return;
+
+    setState(() => _sendingDueReminders = true);
+    final res = await ApiService.put('api/owner_dashboard', {
+      'action': 'send_due_reminders',
+      'paymentIds': _dueSoon
+          .map((due) => due['id'])
+          .where((id) => id != null)
+          .toList(),
+    });
+    if (!mounted) return;
+
+    setState(() => _sendingDueReminders = false);
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.message ?? 'Gagal mengirim pengingat jatuh tempo'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final data = res.data?['data'];
+    final sent = data is Map<String, dynamic>
+        ? (data['sent'] as num?)?.toInt() ?? _dueSoon.length
+        : _dueSoon.length;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sent > 0
+              ? 'Pengingat jatuh tempo dikirim ke $sent penghuni'
+              : 'Tidak ada tagihan yang perlu diingatkan',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -249,7 +292,11 @@ class _OwnerDashboardPageState extends State<OwnerDashboardPage> {
                                 ),
                       ),
                       const SizedBox(height: 10),
-                      _DueSoonCard(dueSoonList: _dueSoon),
+                      _DueSoonCard(
+                        dueSoonList: _dueSoon,
+                        isSending: _sendingDueReminders,
+                        onRemindAll: _sendDueReminders,
+                      ),
                     ],
                   ),
                 ),
@@ -650,9 +697,15 @@ class _ActivityTile extends StatelessWidget {
 }
 
 class _DueSoonCard extends StatelessWidget {
-  const _DueSoonCard({required this.dueSoonList});
+  const _DueSoonCard({
+    required this.dueSoonList,
+    required this.isSending,
+    required this.onRemindAll,
+  });
 
   final List<dynamic> dueSoonList;
+  final bool isSending;
+  final VoidCallback onRemindAll;
 
   @override
   Widget build(BuildContext context) {
@@ -694,16 +747,17 @@ class _DueSoonCard extends StatelessWidget {
                 backgroundColor: Colors.white.withValues(alpha: 0.12),
                 foregroundColor: Colors.white,
               ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        'Pengingat jatuh tempo telah dikirim ke ${dueSoonList.length} penghuni'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: const Text('Ingatkan Semua'),
+              onPressed: isSending ? null : onRemindAll,
+              child: isSending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Ingatkan Semua'),
             ),
           ),
         ],

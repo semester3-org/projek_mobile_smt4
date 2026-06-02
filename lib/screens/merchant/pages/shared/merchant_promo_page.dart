@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -28,19 +29,31 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final promos = await MerchantRepository.getPromos();
-    final products = await MerchantRepository.getProducts();
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    final promosFuture = MerchantRepository.getPromos();
+    final productsFuture = MerchantRepository.getProducts();
+    final promos = await promosFuture;
+    final products = await productsFuture;
     if (!mounted) return;
     setState(() {
-      _promos = promos.data ?? [];
-      _products = products.data ?? [];
-      _error = promos.error ?? products.error;
-      _loading = false;
+      if (promos.data != null) {
+        _promos = promos.data!;
+      }
+      if (products.data != null) {
+        _products = products.data!;
+      }
+      if (!silent || promos.error != null || products.error != null) {
+        _error = promos.error ?? products.error;
+      }
+      if (!silent) {
+        _loading = false;
+      }
     });
   }
 
@@ -56,11 +69,20 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
         isDuplicate: isDuplicate,
       ),
     );
-    if (saved == true) _load();
+    if (saved == true) _load(silent: true);
   }
 
   Future<void> _updateStatus(
       MerchantPromo promo, String newStatus, bool isActive) async {
+    final previousPromos = List<MerchantPromo>.from(_promos);
+    setState(() {
+      _promos = _promos
+          .map((item) => item.id == promo.id
+              ? item.copyWith(isActive: isActive, status: newStatus)
+              : item)
+          .toList();
+    });
+
     final result = await MerchantRepository.savePromo(
       id: promo.id,
       name: promo.name,
@@ -79,11 +101,19 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
     );
     if (!mounted) return;
     if (result.isSuccess) {
+      if (result.data != null) {
+        setState(() {
+          _promos = _promos
+              .map((item) => item.id == promo.id ? result.data! : item)
+              .toList();
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Status promo diperbarui')),
       );
-      _load();
+      unawaited(_load(silent: true));
     } else {
+      setState(() => _promos = previousPromos);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result.error ?? 'Gagal memperbarui status')),
       );
@@ -100,7 +130,7 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
             : result.error ?? 'Gagal menghapus promo'),
       ),
     );
-    if (result.isSuccess) _load();
+    if (result.isSuccess) _load(silent: true);
   }
 
   String _effectiveStatus(MerchantPromo promo) {
@@ -131,7 +161,8 @@ class _MerchantPromoPageState extends State<MerchantPromoPage> {
 
     return MerchantPage(
       topBar: MerchantTopBar(
-        title: 'Promo Merchant',
+        title: 'Promo',
+        showAvatar: false,
         onAction: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),
         ),
@@ -1300,7 +1331,7 @@ class _Input extends StatelessWidget {
   }
 }
 
-class _PromoRealtimePreview extends StatelessWidget {
+class _PromoRealtimePreview extends StatefulWidget {
   const _PromoRealtimePreview({
     required this.discountType,
     required this.discountValue,
@@ -1315,15 +1346,24 @@ class _PromoRealtimePreview extends StatelessWidget {
   final List<MerchantProduct> products;
   final bool targetAllProducts;
 
+  @override
+  State<_PromoRealtimePreview> createState() => _PromoRealtimePreviewState();
+}
+
+class _PromoRealtimePreviewState extends State<_PromoRealtimePreview> {
+  bool _expanded = false;
+
   double _calculateDiscount(double subtotal) {
     double discount = 0;
-    if (discountType == 'percentage') {
-      discount = subtotal * discountValue / 100;
-      if (maxDiscountAmount > 0) {
-        discount = discount > maxDiscountAmount ? maxDiscountAmount : discount;
+    if (widget.discountType == 'percentage') {
+      discount = subtotal * widget.discountValue / 100;
+      if (widget.maxDiscountAmount > 0) {
+        discount = discount > widget.maxDiscountAmount
+            ? widget.maxDiscountAmount
+            : discount;
       }
     } else {
-      discount = discountValue;
+      discount = widget.discountValue;
     }
     if (discount > subtotal) discount = subtotal;
     return discount;
@@ -1342,7 +1382,7 @@ class _PromoRealtimePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (discountValue <= 0) {
+    if (widget.discountValue <= 0) {
       return const MerchantCard(
         color: MerchantPalette.softBlue,
         child: Center(
@@ -1358,7 +1398,7 @@ class _PromoRealtimePreview extends StatelessWidget {
       );
     }
 
-    if (products.isEmpty) {
+    if (widget.products.isEmpty) {
       return const MerchantCard(
         color: MerchantPalette.softBlue,
         child: Center(
@@ -1374,9 +1414,12 @@ class _PromoRealtimePreview extends StatelessWidget {
       );
     }
 
-    final lines = products.map(_previewLineFor).toList();
-    final previewLines = targetAllProducts ? lines.take(3).toList() : lines;
-    final hiddenCount = targetAllProducts && lines.length > previewLines.length
+    final lines = widget.products.map(_previewLineFor).toList();
+    final previewLines = widget.targetAllProducts && !_expanded
+        ? lines.take(3).toList()
+        : lines;
+    final hiddenCount =
+        widget.targetAllProducts && lines.length > previewLines.length
         ? lines.length - previewLines.length
         : 0;
     final totalNormal = lines.fold<double>(
@@ -1415,13 +1458,20 @@ class _PromoRealtimePreview extends StatelessWidget {
           ),
           const Divider(height: 24),
           ...previewLines.map(_PromoPreviewProductRow.new),
-          if (hiddenCount > 0) ...[
+          if (widget.targetAllProducts && lines.length > 3) ...[
             const SizedBox(height: 8),
-            Text(
-              '+ $hiddenCount produk lainnya',
-              style: const TextStyle(
-                color: MerchantPalette.primary,
-                fontWeight: FontWeight.w800,
+            TextButton(
+              onPressed: () => setState(() => _expanded = !_expanded),
+              style: TextButton.styleFrom(
+                foregroundColor: MerchantPalette.primary,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 36),
+              ),
+              child: Text(
+                _expanded
+                    ? 'Tampilkan lebih sedikit'
+                    : '+ $hiddenCount produk lainnya',
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
           ],

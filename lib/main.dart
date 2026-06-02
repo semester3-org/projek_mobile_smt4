@@ -326,7 +326,7 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
       child: MaterialApp(
         navigatorKey: appNavigatorKey,
         scaffoldMessengerKey: appScaffoldMessengerKey,
-        title: 'KosFinder',
+        title: 'NgeKos',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         builder: (context, child) {

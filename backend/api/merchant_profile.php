@@ -37,6 +37,22 @@ try {
     if ($businessName === '') {
         merchantSendJson(false, null, 'Nama merchant wajib diisi', 400);
     }
+    if (strlen(preg_replace('/\s+/', ' ', $businessName)) < 3) {
+        merchantSendJson(false, null, 'Nama merchant minimal 3 karakter', 400);
+    }
+    if (!preg_match('/[A-Za-z]/', $businessName)) {
+        merchantSendJson(false, null, 'Nama merchant harus memuat huruf', 400);
+    }
+    if ($phone !== '') {
+        if (!preg_match('/^[0-9+\s().-]+$/', $phone)) {
+            merchantSendJson(false, null, 'Nomor kontak hanya boleh berisi angka dan tanda +', 400);
+        }
+        $phoneDigits = preg_replace('/\D/', '', $phone);
+        if (strlen($phoneDigits) < 10 || strlen($phoneDigits) > 15) {
+            merchantSendJson(false, null, 'Nomor kontak harus 10-15 digit', 400);
+        }
+        $phone = $phoneDigits;
+    }
 
     $merchantId = (string)$merchant['id'];
 

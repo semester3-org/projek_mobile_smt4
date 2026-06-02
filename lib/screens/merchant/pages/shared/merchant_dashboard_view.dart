@@ -74,7 +74,8 @@ class _MerchantDashboardViewState extends State<MerchantDashboardView> {
 
     return MerchantPage(
       topBar: MerchantTopBar(
-        title: 'MerchantHub',
+        title: 'Dashboard',
+        showAvatar: false,
         onAction: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),
@@ -106,11 +107,6 @@ class _MerchantDashboardViewState extends State<MerchantDashboardView> {
           MerchantMetricCard(
             title: 'TOTAL PESANAN',
             value: dashboard.totalOrders.toString(),
-            trailing: MerchantStatusPill(
-              label: 'REAL DB',
-              color: MerchantPalette.success,
-              background: MerchantPalette.success.withValues(alpha: 0.13),
-            ),
           ),
           const SizedBox(height: 12),
           MerchantCard(

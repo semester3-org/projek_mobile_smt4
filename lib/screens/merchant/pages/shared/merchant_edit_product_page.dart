@@ -55,7 +55,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
     _nameCtrl.text = product?.name ?? '';
     _categoryCtrl.text = product?.category ?? '';
     if (widget.isLaundry) {
-      _pricingType = product?.pricingType ?? 'per_kg';
+      _pricingType = _normalizeLaundryPricingType(product?.pricingType);
       _durationCtrl.text = product?.durationValue == null
           ? ''
           : product!.durationValue!.toString();
@@ -389,7 +389,6 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
             segments: const [
               ButtonSegment(value: 'per_kg', label: Text('Per Kg')),
               ButtonSegment(value: 'per_item', label: Text('Per Item')),
-              ButtonSegment(value: 'flat', label: Text('Flat Price')),
             ],
             selected: {_pricingType},
             onSelectionChanged: (value) {
@@ -511,7 +510,7 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
                   children: [
                     const _FieldLabel('Satuan Otomatis'),
                     const SizedBox(height: 8),
-                    _UnitPreview(value: pricingUnitFor(_pricingType)),
+                    _UnitPreview(value: _pricingUnitDisplay(_pricingType)),
                   ],
                 ),
               ),
@@ -665,7 +664,7 @@ class _EditableLaundryAddon {
       id: addon.id,
       name: addon.name,
       price: addon.price,
-      pricingType: addon.pricingType,
+      pricingType: 'flat',
     );
   }
 
@@ -797,7 +796,6 @@ class _LaundryAddonsEditorState extends State<_LaundryAddonsEditor> {
               padding: const EdgeInsets.only(bottom: 12),
               child: _AddonRow(
                 addon: addon,
-                onChanged: () => setState(() {}),
                 onRemove: () => widget.onRemove(addon),
               ),
             ),
@@ -810,12 +808,10 @@ class _LaundryAddonsEditorState extends State<_LaundryAddonsEditor> {
 class _AddonRow extends StatelessWidget {
   const _AddonRow({
     required this.addon,
-    required this.onChanged,
     required this.onRemove,
   });
 
   final _EditableLaundryAddon addon;
-  final VoidCallback onChanged;
   final VoidCallback onRemove;
 
   @override
@@ -861,44 +857,7 @@ class _AddonRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _FieldLabel('Tipe Harga'),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: addon.pricingType,
-                      decoration: _dropdownDecoration(fillColor: Colors.white),
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'per_kg', child: Text('Per Kg')),
-                        DropdownMenuItem(
-                          value: 'per_item',
-                          child: Text('Per Item'),
-                        ),
-                        DropdownMenuItem(value: 'flat', child: Text('Flat')),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        addon.pricingType = value;
-                        onChanged();
-                      },
-                    ),
-                  ],
-                ),
-              ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Satuan: ${pricingUnitFor(addon.pricingType)}',
-            style: const TextStyle(
-              color: MerchantPalette.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
           ),
         ],
       ),
@@ -956,6 +915,19 @@ class _AddWeekdayPriceCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _pricingUnitDisplay(String pricingType) {
+  switch (pricingType) {
+    case 'per_item':
+      return '/item';
+    default:
+      return '/kg';
+  }
+}
+
+String _normalizeLaundryPricingType(String? value) {
+  return value == 'per_item' ? 'per_item' : 'per_kg';
 }
 
 class _TimePickField extends StatelessWidget {

@@ -11,6 +11,7 @@ import '../../../data/repositories/user_repository.dart';
 import '../../../models/kos_listing.dart';
 import '../../../models/user_profile.dart';
 import '../../../widgets/location_picker_page.dart';
+import '../../../widgets/logout_confirm_dialog.dart';
 import 'owner_help_page.dart';
 import 'owner_notifications_page.dart';
 import 'owner_security_page.dart';
@@ -602,8 +603,10 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                     icon: Icons.logout_rounded,
                     label: 'Keluar',
                     danger: true,
-                    onTap: () {
-                      auth.logout();
+                    onTap: () async {
+                      if (!await confirmLogout(context)) return;
+                      await auth.logout();
+                      if (!context.mounted) return;
                       Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                   ),

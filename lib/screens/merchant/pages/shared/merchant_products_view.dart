@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../data/repositories/merchant_repository.dart';
@@ -23,24 +25,42 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
   bool _loading = true;
   String? _error;
   String _selectedFilter = 'Semua';
+  StreamSubscription<void>? _catalogSubscription;
 
   @override
   void initState() {
     super.initState();
+    _catalogSubscription = MerchantRepository.catalogChanges.listen((_) {
+      _load(silent: true);
+    });
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _catalogSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final result = await MerchantRepository.getProducts();
     if (!mounted) return;
     setState(() {
-      _products = result.data ?? [];
-      _error = result.error;
-      _loading = false;
+      if (result.data != null) {
+        _products = result.data!;
+      }
+      if (!silent || result.error != null) {
+        _error = result.error;
+      }
+      if (!silent) {
+        _loading = false;
+      }
     });
   }
 
@@ -54,14 +74,14 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         ),
       ),
     );
-    _load();
+    _load(silent: true);
   }
 
   List<String> get _filterLabels {
     if (!widget.isLaundry) {
       return const ['Semua', 'Full Day', 'Weekday', 'Promo aktif'];
     }
-    return const ['Semua', 'Per Kg', 'Per Item', 'Flat Price', 'Promo aktif'];
+    return const ['Semua', 'Per Kg', 'Per Item', 'Promo aktif'];
   }
 
   List<MerchantProduct> get _visibleProducts {
@@ -91,7 +111,8 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
     final visibleProducts = _visibleProducts;
     return MerchantPage(
       topBar: MerchantTopBar(
-        title: 'MerchantHub',
+        title: 'Produk',
+        showAvatar: false,
         onAction: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MerchantNotificationsPage()),
@@ -103,7 +124,7 @@ class _MerchantProductsViewState extends State<MerchantProductsView> {
         onPressed: () => _openEdit(),
         child: const Icon(Icons.add_rounded),
       ),
-      onRefresh: _load,
+      onRefresh: () => _load(),
       children: [
         Text(
           title,
@@ -459,11 +480,12 @@ class _LaundryServiceMeta extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        _ServiceInfoChip(
-          icon: Icons.sell_outlined,
-          text: product.pricingTypeLabel,
-          color: MerchantPalette.primary,
-        ),
+        if (product.pricingType != 'flat')
+          _ServiceInfoChip(
+            icon: Icons.sell_outlined,
+            text: product.pricingTypeLabel,
+            color: MerchantPalette.primary,
+          ),
         _ServiceInfoChip(
           icon: Icons.schedule_rounded,
           text: product.durationLabel.isEmpty

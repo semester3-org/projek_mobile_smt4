@@ -135,7 +135,7 @@ class OwnerHelpPage extends StatelessWidget {
               '1. Navigasi ke menu "Profil" -> pilih "Data Properti".\n'
               '2. Anda akan melihat kode unik berbentuk "KOS-XXXXXX" di setiap properti kos Anda.\n'
               '3. Klik tombol "Bagikan Kode" untuk menyalin kode akses tersebut.\n'
-              '4. Calon penyewa dapat menggunakan kode ini di aplikasi KosFinder mereka untuk mendaftar sewa kamar secara otomatis.',
+              '4. Calon penyewa dapat menggunakan kode ini di aplikasi NgeKos mereka untuk mendaftar sewa kamar secara otomatis.',
             ),
           ),
           const SizedBox(height: 24),

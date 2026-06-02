@@ -62,7 +62,42 @@ class _UserCateringSubscriptionsPageState
       status: _filters[_tab],
     );
     if (!mounted) return;
-    final nextItems = result.data ?? [];
+    var nextItems = result.data ?? [];
+    // Hide expired cards on Semua/Aktif so only current subscriptions remain.
+    if (_tab != 2) {
+      nextItems = nextItems.where((item) => !item.isExpired).toList();
+    } else {
+      nextItems = nextItems.where((item) => item.isExpired).toList();
+    }
+
+    // Deduplicate by orderId: keep the subscription with the latest endDate
+    final Map<String, CateringSubscriber> byOrder = {};
+    DateTime? tryParse(String? raw) {
+      if (raw == null) return null;
+      try {
+        return DateTime.tryParse(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    for (final s in nextItems) {
+      final key = (s.orderId.isNotEmpty) ? s.orderId : s.id;
+      final existing = byOrder[key];
+      if (existing == null) {
+        byOrder[key] = s;
+        continue;
+      }
+      final curEnd = tryParse(s.endDate);
+      final exEnd = tryParse(existing.endDate);
+      if (curEnd != null && exEnd != null) {
+        if (curEnd.isAfter(exEnd)) byOrder[key] = s;
+      } else if (curEnd != null && exEnd == null) {
+        byOrder[key] = s;
+      } else if (curEnd == null && exEnd == null) {
+        // keep existing (fallback)
+      }
+    }
+    nextItems = byOrder.values.toList();
     final hasChanged = _itemsSignature(nextItems) != _itemsSignature(_items);
     setState(() {
       if (hasChanged || showLoading) {

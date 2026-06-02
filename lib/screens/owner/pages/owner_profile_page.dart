@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../app/app_theme.dart';
@@ -106,6 +107,48 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
       }
     }
     return NetworkImage(value);
+  }
+
+  bool _isCoordinateAddress(String value) {
+    return RegExp(r'^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$')
+        .hasMatch(value.trim());
+  }
+
+  Future<String?> _reverseGeocodeAddress(
+      double latitude, double longitude) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'format': 'jsonv2',
+        'lat': latitude.toString(),
+        'lon': longitude.toString(),
+        'zoom': '18',
+        'addressdetails': '1',
+      });
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'projek-mobile-owner-profile/1.0',
+        },
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final displayName = data['display_name'] as String?;
+      final address = displayName?.trim() ?? '';
+      return address.isEmpty || _isCoordinateAddress(address) ? null : address;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> _initialOwnerAddress() async {
+    final address = (_profile?.address ?? '').trim();
+    final latitude = _profile?.latitude;
+    final longitude = _profile?.longitude;
+    if (address.isNotEmpty && !_isCoordinateAddress(address)) {
+      return address;
+    }
+    if (latitude == null || longitude == null) return '';
+    return await _reverseGeocodeAddress(latitude, longitude) ?? '';
   }
 
   Future<String?> _pickProfilePhoto() async {
@@ -214,7 +257,9 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
     final contactCtrl = TextEditingController(
       text: _ownerContact == '-' ? '' : _ownerContact,
     );
-    final addressCtrl = TextEditingController(text: _profile?.address ?? '');
+    final addressCtrl =
+        TextEditingController(text: await _initialOwnerAddress());
+    if (!mounted) return;
     final latitudeCtrl = TextEditingController(
       text: _profile?.latitude == null ? '' : '${_profile!.latitude}',
     );
@@ -336,9 +381,23 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                                 position.latitude.toStringAsFixed(8);
                             longitudeCtrl.text =
                                 position.longitude.toStringAsFixed(8);
-                            if (addressCtrl.text.trim().isEmpty) {
-                              addressCtrl.text =
-                                  '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+                            final address = await _reverseGeocodeAddress(
+                              position.latitude,
+                              position.longitude,
+                            );
+                            if (!dialogContext.mounted) return;
+                            if (address != null) {
+                              setDialogState(() {
+                                addressCtrl.text = address;
+                              });
+                            } else {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Alamat belum ditemukan. Pilih lokasi dari peta atau isi alamat manual.',
+                                  ),
+                                ),
+                              );
                             }
                           },
                     icon: locating
@@ -378,7 +437,9 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                       );
                       if (result == null || !dialogContext.mounted) return;
                       setDialogState(() {
-                        addressCtrl.text = result.address;
+                        addressCtrl.text = _isCoordinateAddress(result.address)
+                            ? addressCtrl.text
+                            : result.address;
                         latitudeCtrl.text = result.latitude.toStringAsFixed(8);
                         longitudeCtrl.text =
                             result.longitude.toStringAsFixed(8);

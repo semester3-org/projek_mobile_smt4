@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/realtime_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/catering_subscriber.dart';
+import '../../models/order.dart';
 import '../../models/user_dashboard.dart';
 import '../../models/user_profile.dart';
 import '../profile/billing_list_page.dart';
@@ -153,7 +156,12 @@ class _UserHomePageState extends State<UserHomePage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : ListView(
-                padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  22,
+                  20,
+                  28 + MediaQuery.of(context).padding.bottom,
+                ),
                 children: [
                   Text(
                     '${_getGreeting()},',
@@ -203,9 +211,7 @@ class _UserHomePageState extends State<UserHomePage> {
                   const SizedBox(height: 14),
                   const _HomeCateringSubscriptions(),
                   const SizedBox(height: 28),
-                  const UserSectionHeader(title: 'Layanan Utama'),
-                  const SizedBox(height: 14),
-                  _ServiceGrid(onSelectTab: widget.onSelectTab),
+                  const _HomeCateringDeliveryMonitor(),
                   const SizedBox(height: 22),
                   if (_dashboard!.announcementTitle.trim().isNotEmpty) ...[
                     _AnnouncementCard(dashboard: _dashboard!),
@@ -365,123 +371,435 @@ class _BillingHero extends StatelessWidget {
   }
 }
 
-class _ServiceGrid extends StatelessWidget {
-  const _ServiceGrid({required this.onSelectTab});
+class _HomeCateringDeliveryMonitor extends StatefulWidget {
+  const _HomeCateringDeliveryMonitor();
 
-  final ValueChanged<int> onSelectTab;
+  @override
+  State<_HomeCateringDeliveryMonitor> createState() =>
+      _HomeCateringDeliveryMonitorState();
+}
+
+class _HomeCateringDeliveryMonitorState
+    extends State<_HomeCateringDeliveryMonitor> {
+  CateringSubscriber? _activeSubscription;
+  Order? _activeOrder;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActiveSubscription();
+  }
+
+  Future<void> _loadActiveSubscription() async {
+    final result = await UserRepository.getCateringSubscriptions(status: 'all');
+    if (!mounted) return;
+    final active = (result.data ?? [])
+        .where((s) =>
+            s.isActive ||
+            s.subscriptionStatus == 'pending' ||
+            s.subscriptionStatus == 'pending_payment')
+        .firstOrNull;
+    
+    Order? order;
+    if (active != null && active.orderId.isNotEmpty) {
+      final orderResult = await UserRepository.getOrderDetail(active.orderId);
+      if (orderResult.isSuccess && orderResult.data != null) {
+        order = orderResult.data;
+      }
+    }
+    
+    if (!mounted) return;
+    setState(() {
+      _activeSubscription = active;
+      _activeOrder = order;
+      _loading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 1.05,
+    if (_loading) return const SizedBox.shrink();
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ServiceTile(
-          icon: Icons.apartment_rounded,
-          iconColor: UserTheme.primary,
-          iconBg: UserTheme.softBlue,
-          title: 'Pembayaran Kos',
-          subtitle: 'Sewa & Listrik',
-          onTap: () {
-            Navigator.of(context)
-                .push<bool>(
-              MaterialPageRoute<bool>(
-                builder: (_) => const BillingListPage(),
-              ),
-            )
-                .then((changed) {
-              if (changed == true) {
-                UserRepository.requestProfileRefresh();
-              }
-            });
-          },
-        ),
-        _ServiceTile(
-          icon: Icons.restaurant_rounded,
-          iconColor: const Color(0xFFFF7A1A),
-          iconBg: const Color(0xFFFFF1E5),
-          title: 'Catering',
-          subtitle: 'Menu Harian',
-          onTap: () => onSelectTab(2),
-        ),
-        _ServiceTile(
-          icon: Icons.local_laundry_service_rounded,
-          iconColor: const Color(0xFF8A3FFC),
-          iconBg: const Color(0xFFF1E7FF),
-          title: 'Laundry',
-          subtitle: 'Cuci & Setrika',
-          onTap: () => onSelectTab(1),
+        const UserSectionHeader(title: 'Monitoring Pengantaran Catering'),
+        const SizedBox(height: 14),
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF0E0),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.delivery_dining_rounded,
+                        color: Color(0xFFFF7A1A),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Text(
+                        '''Pantau pengiriman catering hari ini dan laporkan jika ada kesalahan.
+Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.''',
+                        style: TextStyle(
+                          color: UserTheme.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (_activeSubscription != null) ...
+                    _buildDeliveryMilestoneInfo(),
+                const SizedBox(height: 8),
+                const Text(
+                  'Gunakan fitur ini untuk melaporkan gelombang pengantaran yang tidak datang atau ada masalah pengiriman. Lampirkan foto sebagai bukti.',
+                  style: TextStyle(
+                    color: UserTheme.muted,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _openCateringDetail(context),
+                        child: const Text('Lihat Detail'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _openReportDialog(context),
+                        child: const Text('Laporkan'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
   }
-}
 
-class _ServiceTile extends StatelessWidget {
-  const _ServiceTile({
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+  List<Widget> _buildDeliveryMilestoneInfo() {
+    if (_activeOrder == null) {
+      return [];
+    }
 
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
+    final order = _activeOrder!;
+    final deliveryTime1 = order.deliveryTime1.trim().isEmpty 
+        ? '07:00' 
+        : order.deliveryTime1.trim();
+    final deliveryTime2 = (order.deliveryTime2 ?? '').trim().isEmpty 
+        ? '15:00' 
+        : order.deliveryTime2!.trim();
+    
+    // Tentukan icon berdasarkan status pesanan
+    final isCompleted = order.status == 'completed';
+    final statusIcon = isCompleted 
+        ? Icons.check_circle 
+        : Icons.schedule;
+    final statusColor = isCompleted 
+        ? const Color(0xFF4CAF50)  // Green
+        : null;
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [UserTheme.softShadow(opacity: 0.04)],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: iconColor),
-              ),
-              const Spacer(),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: UserTheme.text,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(color: UserTheme.muted, fontSize: 13),
-              ),
-            ],
-          ),
+    return [
+      if (order.mealDeliveryCount >= 2) ...[
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            Chip(
+              avatar: Icon(statusIcon, size: 18, color: statusColor),
+              label: Text('Gelombang 1: $deliveryTime1'),
+              backgroundColor: const Color(0xFFFFF0E0),
+            ),
+            Chip(
+              avatar: Icon(statusIcon, size: 18, color: statusColor),
+              label: Text('Gelombang 2: $deliveryTime2'),
+              backgroundColor: const Color(0xFFFFF0E0),
+            ),
+          ],
         ),
+      ] else ...[
+        Chip(
+          avatar: Icon(statusIcon, size: 18, color: statusColor),
+          label: Text('Gelombang: $deliveryTime1'),
+          backgroundColor: const Color(0xFFFFF0E0),
+        ),
+      ],
+      const SizedBox(height: 12),
+    ];
+  }
+
+  void _openCateringDetail(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const UserCateringSubscriptionsPage(),
       ),
+    );
+  }
+
+  void _openReportDialog(BuildContext context) async {
+    // Load order details to get delivery times
+    if (_activeSubscription?.orderId.isEmpty ?? true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pesanan tidak ditemukan')),
+      );
+      return;
+    }
+
+    final orderResult = await UserRepository.getOrderDetail(_activeSubscription!.orderId);
+    if (!mounted || !orderResult.isSuccess || orderResult.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(orderResult.error ?? 'Gagal memuat detail pesanan')),
+      );
+      return;
+    }
+
+    final order = orderResult.data!;
+    final controller = TextEditingController();
+    final picker = ImagePicker();
+    List<XFile> selectedImages = [];
+    int? selectedMilestone;
+    
+    if (!mounted) return;
+    
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Laporkan Pengantaran'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Jelaskan masalah pengiriman catering hari ini.',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 10),
+                    if (order.mealDeliveryCount >= 2) ...[
+                      const Text(
+                        'Gelombang mana yang tidak datang?',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: UserTheme.text,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<int>(
+                        segments: [
+                          ButtonSegment<int>(
+                            value: 1,
+                            label: Text('Gelombang 1\n${order.deliveryTime1}'),
+                          ),
+                          ButtonSegment<int>(
+                            value: 2,
+                            label: Text(
+                              'Gelombang 2\n${order.deliveryTime2 ?? "15:00"}',
+                            ),
+                          ),
+                        ],
+                        selected: selectedMilestone != null ? {selectedMilestone!} : {},
+                        emptySelectionAllowed: true,
+                        onSelectionChanged: (Set<int> newSelection) {
+                          setStateDialog(() {
+                            selectedMilestone =
+                                newSelection.isEmpty ? null : newSelection.first;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ] else ...[
+                      Chip(
+                        label: Text(
+                          'Gelombang 1: ${order.deliveryTime1}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        backgroundColor: const Color(0xFFFFF0E0),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    const Text(
+                      'Detail masalah:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: UserTheme.text,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: controller,
+                      minLines: 3,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Tulis detail laporan Anda di sini...\nMisalnya: Paket tidak datang, atau produk yang dikirim tidak sesuai',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Lampirkan bukti foto:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: UserTheme.text,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () async {
+                            try {
+                              final image = await picker.pickImage(
+                                source: ImageSource.gallery,
+                              );
+                              if (image != null) {
+                                setStateDialog(() {
+                                  selectedImages.add(image);
+                                });
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Gagal memilih gambar: $e'),
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                          label: const Text('Pilih'),
+                        ),
+                      ],
+                    ),
+                    if (selectedImages.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 80,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: selectedImages.length,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Stack(
+                                children: [
+                                  Container(
+                                    width: 80,
+                                    height: 80,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFFE0E0E0),
+                                      ),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        File(selectedImages[index].path),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 0,
+                                    right: 0,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setStateDialog(() {
+                                          selectedImages.removeAt(index);
+                                        });
+                                      },
+                                      child: Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final reportText = controller.text.trim();
+                    if (reportText.isEmpty) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Silakan isi detail laporan terlebih dahulu.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(dialogContext).pop();
+                    final milestoneLabel = selectedMilestone != null
+                        ? 'Gelombang $selectedMilestone'
+                        : 'Tidak ditentukan';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Pengaduan untuk $milestoneLabel dikirim (${selectedImages.length} foto). Admin akan menindaklanjuti.',
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Kirim'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

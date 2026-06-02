@@ -249,6 +249,7 @@ function merchantEnsureSchema(mysqli $conn): void {
         merchantAddColumn($conn, 'orders', 'subscription_start_date', "`subscription_start_date` DATE DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'subscription_end_date', "`subscription_end_date` DATE DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'subscription_status', "`subscription_status` VARCHAR(30) DEFAULT NULL");
+        merchantAddColumn($conn, 'orders', 'subscription_activated_at', "`subscription_activated_at` DATETIME DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'cancellation_requested_at', "`cancellation_requested_at` DATETIME DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'extension_parent_order_id', "`extension_parent_order_id` BIGINT UNSIGNED DEFAULT NULL");
         merchantAddColumn($conn, 'orders', 'extension_days', "`extension_days` INT DEFAULT NULL");
@@ -283,6 +284,7 @@ function merchantEnsureSchema(mysqli $conn): void {
                 subscription_start_date DATE DEFAULT NULL,
                 subscription_end_date DATE DEFAULT NULL,
                 subscription_status VARCHAR(30) DEFAULT NULL,
+                subscription_activated_at DATETIME DEFAULT NULL,
                 cancellation_requested_at DATETIME DEFAULT NULL,
                 extension_parent_order_id BIGINT UNSIGNED DEFAULT NULL,
                 extension_days INT DEFAULT NULL,
@@ -857,6 +859,7 @@ function merchantSyncCateringSubscriber(mysqli $conn, int $orderId): void {
 function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void {
     $stmt = $conn->prepare("
         SELECT id, subscription_days, subscription_status, status, payment_status,
+               subscription_start_date, subscription_end_date, subscription_activated_at,
                extension_parent_order_id, extension_days
         FROM orders
         WHERE id = ?
@@ -880,7 +883,21 @@ function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void 
     }
 
     $extensionParentId = (int)($row['extension_parent_order_id'] ?? 0);
+    if ($extensionParentId <= 0 &&
+        strtolower((string)($row['subscription_status'] ?? '')) === 'active' &&
+        !empty($row['subscription_start_date']) &&
+        !empty($row['subscription_end_date'])) {
+        merchantSyncCateringSubscriber($conn, $orderId);
+        merchantEnsureCateringDeliveryLogs($conn, $orderId);
+        return;
+    }
+
     if ($extensionParentId > 0) {
+        if (strtolower((string)($row['subscription_status'] ?? '')) === 'ended' &&
+            !empty($row['subscription_start_date']) &&
+            !empty($row['subscription_end_date'])) {
+            return;
+        }
         $extraDays = (int)($row['extension_days'] ?? $row['subscription_days'] ?? 30);
         if (!in_array($extraDays, [20, 30], true)) {
             $extraDays = 30;
@@ -958,7 +975,7 @@ function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void 
     if (!in_array($days, [20, 30], true)) {
         $days = 30;
     }
-    $start = new DateTime('today');
+    $start = new DateTime('tomorrow');
     $end = clone $start;
     $end->modify('+' . max(0, $days - 1) . ' day');
 
@@ -967,6 +984,7 @@ function merchantActivateCateringSubscription(mysqli $conn, int $orderId): void 
         SET subscription_status = 'active',
             subscription_start_date = ?,
             subscription_end_date = ?,
+            subscription_activated_at = COALESCE(subscription_activated_at, NOW()),
             updated_at = NOW()
         WHERE id = ?
           AND service_type = 'catering'
@@ -1052,7 +1070,6 @@ function merchantEnsureCateringDeliveryLogs(mysqli $conn, int $orderId, ?string 
     if ($target < $start || $target > $end || !merchantCateringDeliveryDateAllowed($order, $target)) {
         return;
     }
-
     $ins = $conn->prepare("
         INSERT IGNORE INTO catering_delivery_logs
             (order_id, merchant_id, user_id, delivery_date, slot_number, scheduled_time, status, created_at, updated_at)
@@ -1117,6 +1134,51 @@ function merchantMilestonesCompleted(array $milestones): bool {
 
 function merchantRepairCateringDeliveryLogDates(mysqli $conn): void {
     if (!merchantTableExists($conn, 'catering_delivery_logs')) return;
+
+    if (merchantColumnExists($conn, 'orders', 'subscription_activated_at')) {
+        $conn->query("
+            UPDATE orders
+            SET subscription_activated_at = COALESCE(paid_at, created_at, updated_at, NOW())
+            WHERE service_type = 'catering'
+              AND status = 'accepted'
+              AND COALESCE(payment_status, '') IN ('paid','payment_submitted')
+              AND subscription_days IS NOT NULL
+              AND subscription_activated_at IS NULL
+        ");
+
+        $conn->query("
+            DELETE cdl
+            FROM catering_delivery_logs cdl
+            INNER JOIN orders o ON o.id = cdl.order_id
+            WHERE o.service_type = 'catering'
+              AND DATE(o.subscription_activated_at) = cdl.delivery_date
+              AND cdl.status <> 'delivered'
+        ");
+
+        $conn->query("
+            UPDATE orders o
+            SET o.subscription_start_date = DATE_ADD(o.subscription_start_date, INTERVAL 1 DAY),
+                o.subscription_end_date = DATE_ADD(o.subscription_end_date, INTERVAL 1 DAY),
+                o.updated_at = NOW()
+            WHERE o.service_type = 'catering'
+              AND o.status = 'accepted'
+              AND COALESCE(o.payment_status, '') IN ('paid','payment_submitted')
+              AND o.subscription_start_date = DATE(o.subscription_activated_at)
+              AND o.subscription_end_date IS NOT NULL
+        ");
+
+        $conn->query("
+            UPDATE catering_subscribers cs
+            INNER JOIN orders o ON o.id = cs.order_id
+            SET cs.start_date = o.subscription_start_date,
+                cs.end_date = o.subscription_end_date,
+                cs.updated_at = NOW()
+            WHERE o.service_type = 'catering'
+              AND o.subscription_start_date IS NOT NULL
+              AND o.subscription_end_date IS NOT NULL
+              AND (cs.start_date <> o.subscription_start_date OR cs.end_date <> o.subscription_end_date)
+        ");
+    }
 
     $conn->query("
         UPDATE catering_delivery_logs today_log
@@ -1900,6 +1962,7 @@ function merchantOrderItems(mysqli $conn, int $orderId): array {
         SELECT oi.id, oi.product_id, oi.qty, oi.harga,
                p.nama_produk, p.deskripsi, p.image_url, p.harga AS product_price,
                p.pricing_type, p.unit,
+               p.meal_delivery_count, p.delivery_time_1, p.delivery_time_2,
                o.service_type, o.laundry_weight_kg
         FROM order_items oi
         LEFT JOIN orders o ON o.id = oi.order_id
@@ -1940,6 +2003,9 @@ function merchantOrderItems(mysqli $conn, int $orderId): array {
             'pricingType' => $pricingType,
             'unit' => merchantPricingUnit($pricingType),
             'isAddon' => false,
+            'mealDeliveryCount' => max(1, min(2, (int)($row['meal_delivery_count'] ?? 1))),
+            'deliveryTime1' => $row['delivery_time_1'] ?? '07:00',
+            'deliveryTime2' => $row['delivery_time_2'] ?? null,
         ];
     }, $rows);
 
@@ -1989,6 +2055,18 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
     $selectedLaundryAddons = $serviceType === 'laundry'
         ? merchantLaundryOrderAddons($conn, $orderId)
         : [];
+    $deliverySchedule = [
+        'mealDeliveryCount' => 1,
+        'deliveryTime1' => '07:00',
+        'deliveryTime2' => null,
+    ];
+    if (!empty($items) && isset($items[0]['mealDeliveryCount'])) {
+        $deliverySchedule = [
+            'mealDeliveryCount' => max(1, min(2, (int)($items[0]['mealDeliveryCount'] ?? 1))),
+            'deliveryTime1' => trim((string)($items[0]['deliveryTime1'] ?? '07:00')),
+            'deliveryTime2' => trim((string)($items[0]['deliveryTime2'] ?? '')) ?: null,
+        ];
+    }
 
     return [
         'id' => (string)$orderId,
@@ -2040,6 +2118,9 @@ function merchantOrderPayload(mysqli $conn, array $row, bool $withItems = true):
         'selectedAddons' => $selectedLaundryAddons,
         'items' => $items,
         'deliveryMilestones' => $deliveryMilestones,
+        'mealDeliveryCount' => $deliverySchedule['mealDeliveryCount'],
+        'deliveryTime1' => $deliverySchedule['deliveryTime1'],
+        'deliveryTime2' => $deliverySchedule['deliveryTime2'],
     ];
 }
 

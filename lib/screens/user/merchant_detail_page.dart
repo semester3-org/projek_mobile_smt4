@@ -1336,6 +1336,13 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 icon: Icons.notes_outlined,
                 maxLines: 3,
               ),
+            ] else ...[
+              const SizedBox(height: 12),
+              const _CheckoutInfoNotice(
+                icon: Icons.info_outline_rounded,
+                message:
+                    'Pengantaran catering dimulai keesokan hari setelah langganan aktif. Pesanan tidak langsung diantarkan pada hari pemesanan.',
+              ),
             ],
             const SizedBox(height: 18),
             Container(
@@ -2069,6 +2076,47 @@ class _SheetErrorBanner extends StatelessWidget {
               message,
               style: const TextStyle(
                 color: Color(0xFF8F1A1A),
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckoutInfoNotice extends StatelessWidget {
+  const _CheckoutInfoNotice({
+    required this.icon,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFE2A8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFFB45309), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: UserTheme.text,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
                 height: 1.35,
               ),

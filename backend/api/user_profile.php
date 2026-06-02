@@ -56,6 +56,7 @@ function ensureUserProfileColumns(mysqli $conn): void {
         'latitude' => "ALTER TABLE users ADD COLUMN latitude decimal(10,8) DEFAULT NULL AFTER address",
         'longitude' => "ALTER TABLE users ADD COLUMN longitude decimal(11,8) DEFAULT NULL AFTER latitude",
         'photo_url' => "ALTER TABLE users ADD COLUMN photo_url longtext DEFAULT NULL AFTER longitude",
+        'ktp_photo' => "ALTER TABLE users ADD COLUMN ktp_photo longtext DEFAULT NULL AFTER photo_url",
     ];
 
     foreach ($columns as $column => $sql) {
@@ -669,6 +670,7 @@ function profilePayload(mysqli $conn, array $payload): array {
         'longitude' => null,
         'role' => $payload['role'] ?? 'user',
         'photoUrl' => $payload['photoUrl'] ?? null,
+        'ktpPhoto' => null,
         'kosName' => null,
         'kosAccessCode' => null,
         'roomNumber' => null,
@@ -696,6 +698,7 @@ function profilePayload(mysqli $conn, array $payload): array {
             u.latitude,
             u.longitude,
             u.photo_url,
+            u.ktp_photo,
             u.role,
             k.title AS kos_name,
             k.access_code,
@@ -731,6 +734,7 @@ function profilePayload(mysqli $conn, array $payload): array {
         'longitude' => $row['longitude'] !== null ? (float)$row['longitude'] : null,
         'role' => $row['role'] ?? $base['role'],
         'photoUrl' => $row['photo_url'] ?? null,
+        'ktpPhoto' => $row['ktp_photo'] ?? null,
         'kosName' => $row['kos_name'] ?? null,
         'kosAccessCode' => $row['access_code'] ?? null,
         'roomNumber' => $row['room_number'] ?? null,
@@ -780,6 +784,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         ? (float)$body['longitude']
         : null;
     $photoUrl = trim($body['photoUrl'] ?? '');
+    $ktpPhoto = trim($body['ktpPhoto'] ?? '');
 
     if ($displayName === '') {
         sendJson(false, null, 'Nama wajib diisi', 400);
@@ -797,6 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             latitude = ?,
             longitude = ?,
             photo_url = NULLIF(?, \'\'),
+            ktp_photo = NULLIF(?, \'\'),
             updated_at = NOW()
         WHERE id = ?
     ');
@@ -804,13 +810,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         sendJson(false, null, 'Database error', 500);
     }
     $stmt->bind_param(
-        'sssddss',
+        'sssddsss',
         $displayName,
         $phone,
         $address,
         $latitude,
         $longitude,
         $photoUrl,
+        $ktpPhoto,
         $userId
     );
     $stmt->execute();

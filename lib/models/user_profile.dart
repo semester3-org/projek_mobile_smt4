@@ -16,6 +16,9 @@ class UserProfile {
   final String? roomType;
   final DateTime? activeUntil;
   final List<ActiveRentHistory> activeRentHistory;
+  final String ownerVerificationStatus;
+  final String? ownerVerificationRejectionReason;
+  final DateTime? ownerVerificationSubmittedAt;
 
   UserProfile({
     required this.id,
@@ -34,6 +37,9 @@ class UserProfile {
     this.roomType,
     this.activeUntil,
     this.activeRentHistory = const [],
+    this.ownerVerificationStatus = 'draft',
+    this.ownerVerificationRejectionReason,
+    this.ownerVerificationSubmittedAt,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -57,6 +63,19 @@ class UserProfile {
           .whereType<Map<String, dynamic>>()
           .map(ActiveRentHistory.fromJson)
           .toList(),
+      ownerVerificationStatus: (json['ownerVerificationStatus'] ??
+              json['owner_verification_status'] ??
+              'draft')
+          .toString(),
+      ownerVerificationRejectionReason:
+          (json['ownerVerificationRejectionReason'] ??
+              json['owner_verification_rejection_reason']) as String?,
+      ownerVerificationSubmittedAt: DateTime.tryParse(
+        (json['ownerVerificationSubmittedAt'] ??
+                json['owner_verification_submitted_at'] ??
+                '')
+            .toString(),
+      ),
     );
   }
 
@@ -78,6 +97,10 @@ class UserProfile {
       'roomType': roomType,
       'activeUntil': activeUntil?.toIso8601String(),
       'activeRentHistory': activeRentHistory.map((e) => e.toJson()).toList(),
+      'ownerVerificationStatus': ownerVerificationStatus,
+      'ownerVerificationRejectionReason': ownerVerificationRejectionReason,
+      'ownerVerificationSubmittedAt':
+          ownerVerificationSubmittedAt?.toIso8601String(),
     };
   }
 
@@ -98,6 +121,9 @@ class UserProfile {
     String? roomType,
     DateTime? activeUntil,
     List<ActiveRentHistory>? activeRentHistory,
+    String? ownerVerificationStatus,
+    String? ownerVerificationRejectionReason,
+    DateTime? ownerVerificationSubmittedAt,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -116,6 +142,12 @@ class UserProfile {
       roomType: roomType ?? this.roomType,
       activeUntil: activeUntil ?? this.activeUntil,
       activeRentHistory: activeRentHistory ?? this.activeRentHistory,
+      ownerVerificationStatus:
+          ownerVerificationStatus ?? this.ownerVerificationStatus,
+      ownerVerificationRejectionReason: ownerVerificationRejectionReason ??
+          this.ownerVerificationRejectionReason,
+      ownerVerificationSubmittedAt:
+          ownerVerificationSubmittedAt ?? this.ownerVerificationSubmittedAt,
     );
   }
 

@@ -231,7 +231,7 @@ class RoomResult<T> {
 // ── Repository ────────────────────────────────────────────────────────────────
 
 class KosRoomRepository {
-  static const _endpoint = 'api/kos_rooms.php';
+  static const _endpoint = 'api/kos_rooms';
 
   static Future<RoomResult<List<KosRoom>>> getRooms(
     String kosId, {

@@ -34,7 +34,7 @@ class _OwnerShellState extends State<OwnerShell> {
           index: _index,
           children: [
             OwnerDashboardPage(onNavigateToFinance: _navigateToTab),
-            const OwnerRoomsPage(),
+            OwnerRoomsPage(onOpenProfile: () => _navigateToTab(5)),
             const OwnerTenantsPage(),
             const OwnerFinancePage(),
             const OwnerNotificationsPage(),

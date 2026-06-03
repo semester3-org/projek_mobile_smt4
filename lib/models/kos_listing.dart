@@ -28,31 +28,31 @@ class KosListing {
   final double rating;
   final String accessCode;
   final String ownerContact;
-  final List<String> imageUrls;   // dari kos_images (public endpoint)
-  final List<String> facilities;  // dari kos_facilities (public endpoint)
+  final List<String> imageUrls; // dari kos_images (public endpoint)
+  final List<String> facilities; // dari kos_facilities (public endpoint)
   final String? createdAt;
   final String? updatedAt;
 
   factory KosListing.fromJson(Map<String, dynamic> json) => KosListing(
-        id:            json['id'] as String,
-        ownerId:       json['ownerId'] as String? ?? '',
-        title:         json['title'] as String,
-        location:      json['location'] as String,
-        description:   json['description'] as String? ?? '',
+        id: json['id'] as String,
+        ownerId: json['ownerId'] as String? ?? '',
+        title: json['title'] as String,
+        location: json['location'] as String,
+        description: json['description'] as String? ?? '',
         pricePerMonth: _parseInt(json['pricePerMonth']),
-        rating:        _parseDouble(json['rating']),
-        accessCode:    json['accessCode'] as String? ?? '',
-        ownerContact:  json['ownerContact'] as String? ?? '',
-        // Kedua field ini ada di response kos_listings_public.php,
-        // tapi tidak ada di kos_listings.php (owner) — default ke list kosong.
-        imageUrls:  json['imageUrls']  != null
+        rating: _parseDouble(json['rating']),
+        accessCode: json['accessCode'] as String? ?? '',
+        ownerContact: json['ownerContact'] as String? ?? '',
+        // Kedua field ini ada di response publik kos_listings_public,
+        // tapi tidak ada di response kos_listings owner; default ke list kosong.
+        imageUrls: json['imageUrls'] != null
             ? List<String>.from(json['imageUrls'] as List)
             : const [],
         facilities: json['facilities'] != null
             ? List<String>.from(json['facilities'] as List)
             : const [],
-        createdAt:  json['createdAt'] as String?,
-        updatedAt:  json['updatedAt'] as String?,
+        createdAt: json['createdAt'] as String?,
+        updatedAt: json['updatedAt'] as String?,
       );
 
   static int _parseInt(dynamic v) {
@@ -123,7 +123,8 @@ class KosListingRepository {
     }
 
     try {
-      final item = KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
+      final item =
+          KosListing.fromJson(res.data!['data'] as Map<String, dynamic>);
       return KosListingResult.success(item);
     } catch (e) {
       return KosListingResult.failure('Gagal memproses data: $e');

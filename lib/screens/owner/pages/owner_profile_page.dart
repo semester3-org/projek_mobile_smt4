@@ -90,6 +90,34 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
     return contact.isEmpty ? '-' : contact;
   }
 
+  String get _verificationStatus {
+    final status = (_profile?.ownerVerificationStatus ?? 'draft').trim();
+    return status.isEmpty ? 'draft' : status;
+  }
+
+  String get _verificationStatusLabel {
+    return switch (_verificationStatus) {
+      'pending' => 'Pending',
+      'approved' => 'Approved',
+      'rejected' => 'Rejected',
+      _ => 'Draft',
+    };
+  }
+
+  String get _verificationMessage {
+    final reason = (_profile?.ownerVerificationRejectionReason ?? '').trim();
+    return switch (_verificationStatus) {
+      'pending' => 'Profil sedang menunggu verifikasi admin.',
+      'approved' =>
+        'Profil owner sudah terverifikasi. Anda bisa menambahkan kos dan kamar.',
+      'rejected' => reason.isEmpty
+          ? 'Profil owner ditolak. Perbaiki profil dan upload ulang KTP.'
+          : 'Profil owner ditolak: $reason',
+      _ =>
+        'Profil owner belum lengkap. Lengkapi profil dan upload foto KTP untuk dapat menambahkan kamar.',
+    };
+  }
+
   String _formatCoordinate(double? value) {
     if (value == null) return 'Belum diatur';
     return value.toStringAsFixed(6);
@@ -692,6 +720,8 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                     const SizedBox(height: 14),
                     _ProfileNotice(message: _error!),
                   ],
+                  const SizedBox(height: 14),
+                  _ProfileNotice(message: _verificationMessage),
                   const SizedBox(height: 24),
                   _OwnerInfoTile(
                     icon: Icons.email_outlined,
@@ -702,6 +732,11 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
                     icon: Icons.verified_user_outlined,
                     label: 'Role',
                     value: 'Owner',
+                  ),
+                  _OwnerInfoTile(
+                    icon: Icons.fact_check_outlined,
+                    label: 'Status Verifikasi',
+                    value: _verificationStatusLabel,
                   ),
                   _OwnerInfoTile(
                     icon: Icons.home_work_outlined,

@@ -5,9 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../auth/auth_scope.dart';
 import '../../../core/api_service.dart';
+import '../../../data/repositories/user_repository.dart';
 import '../../../models/kos_room.dart';
 import '../../../models/kos_listing.dart';
+import '../../../models/user_profile.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repository helpers
@@ -266,7 +269,9 @@ class KosRoomRepository {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class OwnerRoomsPage extends StatefulWidget {
-  const OwnerRoomsPage({super.key});
+  const OwnerRoomsPage({super.key, this.onOpenProfile});
+
+  final VoidCallback? onOpenProfile;
 
   @override
   State<OwnerRoomsPage> createState() => _OwnerRoomsPageState();
@@ -280,6 +285,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   bool _isLoading = false;
   bool _isLoadingKos = true;
   String? _errorMessage;
+  UserProfile? _ownerProfile;
 
   String _query = '';
   RoomStatus? _statusFilter;
@@ -289,7 +295,11 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   @override
   void initState() {
     super.initState();
-    _loadKosListings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadKosListings();
+      }
+    });
     _refreshSub = _KosRoomRepository.refreshStream.listen((_) {
       if (mounted) {
         _loadRooms();
@@ -308,28 +318,49 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       _isLoadingKos = true;
       _errorMessage = null;
     });
-    final result = await KosListingRepository.getMyListings();
-    if (!mounted) return;
+    try {
+      await _loadOwnerProfile();
+      final result = await KosListingRepository.getMyListings();
+      if (!mounted) return;
 
-    if (result.isSuccess && result.data!.isNotEmpty) {
+      if (result.isSuccess && result.data!.isNotEmpty) {
+        setState(() {
+          _kosListings = result.data!;
+          _selectedKosId = result.data!.first.id;
+          _isLoadingKos = false;
+        });
+        await _loadRooms();
+      } else if (result.isSuccess && result.data!.isEmpty) {
+        setState(() {
+          _kosListings = [];
+          _isLoadingKos = false;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _isLoadingKos = false;
+          _errorMessage = result.error ?? 'Gagal memuat daftar kos';
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
       setState(() {
-        _kosListings = result.data!;
-        _selectedKosId = result.data!.first.id;
         _isLoadingKos = false;
-      });
-      await _loadRooms();
-    } else if (result.isSuccess && result.data!.isEmpty) {
-      setState(() {
-        _kosListings = [];
-        _isLoadingKos = false;
-        _errorMessage = 'Anda belum memiliki kos. Tambah kos terlebih dahulu.';
-      });
-    } else {
-      setState(() {
-        _isLoadingKos = false;
-        _errorMessage = result.error ?? 'Gagal memuat daftar kos';
+        _errorMessage = 'Gagal memuat halaman kamar: $error';
       });
     }
+  }
+
+  Future<void> _loadOwnerProfile({bool forceRefresh = false}) async {
+    final session = AuthScope.of(context).session;
+    final result = await UserRepository.getProfile(
+      displayName: session?.displayName ?? 'Owner',
+      email: session?.email ?? '',
+      role: 'owner',
+      forceRefresh: forceRefresh,
+    );
+    if (!mounted || !result.isSuccess) return;
+    setState(() => _ownerProfile = result.data);
   }
 
   Future<void> _loadRooms() async {
@@ -563,6 +594,10 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   }
 
   Future<void> _openAddSheet() async {
+    if (!await _ensureCanAddRoomOrKos()) {
+      return;
+    }
+    if (!mounted) return;
     if (_kosListings.isEmpty) {
       _showSnack('Tambah kos terlebih dahulu', isError: true);
       return;
@@ -589,6 +624,14 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   }
 
   void _openAddKosSheet() {
+    _openAddKosSheetGuarded();
+  }
+
+  Future<void> _openAddKosSheetGuarded() async {
+    if (!await _ensureCanAddRoomOrKos()) {
+      return;
+    }
+    if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -598,6 +641,35 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
       ),
       builder: (_) => _AddKosSheet(onSave: _createKos),
     );
+  }
+
+  Future<bool> _ensureCanAddRoomOrKos() async {
+    await _loadOwnerProfile(forceRefresh: true);
+    if (!mounted) return false;
+
+    final status = (_ownerProfile?.ownerVerificationStatus ?? 'draft').trim();
+    switch (status) {
+      case 'approved':
+        return true;
+      case 'pending':
+        _showSnack('Profil sedang menunggu verifikasi admin.', isError: true);
+        return false;
+      case 'rejected':
+        final reason =
+            (_ownerProfile?.ownerVerificationRejectionReason ?? '').trim();
+        _showSnack(
+          reason.isEmpty
+              ? 'Profil owner ditolak. Perbaiki profil dan upload ulang KTP.'
+              : 'Profil owner ditolak: $reason',
+          isError: true,
+        );
+        widget.onOpenProfile?.call();
+        return false;
+      default:
+        _showSnack('Lengkapi profil owner terlebih dahulu.', isError: true);
+        widget.onOpenProfile?.call();
+        return false;
+    }
   }
 
   void _showEditDialog(KosRoom room) async {
@@ -1108,6 +1180,12 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   // GANTI SELURUH _buildBody() dengan ini:
   Widget _buildBody() {
     if (_kosListings.isEmpty) {
+      if (_errorMessage != null) {
+        return _ErrorWidget(
+          message: _errorMessage!,
+          onRetry: _loadKosListings,
+        );
+      }
       return _NoKosYetWidget(onAddKos: _openAddKosSheet);
     }
 
@@ -1314,7 +1392,8 @@ class _OccupiedRoomInfo extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.primaryGreen.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primaryGreen.withValues(alpha: 0.18)),
+        border:
+            Border.all(color: AppTheme.primaryGreen.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

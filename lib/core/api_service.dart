@@ -120,7 +120,7 @@ class ApiService {
       return {
         'success': false,
         'message':
-            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+            'Koneksi gagal. Pastikan server Laravel berjalan di localhost:8000.',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -180,7 +180,7 @@ class ApiService {
       return {
         'success': false,
         'message':
-            'Koneksi gagal. Pastikan server PHP berjalan (php -S localhost:8000).',
+            'Koneksi gagal. Pastikan server Laravel berjalan di localhost:8000.',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};
@@ -243,7 +243,7 @@ class ApiService {
     } on SocketException {
       return {
         'success': false,
-        'message': 'Koneksi gagal. Pastikan server PHP berjalan.',
+        'message': 'Koneksi gagal. Pastikan server Laravel berjalan.',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'Request timeout. Coba lagi.'};

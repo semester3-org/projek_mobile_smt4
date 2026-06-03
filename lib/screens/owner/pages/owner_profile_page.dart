@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../app/app_theme.dart';
 import '../../../auth/auth_scope.dart';
 import '../../../core/api_service.dart';
+import '../../../core/runtime_permission_service.dart';
 import '../../../data/repositories/user_repository.dart';
 import '../../../models/kos_listing.dart';
 import '../../../models/user_profile.dart';
@@ -153,6 +154,9 @@ class _OwnerProfilePageState extends State<OwnerProfilePage> {
 
   Future<String?> _pickProfilePhoto() async {
     try {
+      final hasPermission =
+          await RuntimePermissionService.ensureGalleryPermission(context);
+      if (!hasPermission) return null;
       final picker = ImagePicker();
       final file = await picker.pickImage(
         source: ImageSource.gallery,

@@ -217,15 +217,18 @@ class _KosFinderRoot extends StatefulWidget {
   State<_KosFinderRoot> createState() => _KosFinderRootState();
 }
 
-class _KosFinderRootState extends State<_KosFinderRoot> {
+class _KosFinderRootState extends State<_KosFinderRoot>
+    with WidgetsBindingObserver {
   late final AuthState _auth;
   final _appLinks = AppLinks();
   String? _lastPermissionPromptKey;
   bool _requestingLoginPermissions = false;
+  DateTime? _lastResumePermissionCheck;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _auth = AuthState();
     _auth.addListener(_syncNotificationDelivery);
     _auth.restoreSession();
@@ -326,6 +329,20 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final session = _auth.session;
+    if (session == null) return;
+    final now = DateTime.now();
+    final last = _lastResumePermissionCheck;
+    if (last != null && now.difference(last) < const Duration(seconds: 8)) {
+      return;
+    }
+    _lastResumePermissionCheck = now;
+    unawaited(_requestLoginRuntimePermissions());
+  }
+
   Future<void> _initDeepLinks() async {
     try {
       final initial = await _appLinks.getInitialLink();
@@ -362,6 +379,7 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _auth.removeListener(_syncNotificationDelivery);
     NotificationDeliveryService.instance.stop();
     _auth.dispose();

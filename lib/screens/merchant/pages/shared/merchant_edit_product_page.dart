@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/runtime_permission_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../models/catering_package_category.dart';
 import '../../../../models/merchant_models.dart';
@@ -126,6 +127,9 @@ class _MerchantEditProductPageState extends State<MerchantEditProductPage> {
   }
 
   Future<void> _pickImage() async {
+    final hasPermission =
+        await RuntimePermissionService.ensureGalleryPermission(context);
+    if (!hasPermission) return;
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 78,

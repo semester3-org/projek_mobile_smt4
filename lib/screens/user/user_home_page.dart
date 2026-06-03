@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../core/realtime_service.dart';
+import '../../core/runtime_permission_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/catering_subscriber.dart';
 import '../../models/order.dart';
@@ -679,6 +680,10 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                         TextButton.icon(
                           onPressed: () async {
                             try {
+                              final hasPermission =
+                                  await RuntimePermissionService
+                                      .ensureGalleryPermission(context);
+                              if (!hasPermission) return;
                               final image = await picker.pickImage(
                                 source: ImageSource.gallery,
                               );

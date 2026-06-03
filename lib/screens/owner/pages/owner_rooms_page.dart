@@ -499,6 +499,26 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     }
   }
 
+  String _formatTenantDate(String? value) {
+    final date = DateTime.tryParse(value ?? '');
+    if (date == null) return '-';
+    const months = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
   List<RoomStatus> _editableStatusOptions(KosRoom room) {
     if (room.status == RoomStatus.occupied) {
       return const [RoomStatus.occupied];
@@ -596,6 +616,9 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     RoomStatus selectedStatus = room.status;
     final statusOptions = _editableStatusOptions(room);
     final canEditStatus = statusOptions.length > 1;
+    final canEditRoom =
+        room.status != RoomStatus.occupied && room.activeTenant == null;
+    final tenant = room.activeTenant;
     // Ambil rentalType dari room jika ada, default monthly
     RentalType selectedRentalType = room.rentalType;
     final selectedFacilityIds = room.facilities.map((f) => f.id).toSet();
@@ -607,9 +630,17 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
           title: Text('Edit Kamar ${room.roomNumber}'),
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _outlinedField(numberCtrl, 'Nomor Kamar'),
+              _outlinedField(
+                numberCtrl,
+                'Nomor Kamar',
+                enabled: canEditRoom,
+              ),
               const SizedBox(height: 14),
-              _outlinedField(typeCtrl, 'Tipe Kamar'),
+              _outlinedField(
+                typeCtrl,
+                'Tipe Kamar',
+                enabled: canEditRoom,
+              ),
               const SizedBox(height: 14),
               // ── Tipe Sewa ────────────────────────────────────────────
               const Align(
@@ -622,6 +653,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
               const SizedBox(height: 8),
               _RentalTypeSelector(
                 value: selectedRentalType,
+                enabled: canEditRoom,
                 onChanged: (v) => setDialog(() => selectedRentalType = v),
               ),
               const SizedBox(height: 14),
@@ -631,10 +663,16 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 keyboard: TextInputType.number,
                 prefix: 'Rp ',
                 formatters: const [_ThousandsInputFormatter()],
+                enabled: canEditRoom,
               ),
               const SizedBox(height: 14),
-              _outlinedField(occCtrl, 'Kapasitas',
-                  keyboard: TextInputType.number, suffix: 'orang'),
+              _outlinedField(
+                occCtrl,
+                'Kapasitas',
+                keyboard: TextInputType.number,
+                suffix: 'orang',
+                enabled: canEditRoom,
+              ),
               const SizedBox(height: 14),
               DropdownButtonFormField<RoomStatus>(
                 initialValue: selectedStatus,
@@ -646,7 +684,7 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                     .map(
                         (s) => DropdownMenuItem(value: s, child: Text(s.label)))
                     .toList(),
-                onChanged: canEditStatus
+                onChanged: canEditRoom && canEditStatus
                     ? (v) => setDialog(() => selectedStatus = v!)
                     : null,
               ),
@@ -661,6 +699,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                       ?.copyWith(color: Colors.grey.shade600),
                 ),
               ),
+              if (!canEditRoom) ...[
+                const SizedBox(height: 10),
+                _OccupiedRoomInfo(
+                  tenantName: tenant?.name ?? '-',
+                  checkoutLabel: _formatTenantDate(tenant?.endDate),
+                ),
+              ],
               const SizedBox(height: 14),
               Align(
                 alignment: Alignment.centerLeft,
@@ -691,20 +736,27 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                     return FilterChip(
                       label: Text(facility.name),
                       selected: selected,
-                      onSelected: (value) {
-                        setDialog(() {
-                          if (value) {
-                            selectedFacilityIds.add(facility.id);
-                          } else {
-                            selectedFacilityIds.remove(facility.id);
-                          }
-                        });
-                      },
+                      onSelected: canEditRoom
+                          ? (value) {
+                              setDialog(() {
+                                if (value) {
+                                  selectedFacilityIds.add(facility.id);
+                                } else {
+                                  selectedFacilityIds.remove(facility.id);
+                                }
+                              });
+                            }
+                          : null,
                     );
                   }).toList(),
                 ),
               const SizedBox(height: 14),
-              _outlinedField(descCtrl, 'Catatan (Opsional)', maxLines: 2),
+              _outlinedField(
+                descCtrl,
+                'Catatan (Opsional)',
+                maxLines: 2,
+                enabled: canEditRoom,
+              ),
             ]),
           ),
           actions: [
@@ -712,23 +764,25 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Batal')),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _updateRoom(room.id, {
-                  'room_number': numberCtrl.text.trim(),
-                  'room_type': typeCtrl.text.trim(),
-                  'price_per_month': int.tryParse(priceCtrl.text
-                          .replaceAll('.', '')
-                          .replaceAll(',', '')) ??
-                      room.pricePerMonth,
-                  'max_occupant':
-                      int.tryParse(occCtrl.text) ?? room.maxOccupant,
-                  'status': selectedStatus.dbValue,
-                  'rental_type': selectedRentalType.dbValue,
-                  'facility_ids': selectedFacilityIds.toList(),
-                  'description': descCtrl.text.trim(),
-                });
-              },
+              onPressed: canEditRoom
+                  ? () {
+                      Navigator.pop(ctx);
+                      _updateRoom(room.id, {
+                        'room_number': numberCtrl.text.trim(),
+                        'room_type': typeCtrl.text.trim(),
+                        'price_per_month': int.tryParse(priceCtrl.text
+                                .replaceAll('.', '')
+                                .replaceAll(',', '')) ??
+                            room.pricePerMonth,
+                        'max_occupant':
+                            int.tryParse(occCtrl.text) ?? room.maxOccupant,
+                        'status': selectedStatus.dbValue,
+                        'rental_type': selectedRentalType.dbValue,
+                        'facility_ids': selectedFacilityIds.toList(),
+                        'description': descCtrl.text.trim(),
+                      });
+                    }
+                  : null,
               child: const Text('Simpan'),
             ),
           ],
@@ -979,6 +1033,13 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
   }
 
   void _showDeleteConfirm(KosRoom room) {
+    if (room.status == RoomStatus.occupied || room.activeTenant != null) {
+      _showSnack(
+        'Kamar terisi tidak bisa dihapus karena masih memiliki penghuni aktif.',
+        isError: true,
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1212,17 +1273,22 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
     String? prefix,
     String? suffix,
     List<TextInputFormatter>? formatters,
+    bool enabled = true,
   }) =>
       TextField(
         controller: ctrl,
         keyboardType: keyboard,
         maxLines: maxLines,
         inputFormatters: formatters,
+        enabled: enabled,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
           prefixText: prefix,
           suffixText: suffix,
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         ),
       );
 }
@@ -1231,11 +1297,51 @@ class _OwnerRoomsPageState extends State<OwnerRoomsPage> {
 // Widget pemilih tipe sewa (Harian / Bulanan / Tahunan)
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _OccupiedRoomInfo extends StatelessWidget {
+  const _OccupiedRoomInfo({
+    required this.tenantName,
+    required this.checkoutLabel,
+  });
+
+  final String tenantName;
+  final String checkoutLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryGreen.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primaryGreen.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Status: Terisi',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text('Penghuni aktif: $tenantName'),
+          Text('Check-out: $checkoutLabel'),
+        ],
+      ),
+    );
+  }
+}
+
 class _RentalTypeSelector extends StatelessWidget {
-  const _RentalTypeSelector({required this.value, required this.onChanged});
+  const _RentalTypeSelector({
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
 
   final RentalType value;
   final ValueChanged<RentalType> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1245,7 +1351,7 @@ class _RentalTypeSelector extends StatelessWidget {
         final color = isSelected ? AppTheme.primaryGreen : Colors.grey.shade400;
         return Expanded(
           child: GestureDetector(
-            onTap: () => onChanged(type),
+            onTap: enabled ? () => onChanged(type) : null,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.only(right: 6),

@@ -209,6 +209,9 @@ function handlePut(mysqli $conn, string $ownerId, string $roomId): void {
 
     if (!$existing) throw new Exception('Kamar tidak ditemukan', 404);
     if ($existing['owner_id'] !== $ownerId) throw new Exception('Forbidden', 403);
+    if (($existing['status'] ?? '') === 'occupied' || hasStrictActiveTenant($conn, $roomId)) {
+        throw new Exception('Kamar terisi hanya bisa diubah setelah data penyewa aktif selesai atau dikosongkan dari data penyewa.', 400);
+    }
 
     $fields  = [];
     $values  = [];
@@ -309,7 +312,7 @@ function handlePut(mysqli $conn, string $ownerId, string $roomId): void {
 
 function handleDelete(mysqli $conn, string $ownerId, string $roomId): void {
     $existing = $conn->query("
-        SELECT r.id, k.owner_id
+        SELECT r.id, r.status, k.owner_id
         FROM kos_rooms r
         JOIN kos_listings k ON k.id = r.kos_id
         WHERE r.id = '" . $conn->real_escape_string($roomId) . "'
@@ -317,6 +320,9 @@ function handleDelete(mysqli $conn, string $ownerId, string $roomId): void {
 
     if (!$existing) throw new Exception('Kamar tidak ditemukan', 404);
     if ($existing['owner_id'] !== $ownerId) throw new Exception('Forbidden', 403);
+    if (($existing['status'] ?? '') === 'occupied' || hasStrictActiveTenant($conn, $roomId)) {
+        throw new Exception('Kamar terisi tidak bisa dihapus karena masih memiliki penghuni aktif.', 400);
+    }
 
     $stmt = $conn->prepare("DELETE FROM kos_rooms WHERE id = ?");
     $stmt->bind_param("s", $roomId);

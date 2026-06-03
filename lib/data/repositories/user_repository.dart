@@ -446,6 +446,10 @@ class UserRepository {
       } catch (_) {}
     }
 
+    if (res.statusCode != 404) {
+      return RepoResult.fail(res.message ?? 'Gagal memuat pesanan');
+    }
+
     final result = await getOrders();
     if (!result.isSuccess) {
       return RepoResult.fail(result.error ?? 'Gagal memuat pesanan');
@@ -473,6 +477,27 @@ class UserRepository {
     } catch (_) {
       return const RepoResult.fail('Gagal membaca status pesanan');
     }
+  }
+
+  static Future<RepoResult<bool>> submitLaundryIssueReport({
+    required String orderId,
+    required String serviceName,
+    required String reason,
+    String? photoUrl,
+  }) async {
+    final res = await ApiService.post('api/laundry_issue_reports', {
+      'orderId': orderId,
+      'serviceName': serviceName,
+      'reason': reason,
+      'photoUrl': photoUrl ?? '',
+    });
+
+    if (!res.success) {
+      return RepoResult.fail(
+        res.message ?? 'Gagal mengirim laporan masalah laundry',
+      );
+    }
+    return const RepoResult.ok(true);
   }
 
   static Future<RepoResult<List<CateringSubscriber>>> getCateringSubscriptions({

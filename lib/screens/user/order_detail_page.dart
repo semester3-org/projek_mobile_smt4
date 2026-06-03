@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/midtrans_launcher.dart';
 import '../../core/payment_methods.dart';
 import '../../core/realtime_service.dart';
+import '../../core/runtime_permission_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/order.dart';
 import '../../widgets/location_view_page.dart';
@@ -32,6 +35,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
   bool _extendingSubscription = false;
   bool _cancellingOrder = false;
   bool _loadingReceipt = false;
+  bool _submittingLaundryReport = false;
   Timer? _paymentAutoRefreshTimer;
   int _paymentAutoRefreshAttempts = 0;
 
@@ -397,6 +401,174 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     );
   }
 
+  bool get _canReportLaundryIssue {
+    final merchant = (_order.merchantStatus ?? '').toLowerCase();
+    return _order.isLaundry &&
+        (_order.status == 'completed' ||
+            merchant == 'done' ||
+            merchant == 'completed');
+  }
+
+  Future<void> _openLaundryIssueReport() async {
+    final serviceOptions = _order.items
+        .where((item) => !item.isAddon && item.name.trim().isNotEmpty)
+        .map((item) => item.name.trim())
+        .toSet()
+        .toList();
+    if (serviceOptions.isEmpty) {
+      serviceOptions.add('Layanan Laundry');
+    }
+
+    final reasonCtrl = TextEditingController();
+    var selectedService = serviceOptions.first;
+    XFile? proofImage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> pickProofImage() async {
+              final granted =
+                  await RuntimePermissionService.ensureGalleryPermission(
+                dialogContext,
+              );
+              if (!granted) return;
+              final picked = await ImagePicker().pickImage(
+                source: ImageSource.gallery,
+                imageQuality: 78,
+                maxWidth: 1280,
+              );
+              if (picked != null && dialogContext.mounted) {
+                setDialogState(() => proofImage = picked);
+              }
+            }
+
+            Future<void> submit() async {
+              final reason = reasonCtrl.text.trim();
+              if (reason.length < 8) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Alasan laporan minimal 8 karakter.'),
+                  ),
+                );
+                return;
+              }
+
+              setDialogState(() => _submittingLaundryReport = true);
+              String? photoData;
+              if (proofImage != null) {
+                final bytes = await proofImage!.readAsBytes();
+                final lowerName = proofImage!.name.toLowerCase();
+                final ext = lowerName.endsWith('.png') ? 'png' : 'jpeg';
+                photoData = 'data:image/$ext;base64,${base64Encode(bytes)}';
+              }
+
+              final result = await UserRepository.submitLaundryIssueReport(
+                orderId: _order.databaseId ?? _order.id,
+                serviceName: selectedService,
+                reason: reason,
+                photoUrl: photoData,
+              );
+              if (!mounted || !dialogContext.mounted) return;
+              setDialogState(() => _submittingLaundryReport = false);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    result.isSuccess
+                        ? 'Laporan masalah laundry berhasil dikirim.'
+                        : result.error ?? 'Gagal mengirim laporan.',
+                  ),
+                ),
+              );
+              if (result.isSuccess) {
+                Navigator.of(dialogContext).pop();
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Laporkan Masalah Laundry'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedService,
+                      decoration: const InputDecoration(
+                        labelText: 'Layanan bermasalah',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: serviceOptions
+                          .map(
+                            (service) => DropdownMenuItem(
+                              value: service,
+                              child: Text(service),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _submittingLaundryReport
+                          ? null
+                          : (value) => setDialogState(
+                                () => selectedService = value ?? selectedService,
+                              ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: reasonCtrl,
+                      enabled: !_submittingLaundryReport,
+                      minLines: 4,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        labelText: 'Alasan laporan',
+                        hintText:
+                            'Contoh: pakaian masih basah, wangi tidak sesuai, atau item tertukar.',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed:
+                          _submittingLaundryReport ? null : pickProofImage,
+                      icon: const Icon(Icons.image_outlined),
+                      label: Text(
+                        proofImage == null
+                            ? 'Tambahkan Foto Bukti'
+                            : 'Foto dipilih: ${proofImage!.name}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _submittingLaundryReport
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton(
+                  onPressed: _submittingLaundryReport ? null : submit,
+                  child: Text(
+                    _submittingLaundryReport ? 'Mengirim...' : 'Kirim Laporan',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    reasonCtrl.dispose();
+    if (mounted && _submittingLaundryReport) {
+      setState(() => _submittingLaundryReport = false);
+    }
+  }
+
   Future<void> _extendSubscription() async {
     final id = _order.databaseId ?? _order.id;
     final days = _extensionDaysFor(_order);
@@ -702,6 +874,27 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
             )
           else if (!paymentCancelled)
             _ReceiptUnavailableNotice(order: order),
+          if (_canReportLaundryIssue) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed:
+                  _submittingLaundryReport ? null : _openLaundryIssueReport,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: UserTheme.danger,
+                side: const BorderSide(color: UserTheme.danger),
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              icon: const Icon(Icons.report_problem_outlined),
+              label: Text(
+                _submittingLaundryReport
+                    ? 'Mengirim laporan...'
+                    : 'Laporkan Masalah',
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           if (order.canExtendCateringSubscription) ...[
             OutlinedButton.icon(

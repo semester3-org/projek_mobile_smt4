@@ -39,6 +39,7 @@ if ($path === 'api/user_merchants')       { require_once __DIR__ . '/api/user_me
 if ($path === 'api/user_billings')        { require_once __DIR__ . '/api/user_billings.php';       exit; }
 if ($path === 'api/user_billings/pay')    { require_once __DIR__ . '/api/user_billings_pay.php';   exit; }
 if ($path === 'api/user_orders')          { require_once __DIR__ . '/api/user_orders.php';         exit; }
+if ($path === 'api/laundry_issue_reports') { require_once __DIR__ . '/api/laundry_issue_reports.php'; exit; }
 if ($path === 'api/user_notifications')   { require_once __DIR__ . '/api/user_notifications.php';  exit; }
 if ($path === 'api/user_notification_presence') { require_once __DIR__ . '/api/user_notification_presence.php'; exit; }
 if ($path === 'api/user_profile')         { require_once __DIR__ . '/api/user_profile.php';        exit; }
@@ -101,6 +102,7 @@ if (empty($path)) {
             'GET  /api/user_billings',
             'POST /api/user_billings/pay',
             'GET  /api/user_orders',
+            'POST /api/laundry_issue_reports',
             'GET  /api/user_notifications',
             'POST|PUT|DELETE /api/user_notification_presence',
             'GET|POST|PUT /api/user_profile',

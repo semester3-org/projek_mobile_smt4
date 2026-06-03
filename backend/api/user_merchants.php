@@ -317,8 +317,11 @@ function userMerchantPayload(mysqli $conn, array $row, string $type, ?float $use
     if ($merchantId !== '' && !array_key_exists('merchant_review_count', $row)) {
         $summary = merchantRatingSummary($conn, $merchantId);
     }
-    $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : (float)($row['place_rating'] ?? 0);
-    $reviewCount = $summary['reviewCount'] > 0 ? $summary['reviewCount'] : (int)($row['review_count'] ?? 0);
+    // Rating aktif hanya boleh berasal dari tabel merchant_reviews.
+    // Nilai lama di laundry_places/catering_places pernah dipakai sebagai dummy
+    // dan bisa membuat ringkasan merchant tidak cocok dengan daftar ulasan.
+    $rating = $summary['reviewCount'] > 0 ? $summary['rating'] : 0.0;
+    $reviewCount = (int)$summary['reviewCount'];
     $menu = $merchantId !== ''
         ? userMerchantMenu($conn, $type, $merchantId, $includeDetail, $userId, $summaryOnly)
         : [];

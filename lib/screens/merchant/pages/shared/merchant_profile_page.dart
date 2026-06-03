@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../auth/auth_scope.dart';
+import '../../../../core/runtime_permission_service.dart';
 import '../../../../data/repositories/merchant_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
 import '../../../../models/merchant_models.dart';
@@ -107,6 +108,9 @@ class _MerchantProfilePageState extends State<MerchantProfilePage> {
   }
 
   Future<void> _pickPhoto() async {
+    final hasPermission =
+        await RuntimePermissionService.ensureGalleryPermission(context);
+    if (!hasPermission) return;
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,

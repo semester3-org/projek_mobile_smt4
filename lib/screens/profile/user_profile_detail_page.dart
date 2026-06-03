@@ -5,8 +5,10 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../auth/auth_scope.dart';
 import '../../auth/roles.dart';
+import '../../core/runtime_permission_service.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_profile.dart';
+import '../../widgets/location_picker_page.dart';
 import '../user/user_theme.dart';
 
 class UserProfileDetailPage extends StatefulWidget {
@@ -79,6 +81,9 @@ class _UserProfileDetailPageState extends State<UserProfileDetailPage> {
   Future<void> _pickProfilePhoto(UserProfile profile) async {
     if (_savingPhoto) return;
     try {
+      final hasPermission =
+          await RuntimePermissionService.ensureGalleryPermission(context);
+      if (!hasPermission) return;
       final file = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 78,
@@ -338,6 +343,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
+  late final TextEditingController _addressCtrl;
+  double? _latitude;
+  double? _longitude;
   bool _saving = false;
   bool _dirty = false;
   late String _originalFingerprint;
@@ -348,15 +356,20 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     final profile = widget.profile;
     _nameCtrl = TextEditingController(text: profile.displayName);
     _phoneCtrl = TextEditingController(text: profile.phone ?? '');
+    _addressCtrl = TextEditingController(text: profile.address ?? '');
+    _latitude = profile.latitude;
+    _longitude = profile.longitude;
     _originalFingerprint = _fingerprint();
     _nameCtrl.addListener(_refreshDirty);
     _phoneCtrl.addListener(_refreshDirty);
+    _addressCtrl.addListener(_refreshDirty);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
+    _addressCtrl.dispose();
     super.dispose();
   }
 
@@ -369,9 +382,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     final result = await UserRepository.updateProfile(
       displayName: _nameCtrl.text,
       phone: _phoneCtrl.text,
-      address: widget.profile.address ?? '',
-      latitude: widget.profile.latitude,
-      longitude: widget.profile.longitude,
+      address: _addressCtrl.text,
+      latitude: _latitude,
+      longitude: _longitude,
       photoUrl: widget.profile.photoUrl ?? '',
     );
 
@@ -402,7 +415,38 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     return [
       norm(_nameCtrl.text),
       norm(_phoneCtrl.text),
+      norm(_addressCtrl.text),
+      (_latitude ?? '').toString(),
+      (_longitude ?? '').toString(),
     ].join('|');
+  }
+
+  bool _isCoordinateAddress(String value) {
+    final text = value.trim();
+    return RegExp(r'^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$').hasMatch(text);
+  }
+
+  Future<void> _pickAddressFromMap() async {
+    final picked = await Navigator.of(context).push<PickedLocation>(
+      MaterialPageRoute<PickedLocation>(
+        builder: (_) => LocationPickerPage(
+          title: 'Pilih Alamat',
+          initialAddress: _addressCtrl.text,
+          initialLatitude: _latitude,
+          initialLongitude: _longitude,
+          primaryColor: UserTheme.primary,
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _latitude = picked.latitude;
+      _longitude = picked.longitude;
+      if (!_isCoordinateAddress(picked.address)) {
+        _addressCtrl.text = picked.address;
+      }
+    });
+    _refreshDirty();
   }
 
   void _refreshDirty() {
@@ -503,6 +547,33 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 12),
+                _ProfileTextField(
+                  controller: _addressCtrl,
+                  label: 'Alamat',
+                  icon: Icons.location_on_outlined,
+                  maxLines: 3,
+                  validator: (value) {
+                    final text = (value ?? '').trim();
+                    if (text.isEmpty) return null;
+                    if (_isCoordinateAddress(text)) {
+                      return 'Tulis alamat, bukan koordinat';
+                    }
+                    if (text.length < 8) {
+                      return 'Alamat terlalu singkat';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _saving ? null : _pickAddressFromMap,
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('Pilih dari Peta'),
+                  ),
                 ),
                 const SizedBox(height: 22),
                 Row(
@@ -714,6 +785,7 @@ class _ProfileTextField extends StatelessWidget {
     required this.icon,
     this.keyboardType,
     this.obscureText = false,
+    this.maxLines = 1,
     this.suffixIcon,
     this.validator,
   });
@@ -723,6 +795,7 @@ class _ProfileTextField extends StatelessWidget {
   final IconData icon;
   final TextInputType? keyboardType;
   final bool obscureText;
+  final int maxLines;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
 
@@ -731,7 +804,7 @@ class _ProfileTextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
-      maxLines: 1,
+      maxLines: obscureText ? 1 : maxLines,
       obscureText: obscureText,
       validator: validator,
       decoration: InputDecoration(

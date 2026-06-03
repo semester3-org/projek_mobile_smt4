@@ -51,8 +51,10 @@ try {
                COALESCE(AVG(CASE WHEN mr.deleted_at IS NULL THEN mr.rating END), 0) AS rating,
                COUNT(CASE WHEN mr.deleted_at IS NULL THEN mr.id END) AS review_count
         FROM products p
-        LEFT JOIN merchant_reviews mr ON mr.product_id = p.id
-        WHERE p.merchant_id = ? AND p.is_active = 1
+        LEFT JOIN merchant_reviews mr
+          ON mr.product_id = p.id
+         AND mr.merchant_id = p.merchant_id
+        WHERE p.merchant_id = ?
         GROUP BY p.id
         ORDER BY review_count DESC, rating DESC, p.updated_at DESC
     ");

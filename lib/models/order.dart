@@ -93,6 +93,9 @@ class Order {
   final double promoDiscountAmount;
   final String? promoName;
   final bool hasPromo;
+  final int mealDeliveryCount;
+  final String deliveryTime1;
+  final String? deliveryTime2;
   final double? actualWeight;
 
   Order({
@@ -131,6 +134,9 @@ class Order {
     this.promoDiscountAmount = 0,
     this.promoName,
     this.hasPromo = false,
+    this.mealDeliveryCount = 1,
+    this.deliveryTime1 = '07:00',
+    this.deliveryTime2,
     this.actualWeight,
   });
 
@@ -192,6 +198,9 @@ class Order {
         longitude: deliveryLongitude,
       ),
       canCancel: json['canCancel'] as bool? ?? true,
+      mealDeliveryCount: (json['mealDeliveryCount'] as num?)?.toInt() ?? 1,
+      deliveryTime1: json['deliveryTime1'] as String? ?? '07:00',
+      deliveryTime2: json['deliveryTime2'] as String?,
       merchantStatus: json['merchantStatus'] as String?,
       awaitingWeighing: json['awaitingWeighing'] as bool? ?? false,
       readyToPay: json['readyToPay'] as bool? ?? false,
@@ -238,6 +247,9 @@ class Order {
       'promoDiscountAmount': promoDiscountAmount,
       'promoName': promoName,
       'hasPromo': hasPromo,
+      'mealDeliveryCount': mealDeliveryCount,
+      'deliveryTime1': deliveryTime1,
+      'deliveryTime2': deliveryTime2,
       'actualWeight': actualWeight,
     };
   }
@@ -326,5 +338,18 @@ class Order {
         subStatus != 'ended' &&
         subStatus != 'expired' &&
         status != 'cancelled';
+  }
+
+  String get cateringDeliveryFrequency {
+    return mealDeliveryCount >= 2 ? '2x makan/hari' : '1x makan/hari';
+  }
+
+  String get cateringDeliverySchedule {
+    final start = deliveryTime1.trim().isEmpty ? '07:00' : deliveryTime1.trim();
+    if (mealDeliveryCount >= 2) {
+      final second = (deliveryTime2 ?? '').trim().isEmpty ? '15:00' : deliveryTime2!.trim();
+      return 'Gelombang pengantaran mulai $start dan $second.';
+    }
+    return 'Gelombang pengantaran mulai $start.';
   }
 }

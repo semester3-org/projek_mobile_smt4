@@ -35,9 +35,23 @@ class _MerchantProductReviewsPageState
       rating: _ratingFilter == 0 ? null : _ratingFilter,
     );
     if (!mounted) return;
+    final items = result.data ?? [];
+    final currentExpandedStillExists =
+        items.any((item) => item.product.id == _expandedProductId);
+    String? nextExpanded =
+        currentExpandedStillExists ? _expandedProductId : null;
+    if (nextExpanded == null) {
+      for (final item in items) {
+        if (item.reviews.isNotEmpty) {
+          nextExpanded = item.product.id;
+          break;
+        }
+      }
+    }
     setState(() {
-      _items = result.data ?? [];
+      _items = items;
       _error = result.error;
+      _expandedProductId = nextExpanded;
       _loading = false;
     });
   }

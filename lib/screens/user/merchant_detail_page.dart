@@ -81,9 +81,13 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
   }
 
   Future<void> _toggleFavorite() async {
+    final optimistic = !_isFavorite;
+    setState(() => _isFavorite = optimistic);
     final favorite = await UserRepository.toggleMerchantFavorite(_merchant);
     if (!mounted) return;
-    setState(() => _isFavorite = favorite);
+    if (favorite != _isFavorite) {
+      setState(() => _isFavorite = favorite);
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -422,10 +426,6 @@ class _MerchantDetailPageState extends State<MerchantDetailPage> {
                     : Icons.favorite_border_rounded,
                 color: _isFavorite ? Colors.redAccent : null,
               ),
-            ),
-            IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.share_outlined),
             ),
           ],
         ),
@@ -1336,6 +1336,13 @@ class _OrderCheckoutSheetState extends State<_OrderCheckoutSheet> {
                 icon: Icons.notes_outlined,
                 maxLines: 3,
               ),
+            ] else ...[
+              const SizedBox(height: 12),
+              const _CheckoutInfoNotice(
+                icon: Icons.info_outline_rounded,
+                message:
+                    'Pengantaran catering dimulai keesokan hari setelah langganan aktif. Pesanan tidak langsung diantarkan pada hari pemesanan.',
+              ),
             ],
             const SizedBox(height: 18),
             Container(
@@ -2080,6 +2087,47 @@ class _SheetErrorBanner extends StatelessWidget {
   }
 }
 
+class _CheckoutInfoNotice extends StatelessWidget {
+  const _CheckoutInfoNotice({
+    required this.icon,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFE2A8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFFB45309), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: UserTheme.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 String _laundryAddonPriceLabel(MerchantMenuAddon addon) {
   final unit = addon.unit.trim();
   if (addon.pricingType == 'flat' || unit == 'fixed' || unit.isEmpty) {
@@ -2162,6 +2210,23 @@ class _HeaderCard extends StatelessWidget {
               width: double.infinity,
               borderRadius: BorderRadius.circular(24),
             ),
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.08),
+                        Colors.black.withValues(alpha: 0.58),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Positioned(
               top: 16,
               right: 16,
@@ -2182,18 +2247,14 @@ class _HeaderCard extends StatelessWidget {
                   Text(
                     merchant.name,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: merchant.type == 'catering'
-                              ? Colors.white
-                              : UserTheme.text,
+                          color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          shadows: merchant.type == 'catering'
-                              ? [
-                                  Shadow(
-                                    color: Colors.black.withValues(alpha: 0.45),
-                                    blurRadius: 10,
-                                  ),
-                                ]
-                              : null,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              blurRadius: 12,
+                            ),
+                          ],
                         ),
                   ),
                 ],
@@ -2928,9 +2989,11 @@ class _ReviewSection extends StatelessWidget {
                         },
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Belum ada ulasan aktif untuk produk ini.',
-                  style: TextStyle(
+                Text(
+                  activeReview == null
+                      ? 'Belum ada ulasan aktif untuk produk ini.'
+                      : 'Ulasan Anda untuk produk ini sudah tersimpan.',
+                  style: const TextStyle(
                     color: UserTheme.muted,
                     fontSize: 12,
                     height: 1.35,

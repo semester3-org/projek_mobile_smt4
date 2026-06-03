@@ -12,6 +12,7 @@ import 'auth/auth_state.dart';
 import 'auth/roles.dart';
 import 'core/app_navigator.dart';
 import 'core/notification_delivery_service.dart';
+import 'data/repositories/user_repository.dart';
 import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
 
@@ -259,13 +260,38 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
     _requestingLoginPermissions = true;
     try {
       await _configureFirebaseMessaging(requestPermission: true);
+      final notificationReady = await _notificationPermissionGranted();
+      if (!notificationReady) {
+        _showRuntimePermissionHint(
+          'Aktifkan izin notifikasi agar update pesanan dan tagihan tetap masuk.',
+        );
+        return;
+      }
       await _requestLocationPermission();
     } finally {
       _requestingLoginPermissions = false;
     }
   }
 
-  Future<void> _requestLocationPermission() async {
+  Future<bool> _notificationPermissionGranted() async {
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showRuntimePermissionHint(String message) {
+    final messenger = appScaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<bool> _requestLocationPermission() async {
     try {
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -275,14 +301,28 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
         debugPrint(
           '[Location] Permission denied forever. User needs to enable it from app settings.',
         );
-        return;
+        _showRuntimePermissionHint(
+          'Aktifkan izin lokasi dari pengaturan aplikasi agar estimasi jarak dan peta akurat.',
+        );
+        return false;
+      }
+      if (permission == LocationPermission.denied) {
+        _showRuntimePermissionHint(
+          'Aktifkan izin lokasi agar estimasi jarak dan peta akurat.',
+        );
+        return false;
       }
       if (!await Geolocator.isLocationServiceEnabled()) {
         debugPrint('[Location] Location service is disabled.');
-        return;
+        _showRuntimePermissionHint(
+          'Aktifkan layanan lokasi perangkat agar estimasi jarak dan peta akurat.',
+        );
+        return false;
       }
+      return true;
     } catch (error) {
       debugPrint('[Location] Permission request skipped: $error');
+      return false;
     }
   }
 
@@ -299,6 +339,7 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
     final host = uri.host.toLowerCase();
     final path = uri.path.toLowerCase();
     if (host.contains('midtrans') ||
+        host == 'payment' ||
         path.contains('payment') ||
         uri.queryParameters.containsKey('transaction_status')) {
       if (!mounted) return;
@@ -308,6 +349,14 @@ class _KosFinderRootState extends State<_KosFinderRoot> {
               Text('Pembayaran diterima. Status akan diperbarui otomatis.'),
         ),
       );
+      final orderId = uri.queryParameters['order_id'] ??
+          uri.queryParameters['midtrans_order_id'];
+      if (orderId != null && orderId.trim().isNotEmpty) {
+        unawaited(UserRepository.syncMidtransPaymentStatus(
+          midtransOrderId: orderId.trim(),
+        ));
+      }
+      UserRepository.requestProfileRefresh();
     }
   }
 

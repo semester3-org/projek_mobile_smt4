@@ -20,15 +20,16 @@ class UserRepository {
   static const String _billingStatusKey = 'user_billing_statuses';
   static const String _favoriteMerchantsKey = 'favorite_merchants';
   static const Duration _dashboardCacheTtl = Duration(seconds: 12);
-  static const Duration _merchantListCacheTtl = Duration(seconds: 10);
-  static const Duration _merchantDetailCacheTtl = Duration(seconds: 12);
+  static const Duration _merchantListCacheTtl = Duration(seconds: 5);
+  static const Duration _merchantDetailCacheTtl = Duration(seconds: 5);
   static const Duration _notificationCountCacheTtl = Duration(seconds: 8);
   static const Duration _profileCacheTtl = Duration(seconds: 15);
-  static const Duration _favoriteKeysCacheTtl = Duration(seconds: 15);
+  static const Duration _favoriteKeysCacheTtl = Duration(seconds: 5);
   static _DashboardCacheEntry? _dashboardCache;
   static final Map<String, _MerchantListCacheEntry> _merchantListCache = {};
   static final Map<String, _MerchantDetailCacheEntry> _merchantDetailCache = {};
   static _ProfileCacheEntry? _profileCache;
+  static _BillingCacheEntry? _billingCache;
   static Set<String>? _favoriteKeysCache;
   static DateTime? _favoriteKeysCachedAt;
   static int? _unreadNotificationCountCache;
@@ -38,12 +39,16 @@ class UserRepository {
 
   static final StreamController<void> _profileRefreshController =
       StreamController<void>.broadcast();
+  static final StreamController<void> _favoriteController =
+      StreamController<void>.broadcast();
 
   static Stream<void> get profileRefreshRequests =>
       _profileRefreshController.stream;
 
   static Stream<void> get notificationCountChanges =>
       _notificationCountController.stream;
+
+  static Stream<void> get favoriteChanges => _favoriteController.stream;
 
   static void _notifyNotificationCountChanged() {
     if (!_notificationCountController.isClosed) {
@@ -57,16 +62,24 @@ class UserRepository {
     }
   }
 
+  static void _notifyFavoriteChanged() {
+    if (!_favoriteController.isClosed) {
+      _favoriteController.add(null);
+    }
+  }
+
   static void clearSessionCache() {
     _dashboardCache = null;
     _merchantListCache.clear();
     _merchantDetailCache.clear();
     _profileCache = null;
+    _billingCache = null;
     _favoriteKeysCache = null;
     _favoriteKeysCachedAt = null;
     _unreadNotificationCountCache = null;
     _unreadNotificationCountCachedAt = null;
     _notifyNotificationCountChanged();
+    _notifyFavoriteChanged();
   }
 
   static Future<RepoResult<UserDashboard>> getDashboard({
@@ -209,7 +222,17 @@ class UserRepository {
     return '$type:$id:$lat:$lng';
   }
 
-  static Future<RepoResult<List<BillingRecord>>> getBillings() async {
+  static Future<RepoResult<List<BillingRecord>>> getBillings({
+    bool forceRefresh = false,
+  }) async {
+    final cached = _billingCache;
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.createdAt) <
+            const Duration(seconds: 8)) {
+      return RepoResult.ok(cached.items);
+    }
+
     final res = await ApiService.get('api/user_billings');
 
     if (!res.success) {
@@ -220,7 +243,9 @@ class UserRepository {
       final list = (res.data!['data'] as List)
           .map((e) => BillingRecord.fromJson(e as Map<String, dynamic>))
           .toList();
-      return RepoResult.ok(await _applyLocalBillingStatuses(list));
+      final applied = await _applyLocalBillingStatuses(list);
+      _billingCache = _BillingCacheEntry(applied, DateTime.now());
+      return RepoResult.ok(applied);
     } catch (_) {
       return const RepoResult.fail('Gagal membaca data tagihan');
     }
@@ -242,6 +267,7 @@ class UserRepository {
       return RepoResult.fail(res.message ?? 'Gagal membatalkan order');
     }
 
+    _billingCache = null;
     return const RepoResult.ok(true);
   }
 
@@ -269,6 +295,7 @@ class UserRepository {
       return const RepoResult.fail('Response Midtrans tidak valid');
     }
 
+    _billingCache = null;
     return RepoResult.ok(data);
   }
 
@@ -327,6 +354,7 @@ class UserRepository {
       return RepoResult.fail(res.message ?? 'Gagal mengecek status Midtrans');
     }
 
+    _billingCache = null;
     final data = res.data?['data'] as Map<String, dynamic>?;
     if (data == null) {
       return const RepoResult.fail('Response status Midtrans tidak valid');
@@ -777,6 +805,7 @@ class UserRepository {
         (prefs.getStringList(_favoriteMerchantsKey) ?? const []).toSet();
     _favoriteKeysCache = Set<String>.of(keys);
     _favoriteKeysCachedAt = DateTime.now();
+    _notifyFavoriteChanged();
     return keys;
   }
 
@@ -805,7 +834,6 @@ class UserRepository {
             .map((e) => e.toString())
             .toSet();
         await _saveFavoriteMerchantKeys(keys);
-        _merchantDetailCache.clear();
         return favorite;
       } catch (_) {
         // Fall through to local cache.
@@ -825,7 +853,7 @@ class UserRepository {
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
     _favoriteKeysCache = Set<String>.of(keys);
     _favoriteKeysCachedAt = DateTime.now();
-    _merchantDetailCache.clear();
+    _notifyFavoriteChanged();
     return next;
   }
 
@@ -850,6 +878,7 @@ class UserRepository {
     await prefs.setStringList(_favoriteMerchantsKey, keys.toList()..sort());
     _favoriteKeysCache = Set<String>.of(keys);
     _favoriteKeysCachedAt = DateTime.now();
+    _notifyFavoriteChanged();
   }
 
   static Future<UserProfile> _mergeLocalProfile(UserProfile profile) async {
@@ -1105,5 +1134,12 @@ class _ProfileCacheEntry {
   const _ProfileCacheEntry(this.profile, this.createdAt);
 
   final UserProfile profile;
+  final DateTime createdAt;
+}
+
+class _BillingCacheEntry {
+  const _BillingCacheEntry(this.items, this.createdAt);
+
+  final List<BillingRecord> items;
   final DateTime createdAt;
 }

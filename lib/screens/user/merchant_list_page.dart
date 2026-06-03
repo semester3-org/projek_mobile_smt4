@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../models/user_merchant.dart';
@@ -38,6 +40,7 @@ class _MerchantListPageState extends State<MerchantListPage> {
   String _selectedLaundryPricingType = 'Semua tipe harga';
   String _selectedLaundryDuration = 'Semua durasi';
   bool _locationUnavailable = false;
+  StreamSubscription<void>? _favoriteSubscription;
 
   bool get _isCatering => widget.type == 'catering';
 
@@ -85,13 +88,23 @@ class _MerchantListPageState extends State<MerchantListPage> {
   void initState() {
     super.initState();
     _selectedFilter = widget.filters.first;
+    _favoriteSubscription = UserRepository.favoriteChanges.listen((_) {
+      if (mounted) _refreshFavoriteKeys();
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _favoriteSubscription?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshFavoriteKeys() async {
+    final favoriteKeys = await UserRepository.getFavoriteMerchantKeys();
+    if (!mounted) return;
+    setState(() => _favoriteKeys = favoriteKeys);
   }
 
   Future<void> _load({bool silent = false, bool forceRefresh = false}) async {
@@ -256,16 +269,27 @@ class _MerchantListPageState extends State<MerchantListPage> {
   }
 
   Future<void> _toggleFavorite(UserMerchant merchant) async {
-    final favorite = await UserRepository.toggleMerchantFavorite(merchant);
-    if (!mounted) return;
+    final key = _favoriteKey(merchant);
+    final optimistic = !_favoriteKeys.contains(key);
     setState(() {
-      final key = _favoriteKey(merchant);
-      if (favorite) {
+      if (optimistic) {
         _favoriteKeys.add(key);
       } else {
         _favoriteKeys.remove(key);
       }
     });
+
+    final favorite = await UserRepository.toggleMerchantFavorite(merchant);
+    if (!mounted) return;
+    if (favorite != optimistic) {
+      setState(() {
+        if (favorite) {
+          _favoriteKeys.add(key);
+        } else {
+          _favoriteKeys.remove(key);
+        }
+      });
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

@@ -88,7 +88,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
   }
 
   Future<void> _handleAction(AppNotification notification) async {
-    await UserRepository.markNotificationRead(notification.id);
+    unawaited(UserRepository.markNotificationRead(notification.id));
     if (mounted) {
       setState(() {
         _notifications = _notifications

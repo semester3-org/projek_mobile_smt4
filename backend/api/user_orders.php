@@ -196,6 +196,9 @@ function userOrderPayload(mysqli $conn, array $row): array {
         'serviceEstimateLabel' => ($order['serviceType'] ?? '') === 'laundry'
             ? (string)($order['estimatedTime'] ?? '')
             : null,
+        'mealDeliveryCount' => isset($order['mealDeliveryCount']) ? (int)$order['mealDeliveryCount'] : 1,
+        'deliveryTime1' => $order['deliveryTime1'] ?? '07:00',
+        'deliveryTime2' => $order['deliveryTime2'] ?? null,
     ];
 }
 

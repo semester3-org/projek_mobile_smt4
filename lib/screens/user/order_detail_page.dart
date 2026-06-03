@@ -568,6 +568,23 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                     'Kos Sentra Ruang, Kamar S302\nJl. Melati No. 45, Jakarta Selatan',
                 style: const TextStyle(color: UserTheme.muted, height: 1.35),
               ),
+              if (order.isCateringSubscription) ...[
+                const SizedBox(height: 12),
+                _SubscriptionLine(
+                  label: 'Frekuensi pengantaran',
+                  value: order.cateringDeliveryFrequency,
+                ),
+                const SizedBox(height: 10),
+                _SubscriptionLine(
+                  label: 'Jadwal pengantaran',
+                  value: order.cateringDeliverySchedule,
+                ),
+                const SizedBox(height: 10),
+                const _SubscriptionLine(
+                  label: 'Pengantaran pertama',
+                  value: 'Dimulai keesokan hari setelah langganan aktif',
+                ),
+              ],
               if (order.deliveryLatitude != null &&
                   order.deliveryLongitude != null) ...[
                 const SizedBox(height: 12),
@@ -888,6 +905,22 @@ class _CateringActiveCard extends StatelessWidget {
               height: 1.4,
             ),
           ),
+          if (order.isCateringSubscription) ...[
+            const SizedBox(height: 12),
+            Text(
+              order.cateringDeliveryFrequency,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              order.cateringDeliverySchedule,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1771,18 +1804,25 @@ class _SubscriptionLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
+        Flexible(
+          flex: 2,
           child: Text(
             label,
             style: const TextStyle(color: UserTheme.muted),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            color: strong ? UserTheme.primaryDark : UserTheme.text,
-            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 3,
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: strong ? UserTheme.primaryDark : UserTheme.text,
+              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+            ),
           ),
         ),
       ],

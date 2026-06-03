@@ -30,12 +30,16 @@ class _ProfilePageState extends State<ProfilePage> {
   UserProfile? _profile;
   bool _loading = true;
   bool _connecting = false;
+  bool _kosCodeDirty = false;
+  bool _syncingKosFields = false;
   bool _didLoad = false;
   StreamSubscription<void>? _profileRefreshSub;
 
   @override
   void initState() {
     super.initState();
+    _codeCtrl.addListener(_syncKosCodeDirty);
+    _roomCodeCtrl.addListener(_syncKosCodeDirty);
     _profileRefreshSub = UserRepository.profileRefreshRequests.listen((_) {
       if (mounted) _load(forceRefresh: true);
     });
@@ -52,9 +56,23 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void dispose() {
     _profileRefreshSub?.cancel();
+    _codeCtrl.removeListener(_syncKosCodeDirty);
+    _roomCodeCtrl.removeListener(_syncKosCodeDirty);
     _codeCtrl.dispose();
     _roomCodeCtrl.dispose();
     super.dispose();
+  }
+
+  void _syncKosCodeDirty() {
+    if (_syncingKosFields) return;
+    final profile = _profile;
+    final currentKos = _codeCtrl.text.trim().toUpperCase();
+    final currentRoom = _roomCodeCtrl.text.trim().toUpperCase();
+    final savedKos = (profile?.kosAccessCode ?? '').trim().toUpperCase();
+    final savedRoom = (profile?.roomNumber ?? '').trim().toUpperCase();
+    final dirty = currentKos != savedKos || currentRoom != savedRoom;
+    if (_kosCodeDirty == dirty) return;
+    setState(() => _kosCodeDirty = dirty);
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -66,12 +84,15 @@ class _ProfilePageState extends State<ProfilePage> {
       forceRefresh: forceRefresh,
     );
     if (!mounted) return;
+    _syncingKosFields = true;
     setState(() {
       _profile = result.data;
       _codeCtrl.text = _profile?.kosAccessCode ?? '';
       _roomCodeCtrl.text = _profile?.roomNumber ?? '';
+      _kosCodeDirty = false;
       _loading = false;
     });
+    _syncingKosFields = false;
   }
 
   Future<void> _connectCode() async {
@@ -146,10 +167,14 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _connecting = false);
 
     if (result.isSuccess) {
+      _syncingKosFields = true;
       setState(() {
         _profile = result.data;
+        _codeCtrl.text = _profile?.kosAccessCode ?? accessCode;
         _roomCodeCtrl.text = _profile?.roomNumber ?? '';
+        _kosCodeDirty = false;
       });
+      _syncingKosFields = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -223,9 +248,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   ],
                   const SizedBox(height: 18),
                   _KosCodeCard(
+                    profile: _profile,
                     accessCodeController: _codeCtrl,
                     roomCodeController: _roomCodeCtrl,
                     isConnecting: _connecting,
+                    isDirty: _kosCodeDirty,
                     onConnect: _connectCode,
                   ),
                   const SizedBox(height: 24),
@@ -788,19 +815,28 @@ class _ProfileHeader extends StatelessWidget {
 
 class _KosCodeCard extends StatelessWidget {
   const _KosCodeCard({
+    required this.profile,
     required this.accessCodeController,
     required this.roomCodeController,
     required this.isConnecting,
+    required this.isDirty,
     required this.onConnect,
   });
 
+  final UserProfile? profile;
   final TextEditingController accessCodeController;
   final TextEditingController roomCodeController;
   final bool isConnecting;
+  final bool isDirty;
   final VoidCallback onConnect;
 
   @override
   Widget build(BuildContext context) {
+    final hasConnectedKos =
+        (profile?.kosAccessCode ?? '').trim().isNotEmpty &&
+            (profile?.roomNumber ?? '').trim().isNotEmpty;
+    final showConnectButton = !hasConnectedKos || isDirty;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -849,21 +885,34 @@ class _KosCodeCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: isConnecting ? null : onConnect,
-              style: FilledButton.styleFrom(
-                backgroundColor: UserTheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
+          if (showConnectButton) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: isConnecting ? null : onConnect,
+                style: FilledButton.styleFrom(
+                  backgroundColor: UserTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
                 ),
+                child:
+                    Text(isConnecting ? 'Menyambungkan...' : 'Sambungkan Kos'),
               ),
-              child: Text(isConnecting ? 'Menyambungkan...' : 'Sambungkan Kos'),
             ),
-          ),
+          ] else ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Kos dan kamar sudah tersambung. Ubah kode di atas jika ingin mengganti.',
+              style: TextStyle(
+                color: UserTheme.muted,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1,3 +1,91 @@
+String _readString(
+  Map<String, dynamic> json,
+  List<String> keys, {
+  String fallback = '',
+}) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value == null) continue;
+    final text = value.toString().trim();
+    if (text.isNotEmpty) return text;
+  }
+  return fallback;
+}
+
+double _readDouble(
+  Map<String, dynamic> json,
+  List<String> keys, {
+  double fallback = 0,
+}) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+  }
+  return fallback;
+}
+
+double? _readNullableDouble(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+  }
+  return null;
+}
+
+int _readInt(
+  Map<String, dynamic> json,
+  List<String> keys, {
+  int fallback = 0,
+}) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final parsed = int.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+  }
+  return fallback;
+}
+
+bool _readBool(
+  Map<String, dynamic> json,
+  List<String> keys, {
+  bool fallback = false,
+}) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is bool) return value;
+    if (value is num) return value.toInt() == 1;
+    if (value is String) {
+      final normalized = value.toLowerCase().trim();
+      if (['1', 'true', 'yes', 'aktif', 'active'].contains(normalized)) {
+        return true;
+      }
+      if (['0', 'false', 'no', 'nonaktif', 'inactive'].contains(normalized)) {
+        return false;
+      }
+    }
+  }
+  return fallback;
+}
+
+List<dynamic> _readList(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is List) return value;
+  }
+  return const [];
+}
+
 class MerchantMenuAddon {
   const MerchantMenuAddon({
     required this.id,
@@ -18,19 +106,20 @@ class MerchantMenuAddon {
   final bool isActive;
 
   factory MerchantMenuAddon.fromJson(Map<String, dynamic> json) {
-    final isActiveRaw = json['isActive'];
     return MerchantMenuAddon(
-      id: (json['id'] ?? '').toString(),
-      name: json['name'] as String? ?? '',
-      price: (json['price'] as num?)?.toDouble() ?? 0,
-      pricingType: json['pricingType'] as String? ?? 'flat',
-      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? 'Flat Price',
-      unit: json['unit'] as String? ?? 'fixed',
-      isActive: isActiveRaw is bool
-          ? isActiveRaw
-          : isActiveRaw is num
-              ? isActiveRaw.toInt() == 1
-              : true,
+      id: _readString(json, const ['id']),
+      name: _readString(json, const ['name', 'nama_produk']),
+      price: _readDouble(json, const ['price', 'harga']),
+      pricingType: _readString(json, const ['pricingType', 'pricing_type'],
+          fallback: 'flat'),
+      pricingTypeLabel: _readString(
+        json,
+        const ['pricingTypeLabel', 'pricing_type_label'],
+        fallback: 'Flat Price',
+      ),
+      unit: _readString(json, const ['unit', 'satuan'], fallback: 'fixed'),
+      isActive:
+          _readBool(json, const ['isActive', 'is_active'], fallback: true),
     );
   }
 
@@ -133,10 +222,11 @@ class MerchantMenuItem {
   }
 
   factory MerchantMenuItem.fromJson(Map<String, dynamic> json) {
-    final price30 = (json['price30Days'] as num?)?.toDouble() ??
-        (json['price'] as num?)?.toDouble() ??
-        0;
-    final addonsRaw = json['addons'] as List<dynamic>? ?? const [];
+    final price30 = _readDouble(
+      json,
+      const ['price30Days', 'price_30_days', 'price', 'harga'],
+    );
+    final addonsRaw = _readList(json, const ['addons', 'add_ons']);
     final imageUrl = [
       json['imageUrl'],
       json['image_url'],
@@ -146,35 +236,70 @@ class MerchantMenuItem {
         .map((value) => value?.toString().trim() ?? '')
         .firstWhere((value) => value.isNotEmpty, orElse: () => '');
     return MerchantMenuItem(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      description: json['description'] as String? ?? '',
+      id: _readString(json, const ['id']),
+      name: _readString(json, const ['name', 'nama_produk']),
+      description: _readString(json, const ['description', 'deskripsi']),
       price: price30,
       imageUrl: imageUrl,
-      merchantId: json['merchantId'] as String? ?? '',
-      merchantName: json['merchantName'] as String? ?? '',
-      merchantType: json['merchantType'] as String? ?? '',
-      category: json['category'] as String? ?? '',
-      unit: json['unit'] as String? ?? '',
-      price20Days: (json['price20Days'] as num?)?.toDouble(),
+      merchantId: _readString(json, const ['merchantId', 'merchant_id']),
+      merchantName: _readString(json, const ['merchantName', 'merchant_name']),
+      merchantType: _readString(json, const ['merchantType', 'merchant_type']),
+      category: _readString(json, const ['category', 'category_name']),
+      unit: _readString(json, const ['unit', 'satuan']),
+      price20Days: _readNullableDouble(
+        json,
+        const ['price20Days', 'price_20_days'],
+      ),
       price30Days: price30 > 0 ? price30 : null,
-      packageDeliveryType: json['packageDeliveryType'] as String?,
-      mealDeliveryCount: (json['mealDeliveryCount'] as num?)?.toInt() ?? 1,
-      deliveryTime1: json['deliveryTime1'] as String? ?? '07:00',
-      deliveryTime2: json['deliveryTime2'] as String?,
-      rating: (json['rating'] as num?)?.toDouble() ?? 0,
-      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
-      hasPromo: json['hasPromo'] as bool? ?? false,
-      originalPrice: (json['originalPrice'] as num?)?.toDouble(),
-      promoPrice: (json['promoPrice'] as num?)?.toDouble(),
-      promoDiscountAmount: (json['promoDiscountAmount'] as num?)?.toDouble(),
-      promoDiscountType: json['promoDiscountType'] as String?,
-      promoDiscountValue: (json['promoDiscountValue'] as num?)?.toDouble(),
-      promoLabel: json['promoLabel'] as String?,
-      promoDescription: json['promoDescription'] as String?,
-      pricingType: json['pricingType'] as String? ?? '',
-      pricingTypeLabel: json['pricingTypeLabel'] as String? ?? '',
-      durationLabel: json['durationLabel'] as String? ?? '',
+      packageDeliveryType: _readString(
+        json,
+        const ['packageDeliveryType', 'package_delivery_type'],
+      ),
+      mealDeliveryCount: _readInt(
+        json,
+        const ['mealDeliveryCount', 'meal_delivery_count'],
+        fallback: 1,
+      ),
+      deliveryTime1: _readString(
+        json,
+        const ['deliveryTime1', 'delivery_time_1'],
+        fallback: '07:00',
+      ),
+      deliveryTime2:
+          _readString(json, const ['deliveryTime2', 'delivery_time_2']),
+      rating: _readDouble(json, const ['rating']),
+      reviewCount: _readInt(json, const ['reviewCount', 'review_count']),
+      hasPromo: _readBool(json, const ['hasPromo', 'has_promo']),
+      originalPrice: _readNullableDouble(
+        json,
+        const ['originalPrice', 'original_price'],
+      ),
+      promoPrice:
+          _readNullableDouble(json, const ['promoPrice', 'promo_price']),
+      promoDiscountAmount: _readNullableDouble(
+        json,
+        const ['promoDiscountAmount', 'promo_discount_amount'],
+      ),
+      promoDiscountType: _readString(
+        json,
+        const ['promoDiscountType', 'promo_discount_type'],
+      ),
+      promoDiscountValue: _readNullableDouble(
+        json,
+        const ['promoDiscountValue', 'promo_discount_value'],
+      ),
+      promoLabel: _readString(json, const ['promoLabel', 'promo_label']),
+      promoDescription: _readString(
+        json,
+        const ['promoDescription', 'promo_description'],
+      ),
+      pricingType: _readString(json, const ['pricingType', 'pricing_type']),
+      pricingTypeLabel: _readString(
+        json,
+        const ['pricingTypeLabel', 'pricing_type_label'],
+      ),
+      durationLabel:
+          _readString(json, const ['durationLabel', 'duration_label']),
       addons: addonsRaw
           .whereType<Map>()
           .map((addon) => MerchantMenuAddon.fromJson(
@@ -255,23 +380,26 @@ class MerchantReview {
   final int remainingEditAttempts;
 
   factory MerchantReview.fromJson(Map<String, dynamic> json) {
-    final editCount = (json['editCount'] as num?)?.toInt() ?? 0;
+    final editCount = _readInt(json, const ['editCount', 'edit_count']);
     return MerchantReview(
-      id: json['id'] as String? ?? '',
-      productId: json['productId'] as String? ?? '',
-      productName: json['productName'] as String? ?? '',
-      userId: json['userId'] as String? ?? '',
-      reviewer: json['reviewer'] as String? ?? '',
-      rating: (json['rating'] as num?)?.toDouble() ?? 0,
-      comment: json['comment'] as String? ?? '',
-      timeLabel: json['timeLabel'] as String? ?? '',
-      createdAt: json['createdAt'] as String? ?? '',
-      updatedAt: json['updatedAt'] as String? ?? '',
-      deletedAt: json['deletedAt'] as String? ?? '',
-      isDeleted: json['isDeleted'] as bool? ?? false,
+      id: _readString(json, const ['id']),
+      productId: _readString(json, const ['productId', 'product_id']),
+      productName: _readString(json, const ['productName', 'product_name']),
+      userId: _readString(json, const ['userId', 'user_id']),
+      reviewer: _readString(json, const ['reviewer', 'display_name']),
+      rating: _readDouble(json, const ['rating']),
+      comment: _readString(json, const ['comment']),
+      timeLabel: _readString(json, const ['timeLabel', 'time_label']),
+      createdAt: _readString(json, const ['createdAt', 'created_at']),
+      updatedAt: _readString(json, const ['updatedAt', 'updated_at']),
+      deletedAt: _readString(json, const ['deletedAt', 'deleted_at']),
+      isDeleted: _readBool(json, const ['isDeleted', 'is_deleted']),
       editCount: editCount,
-      remainingEditAttempts: (json['remainingEditAttempts'] as num?)?.toInt() ??
-          (editCount < 3 ? 3 - editCount : 0),
+      remainingEditAttempts: _readInt(
+        json,
+        const ['remainingEditAttempts', 'remaining_edit_attempts'],
+        fallback: editCount < 3 ? 3 - editCount : 0,
+      ),
     );
   }
 }
@@ -287,8 +415,9 @@ class ReviewableProduct {
 
   factory ReviewableProduct.fromJson(Map<String, dynamic> json) {
     return ReviewableProduct(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Produk',
+      id: _readString(json, const ['id']),
+      name:
+          _readString(json, const ['name', 'nama_produk'], fallback: 'Produk'),
     );
   }
 }
@@ -304,15 +433,17 @@ class UserMerchantReviewState {
 
   factory UserMerchantReviewState.fromJson(Map<String, dynamic> json) {
     final productsRaw =
-        json['reviewableProducts'] as List<dynamic>? ?? const [];
-    final reviewsRaw = json['myReviews'] as List<dynamic>? ?? const [];
+        _readList(json, const ['reviewableProducts', 'reviewable_products']);
+    final reviewsRaw = _readList(json, const ['myReviews', 'my_reviews']);
     return UserMerchantReviewState(
       reviewableProducts: productsRaw
-          .map((e) => ReviewableProduct.fromJson(e as Map<String, dynamic>))
+          .whereType<Map>()
+          .map((e) => ReviewableProduct.fromJson(Map<String, dynamic>.from(e)))
           .where((e) => e.id.isNotEmpty)
           .toList(),
       myReviews: reviewsRaw
-          .map((e) => MerchantReview.fromJson(e as Map<String, dynamic>))
+          .whereType<Map>()
+          .map((e) => MerchantReview.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
     );
   }
@@ -383,9 +514,9 @@ class UserMerchant {
   }
 
   factory UserMerchant.fromJson(Map<String, dynamic> json) {
-    final tagsRaw = json['tags'] as List<dynamic>? ?? const [];
-    final menuRaw = json['menuItems'] as List<dynamic>? ?? const [];
-    final reviewsRaw = json['reviews'] as List<dynamic>? ?? const [];
+    final tagsRaw = _readList(json, const ['tags']);
+    final menuRaw = _readList(json, const ['menuItems', 'menu_items']);
+    final reviewsRaw = _readList(json, const ['reviews']);
 
     final imageUrl = [
       json['imageUrl'],
@@ -397,36 +528,46 @@ class UserMerchant {
         .firstWhere((value) => value.isNotEmpty, orElse: () => '');
 
     return UserMerchant(
-      id: json['id'] as String? ?? '',
-      placeId: json['placeId'] as String? ?? '',
-      merchantId: json['merchantId'] as String? ?? json['id'] as String? ?? '',
-      type: json['type'] as String? ?? 'laundry',
-      name: json['name'] as String? ?? '',
-      subtitle: json['subtitle'] as String? ?? '',
-      address: json['address'] as String? ?? '',
-      rating: (json['rating'] as num?)?.toDouble() ?? 0,
-      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
-      distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0,
+      id: _readString(json, const ['id']),
+      placeId: _readString(json, const ['placeId', 'place_id']),
+      merchantId: _readString(
+        json,
+        const ['merchantId', 'merchant_id', 'id'],
+      ),
+      type: _readString(json, const ['type', 'merchant_type'],
+          fallback: 'laundry'),
+      name: _readString(json, const ['name', 'business_name']),
+      subtitle: _readString(json, const ['subtitle']),
+      address: _readString(json, const ['address']),
+      rating: _readDouble(json, const ['rating']),
+      reviewCount: _readInt(json, const ['reviewCount', 'review_count']),
+      distanceKm: _readDouble(json, const ['distanceKm', 'distance_km']),
       imageUrl: imageUrl,
-      status: json['status'] as String? ?? 'Tersedia',
+      status: _readString(json, const ['status'], fallback: 'Tersedia'),
       tags: tagsRaw.map((e) => e.toString()).toList(),
-      minPrice: (json['minPrice'] as num?)?.toDouble() ?? 0,
-      priceUnit: json['priceUnit'] as String? ?? '',
-      eta: json['eta'] as String? ?? '',
-      openHours: json['openHours'] as String? ?? '',
-      openTime: json['openTime'] as String? ?? '',
-      closeTime: json['closeTime'] as String? ?? '',
-      isOpenNow: json['isOpenNow'] as bool? ?? true,
-      description: json['description'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      email: json['email'] as String? ?? '',
+      minPrice: _readDouble(json, const ['minPrice', 'min_price']),
+      priceUnit: _readString(json, const ['priceUnit', 'price_unit']),
+      eta: _readString(json, const ['eta']),
+      openHours: _readString(json, const ['openHours', 'open_hours']),
+      openTime: _readString(json, const ['openTime', 'open_time']),
+      closeTime: _readString(json, const ['closeTime', 'close_time']),
+      isOpenNow:
+          _readBool(json, const ['isOpenNow', 'is_open_now'], fallback: true),
+      description: _readString(json, const ['description']),
+      phone: _readString(json, const ['phone']),
+      email: _readString(json, const ['email']),
       menuItems: menuRaw
-          .map((e) => MerchantMenuItem.fromJson(e as Map<String, dynamic>))
+          .whereType<Map>()
+          .map((e) => MerchantMenuItem.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       reviews: reviewsRaw
-          .map((e) => MerchantReview.fromJson(e as Map<String, dynamic>))
+          .whereType<Map>()
+          .map((e) => MerchantReview.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
-      hasDistanceEstimate: json['hasDistanceEstimate'] as bool? ?? false,
+      hasDistanceEstimate: _readBool(
+        json,
+        const ['hasDistanceEstimate', 'has_distance_estimate'],
+      ),
     );
   }
 

@@ -38,7 +38,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final success = await AuthScope.of(context).loginWithCredentials(
+      final auth = AuthScope.of(context);
+      final success = await auth.loginWithCredentials(
         email: _emailCtrl.text,
         password: _passCtrl.text,
       );
@@ -47,7 +48,8 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!success) {
         setState(() {
-          _errorText = 'Email atau kata sandi tidak cocok. Periksa kembali.';
+          _errorText = auth.lastLoginError ??
+              'Email atau kata sandi tidak cocok. Periksa kembali.';
           _isLoading = false;
         });
       }
@@ -352,4 +354,3 @@ class _Header extends StatelessWidget {
     );
   }
 }
-

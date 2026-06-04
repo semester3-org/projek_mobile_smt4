@@ -35,7 +35,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
   bool _extendingSubscription = false;
   bool _cancellingOrder = false;
   bool _loadingReceipt = false;
-  bool _submittingLaundryReport = false;
+  bool _submittingMerchantReport = false;
   Timer? _paymentAutoRefreshTimer;
   int _paymentAutoRefreshAttempts = 0;
 
@@ -401,22 +401,34 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     );
   }
 
-  bool get _canReportLaundryIssue {
+  bool get _canReportMerchantIssue {
     final merchant = (_order.merchantStatus ?? '').toLowerCase();
-    return _order.isLaundry &&
-        (_order.status == 'completed' ||
-            merchant == 'done' ||
-            merchant == 'completed');
+    final payment = (_order.paymentStatus ?? '').toLowerCase();
+    final completed = _order.status == 'completed' ||
+        merchant == 'done' ||
+        merchant == 'completed';
+    if (_order.status == 'cancelled' || payment == 'cancelled') return false;
+    if (_order.isLaundry) return completed;
+    if (_order.service == 'catering') {
+      return _order.isCateringSubscription ||
+          _order.isPaid ||
+          merchant == 'accepted' ||
+          completed;
+    }
+    return false;
   }
 
-  Future<void> _openLaundryIssueReport() async {
+  Future<void> _openMerchantIssueReport() async {
+    final isCatering = _order.service == 'catering';
+    final serviceType = isCatering ? 'catering' : 'laundry';
+    final serviceLabel = isCatering ? 'Catering' : 'Laundry';
     final serviceOptions = _order.items
         .where((item) => !item.isAddon && item.name.trim().isNotEmpty)
         .map((item) => item.name.trim())
         .toSet()
         .toList();
     if (serviceOptions.isEmpty) {
-      serviceOptions.add('Layanan Laundry');
+      serviceOptions.add(isCatering ? 'Paket Catering' : 'Layanan Laundry');
     }
 
     final reasonCtrl = TextEditingController();
@@ -455,7 +467,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                 return;
               }
 
-              setDialogState(() => _submittingLaundryReport = true);
+              setDialogState(() => _submittingMerchantReport = true);
               String? photoData;
               if (proofImage != null) {
                 final bytes = await proofImage!.readAsBytes();
@@ -464,20 +476,21 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                 photoData = 'data:image/$ext;base64,${base64Encode(bytes)}';
               }
 
-              final result = await UserRepository.submitLaundryIssueReport(
+              final result = await UserRepository.submitMerchantIssueReport(
                 orderId: _order.databaseId ?? _order.id,
+                serviceType: serviceType,
                 serviceName: selectedService,
                 reason: reason,
                 photoUrl: photoData,
               );
               if (!mounted || !dialogContext.mounted) return;
-              setDialogState(() => _submittingLaundryReport = false);
+              setDialogState(() => _submittingMerchantReport = false);
 
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
                     result.isSuccess
-                        ? 'Laporan masalah laundry berhasil dikirim.'
+                        ? 'Pengaduan $serviceLabel berhasil dikirim.'
                         : result.error ?? 'Gagal mengirim laporan.',
                   ),
                 ),
@@ -488,7 +501,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
             }
 
             return AlertDialog(
-              title: const Text('Laporkan Masalah Laundry'),
+              title: Text('Laporkan Masalah $serviceLabel'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -497,7 +510,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                     DropdownButtonFormField<String>(
                       initialValue: selectedService,
                       decoration: const InputDecoration(
-                        labelText: 'Layanan bermasalah',
+                        labelText: 'Item bermasalah',
                         border: OutlineInputBorder(),
                       ),
                       items: serviceOptions
@@ -508,30 +521,32 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
                             ),
                           )
                           .toList(),
-                      onChanged: _submittingLaundryReport
+                      onChanged: _submittingMerchantReport
                           ? null
                           : (value) => setDialogState(
-                                () => selectedService = value ?? selectedService,
+                                () =>
+                                    selectedService = value ?? selectedService,
                               ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: reasonCtrl,
-                      enabled: !_submittingLaundryReport,
+                      enabled: !_submittingMerchantReport,
                       minLines: 4,
                       maxLines: 5,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Alasan laporan',
-                        hintText:
-                            'Contoh: pakaian masih basah, wangi tidak sesuai, atau item tertukar.',
+                        hintText: isCatering
+                            ? 'Contoh: paket tidak datang, menu tidak sesuai, atau porsi kurang.'
+                            : 'Contoh: pakaian masih basah, wangi tidak sesuai, atau item tertukar.',
                         alignLabelWithHint: true,
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 14),
                     OutlinedButton.icon(
                       onPressed:
-                          _submittingLaundryReport ? null : pickProofImage,
+                          _submittingMerchantReport ? null : pickProofImage,
                       icon: const Icon(Icons.image_outlined),
                       label: Text(
                         proofImage == null
@@ -545,15 +560,15 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
               ),
               actions: [
                 TextButton(
-                  onPressed: _submittingLaundryReport
+                  onPressed: _submittingMerchantReport
                       ? null
                       : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Batal'),
                 ),
                 FilledButton(
-                  onPressed: _submittingLaundryReport ? null : submit,
+                  onPressed: _submittingMerchantReport ? null : submit,
                   child: Text(
-                    _submittingLaundryReport ? 'Mengirim...' : 'Kirim Laporan',
+                    _submittingMerchantReport ? 'Mengirim...' : 'Kirim Laporan',
                   ),
                 ),
               ],
@@ -564,8 +579,8 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
     );
 
     reasonCtrl.dispose();
-    if (mounted && _submittingLaundryReport) {
-      setState(() => _submittingLaundryReport = false);
+    if (mounted && _submittingMerchantReport) {
+      setState(() => _submittingMerchantReport = false);
     }
   }
 
@@ -874,11 +889,11 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
             )
           else if (!paymentCancelled)
             _ReceiptUnavailableNotice(order: order),
-          if (_canReportLaundryIssue) ...[
+          if (_canReportMerchantIssue) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed:
-                  _submittingLaundryReport ? null : _openLaundryIssueReport,
+                  _submittingMerchantReport ? null : _openMerchantIssueReport,
               style: OutlinedButton.styleFrom(
                 foregroundColor: UserTheme.danger,
                 side: const BorderSide(color: UserTheme.danger),
@@ -889,7 +904,7 @@ class _UserOrderDetailPageState extends State<UserOrderDetailPage>
               ),
               icon: const Icon(Icons.report_problem_outlined),
               label: Text(
-                _submittingLaundryReport
+                _submittingMerchantReport
                     ? 'Mengirim laporan...'
                     : 'Laporkan Masalah',
               ),

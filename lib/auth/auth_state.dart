@@ -25,10 +25,12 @@ class AuthSession {
 class AuthState extends ChangeNotifier {
   AuthSession? _session;
   bool _isRestoring = false;
+  String? _lastLoginError;
 
   AuthSession? get session => _session;
   bool get isLoggedIn => _session != null;
   bool get isRestoring => _isRestoring;
+  String? get lastLoginError => _lastLoginError;
 
   Future<void> restoreSession() async {
     _isRestoring = true;
@@ -77,6 +79,7 @@ class AuthState extends ChangeNotifier {
     required String password,
   }) async {
     try {
+      _lastLoginError = null;
       final result = await ApiService.login(
         email: email,
         password: password,
@@ -96,8 +99,11 @@ class AuthState extends ChangeNotifier {
         notifyListeners();
         return true;
       }
+      _lastLoginError =
+          result['message'] as String? ?? 'Login gagal. Coba lagi.';
       return false;
     } catch (e) {
+      _lastLoginError = 'Terjadi kesalahan login: $e';
       debugPrint('Login error in AuthState: $e');
       return false;
     }

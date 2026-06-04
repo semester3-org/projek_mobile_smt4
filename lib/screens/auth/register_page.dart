@@ -107,8 +107,11 @@ class _RegisterPageState extends State<RegisterPage> {
           navigator.popUntil((route) => route.isFirst);
         } else {
           messenger.showSnackBar(
-            const SnackBar(
-              content: Text('Akun dibuat. Silakan masuk untuk melanjutkan.'),
+            SnackBar(
+              content: Text(
+                auth.lastLoginError ??
+                    'Akun dibuat. Silakan masuk untuk melanjutkan.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );

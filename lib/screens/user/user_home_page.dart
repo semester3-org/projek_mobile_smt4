@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -401,7 +401,7 @@ class _HomeCateringDeliveryMonitorState
             s.subscriptionStatus == 'pending' ||
             s.subscriptionStatus == 'pending_payment')
         .firstOrNull;
-    
+
     Order? order;
     if (active != null && active.orderId.isNotEmpty) {
       final orderResult = await UserRepository.getOrderDetail(active.orderId);
@@ -409,7 +409,7 @@ class _HomeCateringDeliveryMonitorState
         order = orderResult.data;
       }
     }
-    
+
     if (!mounted) return;
     setState(() {
       _activeSubscription = active;
@@ -421,7 +421,7 @@ class _HomeCateringDeliveryMonitorState
   @override
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -464,8 +464,8 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (_activeSubscription != null) ...
-                    _buildDeliveryMilestoneInfo(),
+                if (_activeSubscription != null)
+                  ..._buildDeliveryMilestoneInfo(),
                 const SizedBox(height: 8),
                 const Text(
                   'Gunakan fitur ini untuk melaporkan gelombang pengantaran yang tidak datang atau ada masalah pengiriman. Lampirkan foto sebagai bukti.',
@@ -507,20 +507,18 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
     }
 
     final order = _activeOrder!;
-    final deliveryTime1 = order.deliveryTime1.trim().isEmpty 
-        ? '07:00' 
+    final deliveryTime1 = order.deliveryTime1.trim().isEmpty
+        ? '07:00'
         : order.deliveryTime1.trim();
-    final deliveryTime2 = (order.deliveryTime2 ?? '').trim().isEmpty 
-        ? '15:00' 
+    final deliveryTime2 = (order.deliveryTime2 ?? '').trim().isEmpty
+        ? '15:00'
         : order.deliveryTime2!.trim();
-    
+
     // Tentukan icon berdasarkan status pesanan
     final isCompleted = order.status == 'completed';
-    final statusIcon = isCompleted 
-        ? Icons.check_circle 
-        : Icons.schedule;
-    final statusColor = isCompleted 
-        ? const Color(0xFF4CAF50)  // Green
+    final statusIcon = isCompleted ? Icons.check_circle : Icons.schedule;
+    final statusColor = isCompleted
+        ? const Color(0xFF4CAF50) // Green
         : null;
 
     return [
@@ -561,18 +559,23 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
   }
 
   void _openReportDialog(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     // Load order details to get delivery times
     if (_activeSubscription?.orderId.isEmpty ?? true) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Pesanan tidak ditemukan')),
       );
       return;
     }
 
-    final orderResult = await UserRepository.getOrderDetail(_activeSubscription!.orderId);
-    if (!mounted || !orderResult.isSuccess || orderResult.data == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(orderResult.error ?? 'Gagal memuat detail pesanan')),
+    final orderResult =
+        await UserRepository.getOrderDetail(_activeSubscription!.orderId);
+    if (!context.mounted ||
+        !orderResult.isSuccess ||
+        orderResult.data == null) {
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text(orderResult.error ?? 'Gagal memuat detail pesanan')),
       );
       return;
     }
@@ -580,11 +583,13 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
     final order = orderResult.data!;
     final controller = TextEditingController();
     final picker = ImagePicker();
-    List<XFile> selectedImages = [];
+    final selectedImages = <_ReportProofImage>[];
     int? selectedMilestone;
-    
-    if (!mounted) return;
-    
+    var isPickingPhoto = false;
+    var isSubmitting = false;
+
+    if (!context.mounted) return;
+
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -599,7 +604,8 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                   children: [
                     const Text(
                       'Jelaskan masalah pengiriman catering hari ini.',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 10),
                     if (order.mealDeliveryCount >= 2) ...[
@@ -625,12 +631,15 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                             ),
                           ),
                         ],
-                        selected: selectedMilestone != null ? {selectedMilestone!} : {},
+                        selected: selectedMilestone != null
+                            ? {selectedMilestone!}
+                            : {},
                         emptySelectionAllowed: true,
                         onSelectionChanged: (Set<int> newSelection) {
                           setStateDialog(() {
-                            selectedMilestone =
-                                newSelection.isEmpty ? null : newSelection.first;
+                            selectedMilestone = newSelection.isEmpty
+                                ? null
+                                : newSelection.first;
                           });
                         },
                       ),
@@ -678,30 +687,58 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                           ),
                         ),
                         TextButton.icon(
-                          onPressed: () async {
-                            try {
-                              final hasPermission =
-                                  await RuntimePermissionService
-                                      .ensureGalleryPermission(context);
-                              if (!hasPermission) return;
-                              final image = await picker.pickImage(
-                                source: ImageSource.gallery,
-                              );
-                              if (image != null) {
-                                setStateDialog(() {
-                                  selectedImages.add(image);
-                                });
-                              }
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Gagal memilih gambar: $e'),
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: isPickingPhoto || isSubmitting
+                              ? null
+                              : () async {
+                                  try {
+                                    setStateDialog(() => isPickingPhoto = true);
+                                    final hasPermission =
+                                        await RuntimePermissionService
+                                            .ensureGalleryPermission(
+                                                dialogContext);
+                                    if (!dialogContext.mounted) return;
+                                    if (!hasPermission) {
+                                      setStateDialog(
+                                          () => isPickingPhoto = false);
+                                      return;
+                                    }
+                                    final image = await picker.pickImage(
+                                      source: ImageSource.gallery,
+                                      imageQuality: 75,
+                                      maxWidth: 1280,
+                                    );
+                                    if (!dialogContext.mounted) return;
+                                    if (image != null) {
+                                      final bytes = await image.readAsBytes();
+                                      if (!dialogContext.mounted) return;
+                                      setStateDialog(() {
+                                        selectedImages.add(
+                                          _ReportProofImage(
+                                            name: image.name,
+                                            bytes: bytes,
+                                          ),
+                                        );
+                                        isPickingPhoto = false;
+                                      });
+                                    } else {
+                                      setStateDialog(
+                                          () => isPickingPhoto = false);
+                                    }
+                                  } catch (e) {
+                                    if (!dialogContext.mounted) return;
+                                    setStateDialog(
+                                        () => isPickingPhoto = false);
+                                    ScaffoldMessenger.of(dialogContext)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content:
+                                            Text('Gagal memilih gambar: $e'),
+                                      ),
+                                    );
+                                  }
+                                },
                           icon: const Icon(Icons.add_photo_alternate_outlined),
-                          label: const Text('Pilih'),
+                          label: Text(isPickingPhoto ? 'Memuat...' : 'Pilih'),
                         ),
                       ],
                     ),
@@ -728,8 +765,8 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(
-                                        File(selectedImages[index].path),
+                                      child: Image.memory(
+                                        selectedImages[index].bytes,
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -770,35 +807,72 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
                   child: const Text('Batal'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    final reportText = controller.text.trim();
-                    if (reportText.isEmpty) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Silakan isi detail laporan terlebih dahulu.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
-                    Navigator.of(dialogContext).pop();
-                    final milestoneLabel = selectedMilestone != null
-                        ? 'Gelombang $selectedMilestone'
-                        : 'Tidak ditentukan';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Pengaduan untuk $milestoneLabel dikirim (${selectedImages.length} foto). Admin akan menindaklanjuti.',
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('Kirim'),
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final reportText = controller.text.trim();
+                          if (reportText.length < 8) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Detail laporan minimal 8 karakter.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          setStateDialog(() => isSubmitting = true);
+                          final photoUrls = <String>[];
+                          for (final image in selectedImages) {
+                            final lowerName = image.name.toLowerCase();
+                            final ext =
+                                lowerName.endsWith('.png') ? 'png' : 'jpeg';
+                            photoUrls.add(
+                              'data:image/$ext;base64,${base64Encode(image.bytes)}',
+                            );
+                          }
+
+                          final milestoneLabel = selectedMilestone != null
+                              ? 'Gelombang $selectedMilestone'
+                              : 'Tidak ditentukan';
+                          final serviceName = order.items.isNotEmpty
+                              ? order.items.first.name
+                              : 'Paket Catering';
+                          final result =
+                              await UserRepository.submitMerchantIssueReport(
+                            orderId: order.databaseId ?? order.id,
+                            serviceType: 'catering',
+                            serviceName: serviceName,
+                            reason: '$milestoneLabel: $reportText',
+                            photoUrl:
+                                photoUrls.isNotEmpty ? photoUrls.first : null,
+                            photoUrls: photoUrls,
+                          );
+                          if (!mounted || !dialogContext.mounted) return;
+                          setStateDialog(() => isSubmitting = false);
+
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                result.isSuccess
+                                    ? 'Pengaduan untuk $milestoneLabel dikirim (${selectedImages.length} foto). Admin akan menindaklanjuti.'
+                                    : result.error ??
+                                        'Gagal mengirim pengaduan.',
+                              ),
+                            ),
+                          );
+                          if (result.isSuccess) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        },
+                  child: Text(isSubmitting ? 'Mengirim...' : 'Kirim'),
                 ),
               ],
             );
@@ -807,6 +881,16 @@ Cek detail pesanan, lalu kirim laporan kepada admin bila paket tidak lengkap.'''
       },
     );
   }
+}
+
+class _ReportProofImage {
+  const _ReportProofImage({
+    required this.name,
+    required this.bytes,
+  });
+
+  final String name;
+  final Uint8List bytes;
 }
 
 class _AnnouncementCard extends StatelessWidget {

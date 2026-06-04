@@ -485,16 +485,35 @@ class UserRepository {
     required String reason,
     String? photoUrl,
   }) async {
-    final res = await ApiService.post('api/laundry_issue_reports', {
+    return submitMerchantIssueReport(
+      orderId: orderId,
+      serviceType: 'laundry',
+      serviceName: serviceName,
+      reason: reason,
+      photoUrl: photoUrl,
+    );
+  }
+
+  static Future<RepoResult<bool>> submitMerchantIssueReport({
+    required String orderId,
+    required String serviceType,
+    required String serviceName,
+    required String reason,
+    String? photoUrl,
+    List<String> photoUrls = const [],
+  }) async {
+    final res = await ApiService.post('api/merchant_issue_reports', {
       'orderId': orderId,
+      'serviceType': serviceType,
       'serviceName': serviceName,
       'reason': reason,
       'photoUrl': photoUrl ?? '',
+      if (photoUrls.isNotEmpty) 'photoUrls': photoUrls,
     });
 
     if (!res.success) {
       return RepoResult.fail(
-        res.message ?? 'Gagal mengirim laporan masalah laundry',
+        res.message ?? 'Gagal mengirim pengaduan merchant',
       );
     }
     return const RepoResult.ok(true);
